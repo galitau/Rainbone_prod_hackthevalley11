@@ -20,17 +20,17 @@ type Props = {
 export function LiveRun({ run, history, onRunSample, onUpload }: Props) {
   const sample = run.input.kind === "sample";
   return (
-    <details id={ALL_NUMBERS_ID} className="group scroll-mt-5 rounded-xl border border-line bg-panel">
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-xl px-5 py-4 text-sm font-medium text-ink transition hover:bg-[#101a24] [&::-webkit-details-marker]:hidden">
+    <details id={ALL_NUMBERS_ID} className="group scroll-mt-20 overflow-hidden rounded-2xl border border-line bg-surface shadow-card">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-5 py-4 text-[15px] font-semibold text-ink transition hover:bg-sunken/60 [&::-webkit-details-marker]:hidden">
         All numbers and method
         <ChevronDown size={16} className="text-muted transition group-open:rotate-180" aria-hidden />
       </summary>
       <div className="space-y-4 border-t border-line px-5 pb-5 pt-4" aria-busy={run.status === "loading"}>
         <div className="flex items-center justify-between gap-3">
-          <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-muted">Live engine run</p>
+          <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted">Live engine run</p>
           <RunBadge run={run} />
         </div>
-        <p className="text-xs leading-5 text-muted">
+        <p className="text-[12.5px] leading-5 text-body">
           {sample ? (
             <>
               On each visit this page sends <span className="font-mono text-ink">{run.input.name}</span>, a small synthetic test volume (not
@@ -43,11 +43,11 @@ export function LiveRun({ run, history, onRunSample, onUpload }: Props) {
           )}
         </p>
         {run.status === "error" && (
-          <div className="rounded-lg border border-warning/30 bg-warning/10 p-3.5">
-            <p className="flex items-center gap-2 text-xs font-medium text-warning">
+          <div className="rounded-lg border border-caution/25 bg-caution/[0.08] p-3.5">
+            <p className="flex items-center gap-2 text-[12.5px] font-medium text-caution">
               <CircleAlert size={15} aria-hidden /> No numbers from the engine
             </p>
-            <p className="mt-1 text-xs leading-5 text-ink">{run.message}</p>
+            <p className="mt-1 text-[12.5px] leading-5 text-ink">{run.message}</p>
           </div>
         )}
         {run.status === "loading" && (
@@ -57,7 +57,7 @@ export function LiveRun({ run, history, onRunSample, onUpload }: Props) {
           </div>
         )}
         <AllNumbers run={run} history={history} />
-        <p className="text-[11px] leading-5 text-muted">
+        <p className="text-[11.5px] leading-5 text-muted">
           The API maps CT values to stiffness with a simple linear rule and places the supports and the load by the scan&apos;s extent,
           not by anatomy. Assumed material, no clinical validation. Not a medical device.
         </p>
@@ -73,19 +73,19 @@ export function LiveRun({ run, history, onRunSample, onUpload }: Props) {
 }
 
 const buttonClass =
-  "inline-flex items-center gap-1.5 rounded-lg border border-line bg-[#101a24] px-3 py-2 text-xs font-medium text-ink transition hover:border-cyan/40 hover:text-cyan disabled:pointer-events-none disabled:opacity-50";
+  "inline-flex items-center gap-1.5 rounded-lg border border-line bg-surface px-3 py-2 text-[13px] font-medium text-ink shadow-card transition hover:border-line-strong hover:bg-sunken disabled:pointer-events-none disabled:opacity-50";
 
 function RunBadge({ run }: { run: RunState }) {
   const where = `POST ${API_BASE_URL}/api/simulate`;
   if (run.status === "loading")
     return (
-      <span title={where} className="inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider text-muted">
+      <span title={where} className="inline-flex items-center gap-1.5 rounded-full border border-line bg-sunken px-2.5 py-1 text-[11px] font-medium text-muted">
         <LoaderCircle size={12} className="animate-spin" aria-hidden /> Solving
       </span>
     );
   if (run.status === "error")
-    return <span title={where} className="font-mono text-[10px] uppercase tracking-wider text-warning">No numbers</span>;
-  return <span title={where} className="font-mono text-[10px] uppercase tracking-wider text-cyan">API live</span>;
+    return <span title={where} className="rounded-full border border-caution/25 bg-caution/[0.08] px-2.5 py-1 text-[11px] font-medium text-caution">No numbers</span>;
+  return <span title={where} className="rounded-full border border-success/25 bg-success/[0.07] px-2.5 py-1 text-[11px] font-medium text-success">From FEA service</span>;
 }
 
 function AllNumbers({ run, history }: { run: RunState; history: HistoryState }) {
@@ -107,10 +107,10 @@ function AllNumbers({ run, history }: { run: RunState; history: HistoryState }) 
     history.status === "ready" ? `${history.runs.length} returned` : history.status === "loading" ? "checking…" : `none (${history.reason})`,
   ]);
   return (
-    <dl className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 gap-y-2 text-xs">
+    <dl className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 gap-y-2 text-[12.5px]">
       {rows.map(([label, value, mono]) => (
         <div key={label} className="contents">
-          <dt className="text-muted">{label}</dt>
+          <dt className="text-body">{label}</dt>
           <dd title={value} className={`text-right tabular-nums text-ink ${mono ? "max-w-[12rem] truncate font-mono" : "whitespace-nowrap font-mono"}`}>
             {value}
           </dd>

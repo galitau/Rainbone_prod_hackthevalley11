@@ -1,15 +1,24 @@
 "use client";
 
 import { useRef } from "react";
-import { Activity, FileUp, LayoutDashboard } from "lucide-react";
+import {
+  Activity,
+  ChevronRight,
+  Database,
+  FileUp,
+  FolderOpen,
+  LayoutDashboard,
+  ScanLine,
+  UserRound,
+} from "lucide-react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { BoneViewer } from "@/components/BoneViewer";
+import { RainboneLogo } from "@/components/brand";
 import { ClinicalMetrics } from "@/components/clinical-metrics";
-import { FractureRisk } from "@/components/fracture-risk";
+import { StressChart } from "@/components/stress-chart";
+import { BoneViewer } from "@/components/BoneViewer";
 import { LiveRun, ALL_NUMBERS_ID } from "@/components/live-run";
 import { PlainExplanation } from "@/components/plain-explanation";
-import { StressChart } from "@/components/stress-chart";
 import { API_BASE_URL, type ExplanationState, type HistoryState, type SimulationResult } from "@/lib/api";
 import { FEMUR_AUTHORS, FEMUR_INSTITUTION, FEMUR_MODEL } from "@/lib/model";
 const PhysicsSimulations = dynamic(() => import("@/components/physics-simulations").then(module => module.PhysicsSimulations));
@@ -38,43 +47,43 @@ export function Dashboard(props: DashboardProps) {
   const view = props.view === "physics" ? "physics" : "overview";
   const health = props.view === "physics" ? undefined : props.health;
   return (
-    <main className="min-h-screen bg-canvas">
+    <main className="min-h-screen bg-canvas text-ink">
       <div className="flex min-h-screen">
-        <aside className="hidden w-[248px] shrink-0 border-r border-line bg-[#0a1119] px-5 py-6 lg:flex lg:flex-col">
-          <div className="flex items-center gap-3 px-2">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-cyan text-[#071318]">
-              <Activity size={19} strokeWidth={2.5} />
-            </div>
-            <div>
-              <p className="text-sm font-semibold tracking-tight text-ink">RainbowBone</p>
-              <p className="font-mono text-[9px] uppercase tracking-[0.18em] text-muted">Biomechanics lab</p>
+        <aside className="sticky top-0 hidden h-screen w-[256px] shrink-0 flex-col bg-nav lg:flex">
+          <div className="spectrum-line h-[3px]" aria-hidden />
+          <div className="px-5 pb-2 pt-6"><RainboneLogo /></div>
+          <nav aria-label="Workspace" className="mt-8 space-y-1 px-3">
+            <p className="px-3 pb-2 text-[11px] font-medium uppercase tracking-[0.08em] text-nav-muted">Analysis</p>
+            <NavItem active={view === "overview"} href="/" icon={<LayoutDashboard size={17} />} label="Patient overview" />
+            <NavItem active={view === "physics"} href="/physics-simulations" icon={<Activity size={17} />} label="Physics simulations" />
+            <NavItem icon={<FolderOpen size={17} />} label="Imaging library" />
+          </nav>
+          <div className="mt-auto p-4">
+            <div className="rounded-xl border border-nav-line bg-white/[0.03] p-4">
+              {health ? <NavHealth health={health} /> : <p className="text-xs font-medium text-nav-ink">Physics simulation</p>}
+              <p className="mt-1.5 text-[11px] leading-4 text-nav-muted">Research prototype · not for clinical diagnosis</p>
             </div>
           </div>
-          <nav className="mt-12 space-y-1.5">
-            <NavItem active={view === "overview"} href="/" icon={<LayoutDashboard size={17} />} label="Overview" />
-            <NavItem active={view === "physics"} href="/physics-simulations" icon={<Activity size={17} />} label="Physics simulations" />
-            <NavItem icon={<FileUp size={17} />} label="Imaging library" />
-          </nav>
-          {health && (
-            <div className="mt-auto rounded-xl border border-line bg-panel p-4">
-              <ApiStatus health={health} />
-              <p className="mt-2 text-xs leading-5 text-muted">{HEALTH[health].detail}</p>
-            </div>
-          )}
         </aside>
 
         <section className="min-w-0 flex-1">
-          <header className="flex h-[76px] items-center justify-between border-b border-line px-5 md:px-8">
-            <div>
-              <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-cyan">Bone stress simulation</p>
-              <h1 className="mt-1 text-lg font-medium tracking-tight text-ink">{view === "physics" ? "Physics simulations" : "Patient analysis"}</h1>
+          <header className="sticky top-0 z-10 border-b border-line bg-surface/90 backdrop-blur">
+            <div className="flex h-16 items-center justify-between gap-4 px-5 md:px-8">
+              <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-1.5 text-[13px] text-muted">
+                <span className="lg:hidden"><RainboneMarkSmall /></span>
+                <span className="hidden sm:inline">Patients</span>
+                <ChevronRight size={14} className="hidden shrink-0 sm:block" aria-hidden />
+                <span className="hidden sm:inline">{FEMUR_MODEL.dataset} {FEMUR_MODEL.caseId}</span>
+                <ChevronRight size={14} className="hidden shrink-0 sm:block" aria-hidden />
+                <span className="truncate font-medium text-ink" aria-current="page">{view === "physics" ? "Physics simulations" : "Patient overview"}</span>
+              </nav>
+              {health && <ApiStatus health={health} />}
             </div>
-            {health && <div className="lg:hidden"><ApiStatus health={health} /></div>}
+            <nav aria-label="Mobile workspace navigation" className="flex gap-1 overflow-x-auto border-t border-line px-4 py-2 scrollbar-hide lg:hidden">
+              <MobileNavItem active={view === "overview"} href="/" label="Patient overview" />
+              <MobileNavItem active={view === "physics"} href="/physics-simulations" label="Physics simulations" />
+            </nav>
           </header>
-          <nav aria-label="Mobile workspace navigation" className="flex gap-2 border-b border-line px-5 py-3 lg:hidden">
-            <NavItem active={view === "overview"} href="/" icon={<LayoutDashboard size={15} />} label="Overview" />
-            <NavItem active={view === "physics"} href="/physics-simulations" icon={<Activity size={15} />} label="Physics simulations" />
-          </nav>
 
           {props.view === "physics" ? <PhysicsSimulations /> : <Overview {...props} />}
         </section>
@@ -84,7 +93,6 @@ export function Dashboard(props: DashboardProps) {
 }
 
 function Overview({ run, explanation, history, onRunSample, onUpload }: OverviewProps) {
-  const fileInput = useRef<HTMLInputElement>(null);
   // Saved runs of the same input as the live run, so the chart never mixes different scans.
   const runs = history.status === "ready" ? history.runs.filter((saved) => saved.source_filename === run.input.name) : [];
 
@@ -99,76 +107,92 @@ function Overview({ run, explanation, history, onRunSample, onUpload }: Overview
   };
 
   return (
-    <div className="p-5 md:p-8">
-      <div className="mb-7 flex flex-col justify-between gap-4 md:flex-row md:items-end">
-        <div>
-          <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-muted">Active study</p>
-          <div className="mt-2 flex flex-wrap items-center gap-3">
-            <h2 className="text-2xl font-medium tracking-tight">{FEMUR_MODEL.anatomy}</h2>
-            <a href={FEMUR_MODEL.sourceUrl} target="_blank" rel="noreferrer" className="rounded-full border border-cyan/30 bg-cyan/10 px-2 py-1 font-mono text-[9px] uppercase tracking-wider text-cyan hover:bg-cyan/20">
-              {FEMUR_MODEL.dataset} {FEMUR_MODEL.caseId}
-            </a>
-          </div>
-          <p className="mt-2 text-sm text-muted">
-            CT scan from {FEMUR_AUTHORS}{FEMUR_INSTITUTION && `, ${FEMUR_INSTITUTION}`} · {FEMUR_MODEL.license} · research prototype, not a medical device
-          </p>
-        </div>
-        <input
-          ref={fileInput}
-          type="file"
-          accept=".nii,.gz"
-          className="sr-only"
-          tabIndex={-1}
-          aria-hidden
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            if (file) importScan(file);
-            event.target.value = "";
-          }}
-        />
-        <button
-          type="button"
-          onClick={() => fileInput.current?.click()}
-          disabled={run.status === "loading"}
-          className="flex w-fit items-center gap-2 rounded-lg bg-cyan px-4 py-2.5 text-xs font-semibold text-[#071318] transition hover:bg-[#75e5dd] disabled:opacity-60"
-        >
-          <FileUp size={15} /> Import scan
-        </button>
-      </div>
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
-        <div className="min-w-0 space-y-5">
+    <div className="mx-auto max-w-[1440px] p-5 md:p-8">
+      <PatientHeader importing={run.status === "loading"} onImport={importScan} />
+      <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
+        <div className="min-w-0 space-y-6">
           <BoneViewer />
           {runs.length > 1 && <StressChart runs={runs} name={run.input.name} />}
         </div>
-        <div className="min-w-0 space-y-5">
-          <FractureRisk />
+        <div className="min-w-0 space-y-6">
           <ClinicalMetrics />
           <PlainExplanation state={explanation} />
           <LiveRun run={run} history={history} onRunSample={onRunSample} onUpload={onUpload} />
         </div>
       </div>
+      <p className="mt-8 border-t border-line pt-5 text-[11px] leading-5 text-muted">Rainbone is a research prototype. Simulations use assumed material properties and are not validated for clinical diagnosis or treatment decisions.</p>
     </div>
   );
 }
 
+function PatientHeader({ importing, onImport }: { importing: boolean; onImport: (file: File) => void }) {
+  const fileInput = useRef<HTMLInputElement>(null);
+  return (
+    <div className="flex flex-col justify-between gap-5 md:flex-row md:items-end">
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-3">
+          <h1 className="font-serif text-[28px] font-semibold leading-tight tracking-[-0.01em] text-ink">{FEMUR_MODEL.anatomy}</h1>
+          <a href={FEMUR_MODEL.sourceUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-full border border-link/20 bg-link/[0.07] px-2.5 py-1 text-[12px] font-medium text-link hover:bg-link/[0.12]"><span className="h-1.5 w-1.5 rounded-full bg-link" aria-hidden />{FEMUR_MODEL.dataset} {FEMUR_MODEL.caseId}</a>
+        </div>
+        <dl className="mt-3 flex flex-wrap gap-x-6 gap-y-2 text-[13px] text-body">
+          <Meta icon={<UserRound size={14} />} label="Patient" value={`${FEMUR_MODEL.dataset} ${FEMUR_MODEL.caseId}`} mono />
+          <Meta icon={<ScanLine size={14} />} label="Modality" value={`CT · ${FEMUR_INSTITUTION || FEMUR_AUTHORS}`} />
+          <Meta icon={<Database size={14} />} label="Source" value={`${FEMUR_AUTHORS} · ${FEMUR_MODEL.license}`} />
+        </dl>
+      </div>
+      <input
+        ref={fileInput}
+        type="file"
+        accept=".nii,.gz"
+        className="sr-only"
+        tabIndex={-1}
+        aria-hidden
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          if (file) onImport(file);
+          event.target.value = "";
+        }}
+      />
+      <button type="button" onClick={() => fileInput.current?.click()} disabled={importing} className="inline-flex w-fit items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-[13px] font-medium text-white shadow-card transition hover:bg-primary-hover disabled:opacity-60"><FileUp size={16} /> Import scan</button>
+    </div>
+  );
+}
+
+function Meta({ icon, label, value, mono }: { icon: React.ReactNode; label: string; value: string; mono?: boolean }) {
+  return <div className="flex items-center gap-1.5"><span className="text-muted" aria-hidden>{icon}</span><dt className="sr-only">{label}</dt><dd className={mono ? "font-mono text-[12.5px]" : ""}>{value}</dd></div>;
+}
+
 const HEALTH = {
-  checking: { label: "Checking the engine", detail: "Asking the simulation API whether it is up.", dot: "bg-muted", text: "text-muted" },
-  online: { label: "Engine online", detail: "The simulation API answered its health check.", dot: "bg-cyan", text: "text-cyan" },
+  checking: { label: "Checking the engine", dot: "bg-muted", pill: "border-line bg-sunken text-muted", nav: "text-nav-muted" },
+  online: { label: "Engine online", dot: "bg-success", pill: "border-success/25 bg-success/[0.07] text-success", nav: "text-nav-ink" },
   // A browser cannot tell a server that is down from one that refuses this page's origin (CORS), so say only that.
-  offline: { label: "Engine unreachable", detail: "This page cannot reach the simulation API.", dot: "bg-warning", text: "text-warning" },
+  offline: { label: "Engine unreachable", dot: "bg-caution", pill: "border-caution/25 bg-caution/[0.08] text-caution", nav: "text-nav-ink" },
 } as const;
 
 function ApiStatus({ health }: { health: ApiHealth }) {
   const state = HEALTH[health];
   return (
-    <p role="status" title={`GET ${API_BASE_URL}/health, checked every 15 s`} className={`flex items-center gap-2 text-xs ${state.text}`}>
+    <span role="status" title={`GET ${API_BASE_URL}/health, checked every 15 s`} className={`inline-flex shrink-0 items-center gap-2 rounded-full border px-2.5 py-1 text-[12px] font-medium ${state.pill}`}>
       <span className={`h-1.5 w-1.5 rounded-full ${state.dot}`} aria-hidden /> {state.label}
-    </p>
+    </span>
   );
 }
 
+function NavHealth({ health }: { health: ApiHealth }) {
+  const state = HEALTH[health];
+  return <p className={`flex items-center gap-2 text-xs font-medium ${state.nav}`}><span className={`h-2 w-2 rounded-full ${state.dot}`} aria-hidden /> {state.label}</p>;
+}
+
+function RainboneMarkSmall() {
+  return <span className="font-serif text-[15px] font-semibold text-ink">Rainbone</span>;
+}
+
 function NavItem({ active, icon, label, href }: { active?: boolean; icon: React.ReactNode; label: string; href?: string }) {
-  const className = `flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm ${active ? "bg-[#15232b] text-cyan" : "text-muted hover:bg-panel hover:text-ink"}`;
-  const content = <>{icon}<span>{label}</span>{active && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-cyan" />}</>;
-  return href ? <Link href={href} aria-current={active ? "page" : undefined} className={className}>{content}</Link> : <div className={className}>{content}</div>;
+  const className = `relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-[13.5px] transition ${active ? "bg-white/[0.08] font-medium text-nav-ink" : "text-nav-muted hover:bg-white/[0.04] hover:text-nav-ink"}`;
+  const content = <>{active && <span className="spectrum-line-v absolute inset-y-2 left-0 w-[3px] rounded-full" aria-hidden />}{icon}<span>{label}</span></>;
+  return href ? <Link href={href} aria-current={active ? "page" : undefined} className={className}>{content}</Link> : <div className={`${className} cursor-default`}>{content}</div>;
+}
+
+function MobileNavItem({ active, href, label }: { active?: boolean; href: string; label: string }) {
+  return <Link href={href} aria-current={active ? "page" : undefined} className={`shrink-0 rounded-md px-3 py-1.5 text-[13px] ${active ? "bg-primary text-white" : "text-body hover:bg-sunken"}`}>{label}</Link>;
 }
