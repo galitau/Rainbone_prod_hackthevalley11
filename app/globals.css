@@ -1,0 +1,38 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  background: #080d14;
+  color: #e7eef5;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+::selection {
+  background: rgba(79, 219, 209, 0.25);
+}
+
+.mesh-grid {
+  background-image: linear-gradient(rgba(69, 91, 111, 0.12) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(69, 91, 111, 0.12) 1px, transparent 1px);
+  background-size: 42px 42px;
+  mask-image: linear-gradient(to bottom, black 15%, transparent 95%);
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}

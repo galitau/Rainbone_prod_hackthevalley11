@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+nibabel
+scikit-image
+scikit-learn
+trimesh
+sfepy
+numpy
+scipy
+pydantic
