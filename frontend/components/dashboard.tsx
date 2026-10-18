@@ -83,6 +83,7 @@ export function Dashboard(props: DashboardProps) {
 
   return (
     <main className={`min-h-screen bg-canvas text-ink${fit ? " lg:flex lg:h-dvh lg:min-h-[640px] lg:flex-col lg:overflow-hidden" : ""}`}>
+      {view === "preferences" && <a href="#preferences-content" className="skip-preferences">Skip to preferences</a>}
       <div className={`flex min-h-screen${fit ? " lg:min-h-0 lg:flex-1" : ""}`}>
         <aside className="sticky top-0 hidden h-screen w-[256px] shrink-0 flex-col bg-nav lg:flex">
           <div className="spectrum-line h-[3px]" aria-hidden />

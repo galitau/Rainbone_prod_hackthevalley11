@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type vtkPolyData from "@kitware/vtk.js/Common/DataModel/PolyData";
 import { DATA_RAMP } from "@/lib/spectrum";
+import { REDUCE_MOTION_CLASS } from "@/lib/preferences-script";
 import { PEAK_HEIGHT_MM, REPLAY_SLOT_ID, SWEEP_UNDERLINE_ID } from "@/components/landing/stress-profile";
 
 type Phase = "standby" | "ready" | "sweeping" | "done" | "fallback";
@@ -71,7 +72,8 @@ export function ScanHero({ maxMpa, loadN, lengthMm }: Props) {
     const abort = new AbortController();
     const reduceQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
     const wideQuery = window.matchMedia("(min-width: 1024px)");
-    let reduceNow = reduceQuery.matches;
+    const shouldReduce = () => reduceQuery.matches || document.documentElement.classList.contains(REDUCE_MOTION_CLASS);
+    let reduceNow = shouldReduce();
     setReduced(reduceNow);
 
     const underline = document.getElementById(SWEEP_UNDERLINE_ID);
@@ -82,11 +84,13 @@ export function ScanHero({ maxMpa, loadN, lengthMm }: Props) {
     };
 
     const onReduce = () => {
-      reduceNow = reduceQuery.matches;
+      reduceNow = shouldReduce();
       setReduced(reduceNow);
       onReduceChange?.();
     };
     reduceQuery.addEventListener("change", onReduce);
+    const preferenceObserver = new MutationObserver(onReduce);
+    preferenceObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
 
     const fail = () => {
       if (disposed) return;
@@ -480,6 +484,7 @@ export function ScanHero({ maxMpa, loadN, lengthMm }: Props) {
       if (idle) window.cancelIdleCallback(idle);
       timers.splice(0).forEach(window.clearTimeout);
       reduceQuery.removeEventListener("change", onReduce);
+      preferenceObserver.disconnect();
       cleanupScene?.();
       cleanupScene = undefined;
     };
