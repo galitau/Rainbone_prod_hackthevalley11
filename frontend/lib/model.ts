@@ -33,8 +33,11 @@ export const FEMUR_MODEL = {
 // index the same way from the 99.5th percentile of element stress, so the two are not the same number.
 export const FEMUR_INDEX_PERCENT = (FEMUR_MODEL.shownStressMpa / ASSUMED_STRENGTH_MPA) * 100; // 10.55
 
-// The femur's numbers in the shape POST /api/explain accepts (the fields of a /api/simulate response).
+// The femur's numbers in the shape POST /api/explain accepts (the fields of a /api/simulate response), with its case id:
+// an API that knows the case reads the same numbers from the model's manifest in Vultr Object Storage instead, and
+// an older one ignores the id.
 export const FEMUR_EXPLAIN_REQUEST = {
+  case_id: FEMUR_MODEL.caseId,
   load_newtons: FEMUR_MODEL.loadNewtons,
   max_von_mises_stress_mpa: FEMUR_MODEL.shownStressMpa,
   average_youngs_modulus_gpa: FEMUR_MODEL.youngsModulusGpa,
