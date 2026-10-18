@@ -279,7 +279,7 @@ export function CloudBones() {
       </header>
 
       {listError && <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line bg-surface shadow-card p-4 text-sm text-caution">
-        <p>{listError}</p><button className={buttonClass} onClick={() => void refresh()}>Retry</button>
+        <div className="space-y-1"><p>{listError}</p><p className="text-xs text-muted">The meshes come from a private Vultr bucket through the backend&apos;s GET /api/bones, which needs the VULTR_S3_* keys (they are not in the repo). Without them, run the front end against the live backend: NEXT_PUBLIC_API_BASE_URL=https://api.rainbone.health npm run dev</p></div><button className={buttonClass} onClick={() => void refresh()}>Retry</button>
       </div>}
 
       {data && selected && <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
