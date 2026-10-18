@@ -135,7 +135,7 @@ function Overview({ run, explanation, risk, history, onRunSample, onUpload }: Ov
       <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
         <div className="min-w-0 space-y-6">
           <BoneViewer />
-          {runs.length > 1 && <StressChart runs={runs} name={run.input.name} />}
+          {runs.length > 0 && <StressChart runs={runs} name={run.input.name} hourly={history.status === "ready" ? history.hourly : undefined} />}
         </div>
         <div className="min-w-0 space-y-6">
           <ClinicalMetrics />
