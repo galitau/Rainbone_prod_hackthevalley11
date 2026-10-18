@@ -113,14 +113,14 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual(set(user["tool_outputs"][0]["statements"]), {"cut"})
             self.assertNotIn("arf0", json.dumps(user["tool_outputs"]))
             return gemini_reply("cut")
-        result = self.run_question("How do I cut the bone open?", handle)
+        result = self.run_question("Which control reveals the interior?", handle)
         self.assertEqual(result.tools_used, ["get_page_guide"])
         self.assertEqual(result.provider, "gemini")
         self.assertIn("Cut-away", result.answer)
         self.assertEqual(len(requests), 2)
         self.assertTrue({"triage", "evidence", "writer", "critic"}.issubset({e.stage for e in result.trace}))
         self.assertTrue(all(e.ms >= 0 for e in result.trace))
-        cached = self.run_question("How do I cut the bone open?", handle)
+        cached = self.run_question("Which control reveals the interior?", handle)
         self.assertEqual([e.stage for e in cached.trace], ["cache"])
         self.assertEqual(len(requests), 2)
 
@@ -149,6 +149,52 @@ class PipelineTests(unittest.TestCase):
         self.assertIn("47.1%", result.answer)
         self.assertEqual(result.provider, "template")
         self.assertTrue(any(e.tool == "compare_with_cohort" for e in result.trace))
+
+    def test_chips_and_followups_use_their_exact_evidence_even_if_native_would_misroute(self):
+        examples = [
+            ("What does the 47% mean?", "arf0", {"arf0", "arf0_rank"}, "47.1%"),
+            ("Is the 47% a fracture chance?", "arf0", {"arf0", "arf0_rank"}, "47.1%"),
+            ("Why isn't the 11% a fracture chance?", "stress_index", {"stress_index"}, "10.55%"),
+            ("How do I cut the bone open?", "cut", {"cut"}, "Cut-away"),
+            ("What does the 2.2–3.2× fall ratio mean?", "fall_ratio", {"fall_ratio", "strength"}, "2.17"),
+            ("Why is 10.55% not a fracture chance?", "stress_index", {"stress_index"}, "10.55%"),
+        ]
+        wrong = ask_triage.TriageResult([ask_tools.ToolCall("get_fea_result", {})], "wrong-model", "wrong native route")
+        for question, primary, allowed, expected in examples:
+            with self.subTest(question=question), mock.patch.object(ask_triage, "triage", return_value=wrong) as triage:
+                def handle(request):
+                    body = json.loads(request.content)
+                    self.assertNotIn("tools", body)
+                    user = json.loads(body["contents"][0]["parts"][0]["text"])
+                    self.assertEqual(set(user["allowed_statement_ids"]), allowed)
+                    self.assertEqual(user["required_statement_id"], primary)
+                    self.assertEqual(user["response_example"], {"text": primary})
+                    return gemini_reply(primary)
+                answer = self.run_question(question, handle)
+                triage.assert_not_called()
+                self.assertEqual(answer.provider, "gemini")
+                self.assertIn(expected, answer.answer)
+                self.assertIn("Rules triage", answer.trace[0].summary)
+
+    def test_substrings_do_not_take_over_unknown_question_routing(self):
+        for question in ("Explain the 2011 reference", "What is record 147?", "Execute a sample", "Explain 11.81 percent"):
+            with self.subTest(question=question):
+                self.assertIsNone(ask.known_selection(question))
+
+    def test_builtin_refusal_or_irrelevant_selection_falls_to_correct_rules_answer(self):
+        for selection in ("unavailable", "strength", '["arf0"]', "some secret rejected prose"):
+            with self.subTest(selection=selection):
+                ask._answers.clear()
+                llm.reset_cooldowns()
+                def handle(request):
+                    return groq_reply(selection) if request.url.host == "api.groq.com" else gemini_reply(selection)
+                answer = self.run_question("What does the 47% mean?", handle)
+                self.assertEqual(answer.provider, "template")
+                self.assertIn("47.1%", answer.answer)
+                self.assertNotIn("only answer questions", answer.answer)
+                summaries = " ".join(e.summary for e in answer.trace)
+                self.assertNotIn("secret rejected prose", summaries)
+                self.assertTrue(any(e.stage == "critic" and e.summary.startswith("Code critic rejected:") for e in answer.trace))
 
     def test_evidence_timeout_keeps_worker_capacity_until_real_work_finishes(self):
         entered, release, finished = threading.Event(), threading.Event(), threading.Event()
