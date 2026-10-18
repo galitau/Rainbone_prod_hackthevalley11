@@ -8,6 +8,7 @@ is documented in [`scripts/vultr_pipeline/README.md`](../scripts/vultr_pipeline/
 ```bash
 cd backend
 python -m pip install -r requirements.txt
+python -m pip install -r requirements-dev.txt   # only to run the tests (moto)
 uvicorn main:app --reload
 ```
 

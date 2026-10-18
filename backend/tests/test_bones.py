@@ -17,7 +17,11 @@ os.environ.setdefault("MOTO_S3_CUSTOM_ENDPOINTS", ENDPOINT)  # read when moto is
 
 import boto3  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
-from moto import mock_aws  # noqa: E402
+
+try:
+    from moto import mock_aws  # noqa: E402
+except ImportError:  # moto is a test-only dependency (backend/requirements-dev.txt)
+    raise unittest.SkipTest("moto not installed: pip install -r requirements-dev.txt") from None
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import main  # noqa: E402
