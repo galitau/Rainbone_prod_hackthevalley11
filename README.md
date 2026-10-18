@@ -568,6 +568,15 @@ optional FSL bone segmentation.
 - **One solve at a time,** every in-memory cache belongs to one API process, and the
   saved-answer file assumes a single server process.
 
+## What's next
+
+Future work, not features of this build:
+
+- **A timeline per resident, once the right approvals are in place.** With resident consent, research-ethics review and a PHIPA-compliant agreement with the care home, and a de-identified resident ID, each new CT is solved and compared with her last one, so a care team sees her bone's strength and stress changing between scans, before a fall. Tiger Cloud already stores every simulation run as a time series; this adds the resident ID and the comparison.
+- **Privacy work that has to come first.** Real records would need consent, encryption, access control and Ontario PHIPA compliance. Today Rainbone stores no patient records, and nobody should upload a real patient's CT to the public demo, because history file names are publicly readable.
+- **Calibrated bone material.** CT-density-based stiffness instead of one assumed modulus, plus a mesh-convergence study.
+- **All 101 HFValid femurs solved,** so our solve can be compared with each woman's recorded outcome.
+
 ## Team
 
 Built at Hack the Valley 11 by Galit Tauber, Camila Rojas, Jisara Wuttikreekiat and
