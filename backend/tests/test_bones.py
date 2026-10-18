@@ -32,25 +32,25 @@ S3_ENV = {
     "VULTR_S3_SECRET_KEY": SECRET_KEY,
     "VULTR_S3_BUCKET": BUCKET,
 }
-# Test data in the shape pipeline.py writes; not a pipeline output.
+# Test data in the shape of the processed/manifest.json that pipeline.py writes; not a pipeline output.
 MANIFEST = {
-    "schema": "rainbowbone.bones/v1",
-    "generated_at": "2026-10-18T03:00:00Z",
-    "dataset": {"title": "CTPelvic1K Dataset", "licence": "cc-by-4.0", "doi": "10.5281/zenodo.4588403"},
-    "segmentation_tool": {"name": "TotalSegmentator", "licence": "Apache-2.0"},
-    "mesh": {"format": "VTK XML PolyData (.vtp)"},
-    "notice": "Research data. Not for clinical use.",
+    "generated_utc": "2026-10-18T03:00:00Z",
+    "dataset": {"name": "CTPelvic1K (sub-dataset 6, CLINIC)", "license": "cc-by-4.0", "doi": "10.5281/zenodo.4588403"},
+    "segmentation_tool": {"name": "TotalSegmentator", "license": "Apache-2.0"},
+    "mesh_method": "vtkFlyingEdges3D ...",
     "cases": [
         {
             "case_id": "dataset6_CLINIC_0060",
-            "timings_seconds": {"totalsegmentator": 12.5},
+            "bones": [{"name": "sacrum", "source_ts_classes": ["sacrum", "vertebrae_S1"], "volume_ml": 101.5}],
+            "validation": {"dice_overlap_matched": {"sacrum_incl_S1": 0.9}},
             "files": [
-                {"kind": "mask", "bone": "sacrum", "key": "ctpelvic1k/dataset6_CLINIC_0060/masks/sacrum.nii.gz",
-                 "bytes": 4, "sha256": "a" * 64, "content_type": "application/gzip", "volume_ml": 101.5},
-                {"kind": "mesh", "bone": "sacrum", "key": "ctpelvic1k/dataset6_CLINIC_0060/meshes/sacrum.vtp",
-                 "bytes": 10, "sha256": "b" * 64, "content_type": "application/xml", "triangles": 1200},
-                {"kind": "mesh", "bone": "x", "key": "private/other-project.bin",
-                 "bytes": 1, "sha256": "c" * 64, "content_type": "application/octet-stream"},
+                {"path": "dataset6_CLINIC_0060/masks/vertebrae_S1.nii.gz", "kind": "mask", "ts_class": "vertebrae_S1",
+                 "bytes": 4, "sha256": "a" * 64},
+                {"path": "dataset6_CLINIC_0060/meshes/sacrum.vtp", "kind": "mesh", "bone": "sacrum",
+                 "bytes": 10, "sha256": "b" * 64, "triangles": 1200},
+                {"path": "../private/other-project.bin", "kind": "mesh", "bytes": 1, "sha256": "c" * 64},
+                {"path": "/etc/passwd", "kind": "mesh", "bytes": 1, "sha256": "c" * 64},
+                {"kind": "mesh", "key": "private/no-path.bin", "bytes": 1, "sha256": "c" * 64},
             ],
         }
     ],
@@ -109,13 +109,21 @@ class PresignedUrlTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.text)
         payload = response.json()
         self.assertEqual(payload["expires_in_seconds"], 900)
-        self.assertEqual(payload["dataset"]["licence"], "cc-by-4.0")
+        self.assertEqual(payload["dataset"]["license"], "cc-by-4.0")
         self.assertNotIn(SECRET_KEY, response.text)
 
+        self.assertEqual(payload["mesh_method"], "vtkFlyingEdges3D ...")
         files = payload["cases"][0]["files"]
-        self.assertEqual([f["key"] for f in files], [f["key"] for f in MANIFEST["cases"][0]["files"][:2]])
-        self.assertEqual(files[0]["volume_ml"], 101.5)  # extra manifest fields pass through
-        self.assertEqual(payload["cases"][0]["timings_seconds"], {"totalsegmentator": 12.5})
+        self.assertEqual([f["key"] for f in files], [
+            "ctpelvic1k/dataset6_CLINIC_0060/masks/vertebrae_S1.nii.gz",
+            "ctpelvic1k/dataset6_CLINIC_0060/meshes/sacrum.vtp",
+        ])  # unsafe and missing paths are not signed
+        self.assertEqual([f["content_type"] for f in files], ["application/gzip", "application/xml"])
+        self.assertEqual(files[0]["ts_class"], "vertebrae_S1")
+        self.assertEqual(files[1]["triangles"], 1200)  # extra manifest fields pass through
+        case = payload["cases"][0]
+        self.assertEqual(case["bones"][0]["source_ts_classes"], ["sacrum", "vertebrae_S1"])
+        self.assertEqual(case["validation"], {"dice_overlap_matched": {"sacrum_incl_S1": 0.9}})
         for entry in files:
             url = urlparse(entry["url"])
             query = parse_qs(url.query)

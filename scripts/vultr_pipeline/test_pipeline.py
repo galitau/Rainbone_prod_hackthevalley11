@@ -5,7 +5,6 @@ Run from the repository root:  python -m unittest discover -s scripts/vultr_pipe
 """
 from __future__ import annotations
 
-import base64
 import contextlib
 import gzip
 import hashlib
@@ -14,7 +13,6 @@ import json
 import os
 import shutil
 import stat
-import struct
 import sys
 import tarfile
 import tempfile
@@ -29,6 +27,7 @@ os.environ.setdefault("MOTO_S3_CUSTOM_ENDPOINTS", ENDPOINT)  # read when moto is
 import boto3  # noqa: E402
 import nibabel as nib  # noqa: E402
 import numpy as np  # noqa: E402
+import vtk  # noqa: E402
 from moto import mock_aws  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -65,6 +64,7 @@ FAKE_TOTALSEGMENTATOR = textwrap.dedent(
     parser = argparse.ArgumentParser()
     parser.add_argument("-i", dest="input", required=True)
     parser.add_argument("-o", dest="output", required=True)
+    parser.add_argument("-rp", "--report")
     parser.add_argument("-rs", "--roi_subset", nargs="+", required=True)
     parser.add_argument("-f", "--fast", action="store_true")
     parser.add_argument("-d", "--device")
@@ -78,6 +78,11 @@ FAKE_TOTALSEGMENTATOR = textwrap.dedent(
         if bone not in empty:
             mask[2 + n:8 + n, 3:9, 2:7] = 1
         nib.save(nib.Nifti1Image(mask, image.affine), str(out / f"{bone}.nii.gz"))
+    if args.report:
+        report = {"totalsegmentator_version": "2.18.0", "nnunetv2_version": "fake", "torch_version": "fake",
+                  "task": "total", "device": args.device or "gpu", "fast": args.fast,
+                  "roi_subset": args.roi_subset, "runtime_seconds": 0.01}
+        Path(args.report).write_text(json.dumps(report))
     """
 )
 
@@ -169,13 +174,41 @@ def five_case_archives() -> tuple[bytes, bytes]:
     return data, masks
 
 
-def read_vtp_array(xml: str, name: str, dtype) -> np.ndarray:
-    start = xml.index(f'Name="{name}"')
-    body = xml[xml.index(">", start) + 1: xml.index("</DataArray>", start)]
-    raw = base64.b64decode(body)
-    (length,) = struct.unpack("<I", raw[:4])
-    assert length == len(raw) - 4, "VTK header byte count must match the payload"
-    return np.frombuffer(raw[4:], dtype=dtype)
+def read_vtp(path: Path):
+    reader = vtk.vtkXMLPolyDataReader()
+    reader.SetFileName(str(path))
+    reader.Update()
+    return reader.GetOutput()
+
+
+def sphere_mask(shape=(40, 40, 20), spacing=(0.8, 0.8, 2.0), centre=(20, 20, 10), radius_mm=10.0) -> np.ndarray:
+    grid = np.indices(shape).astype(float)
+    distance = np.sqrt((((grid.T - np.array(centre)) * np.array(spacing)) ** 2).sum(axis=-1)).T
+    return distance <= radius_mm
+
+
+# Key sets of the manifest that the data run wrote to rb-data/ctpelvic1k/processed/manifest.json
+# (the format both the pipeline and backend/routes_bones.py use).
+MANIFEST_KEYS = {"generated_utc", "dataset", "segmentation_tool", "mesh_method", "cases"}
+DATASET_KEYS = {"name", "zenodo_record", "doi", "license", "creators", "citation", "citation_preprint", "repository",
+                "expert_label_map", "expert_label_map_source", "description", "source_archives", "acquisition_note"}
+TOOL_KEYS = {"name", "version", "license", "citation", "also_cite", "repository", "disclaimer"}
+CASE_KEYS = {"case_id", "source_file", "expert_mask_file", "bones", "files", "segmentation", "validation"}
+SOURCE_FILE_KEYS = {"archive", "archive_member", "bytes", "sha256", "shape_ijk", "spacing_mm", "orientation"}
+EXPERT_FILE_KEYS = {"archive", "archive_member", "bytes", "sha256", "volume_ml"}
+BONE_KEYS = {"name", "source_ts_classes", "voxels", "volume_ml", "connected_components", "touches_scan_z_limit"}
+MASK_FILE_KEYS = {"path", "kind", "ts_class", "format", "bytes", "sha256"}
+MESH_FILE_KEYS = {"path", "kind", "bone", "format", "bytes", "sha256", "points", "triangles",
+                  "triangles_before_decimation", "marching_cubes_triangles", "decimation", "triangle_budget",
+                  "normals_outward", "watertight", "boundary_edges", "nonmanifold_edges", "bounds_ras_mm",
+                  "surface_area_mm2", "enclosed_volume_ml"}
+SEGMENTATION_KEYS = {"tool", "version", "nnunetv2_version", "torch_version", "task", "roi_subset", "fast", "device",
+                     "wall_s", "tool_reported_runtime_s", "attempts", "cpu_benchmark_same_settings",
+                     "first_run_wall_s_incl_weight_download", "first_run_note"}
+VALIDATION_KEYS = {"metric", "expert_grid_identical_to_ts_grid", "dice", "dice_pelvis_union_sacrum_hips",
+                   "lr_cross_check_dice", "expert_lr_names_swapped_vs_totalsegmentator", "dice_overlap_matched",
+                   "centroid_x_ras_mm", "not_compared", "informational_dice_vertebrae_L5_vs_expert_lumbar_vertebra"}
+ROI = ["sacrum", "vertebrae_S1", "hip_left", "hip_right", "femur_left", "femur_right", "vertebrae_L5"]
 
 
 class TempDirTest(unittest.TestCase):
@@ -193,8 +226,10 @@ class ZenodoTests(TempDirTest):
         self.assertEqual(files[DATA].url, zenodo.data_url())
         self.assertEqual(files[DATA].size, len(data))
         self.assertEqual(files[DATA].md5, hashlib.md5(data).hexdigest())
-        self.assertEqual(dataset["licence"], "cc-by-4.0")
-        self.assertEqual(dataset["doi_url"], "https://doi.org/10.5281/zenodo.4588403")
+        self.assertEqual(dataset["license"], "cc-by-4.0")
+        self.assertEqual(dataset["doi"], "10.5281/zenodo.4588403")
+        self.assertEqual(dataset["zenodo_record"], "https://zenodo.org/records/4588403")
+        self.assertIn("IJCARS", dataset["citation"])
 
     def test_unknown_file_name_lists_what_the_record_has(self):
         zenodo = FakeZenodo(*five_case_archives())
@@ -266,53 +301,76 @@ class StreamingTests(TempDirTest):
 
 
 class MeshTests(TempDirTest):
-    def test_sphere_mesh_is_closed_outward_and_in_world_millimetres(self):
-        grid = np.indices((40, 40, 20)).astype(float)
-        spacing = np.array([0.8, 0.8, 2.0])
-        centre = np.array([20, 20, 10])
-        radius_mm = 10.0
-        distance = np.sqrt((((grid.T - centre) * spacing) ** 2).sum(axis=-1)).T
-        mask = (distance <= radius_mm).astype(np.uint8)
-        # Mirrored x axis (negative determinant), as in many CT headers.
-        affine = np.diag([-0.8, 0.8, 2.0, 1.0])
-        affine[:3, 3] = [100.0, -50.0, 30.0]
-        path = self.tmp / "sphere.nii.gz"
-        path.write_bytes(nifti_gz(mask, affine))
-        mesh = pipeline.mask_to_mesh(path, step_size=1)
-        volume = pipeline.signed_volume(mesh["verts"].astype(float), mesh["faces"])
-        self.assertGreater(volume, 0)
-        self.assertAlmostEqual(volume / 1000.0, mesh["volume_ml"], delta=0.1 * mesh["volume_ml"])
-        world_centre = affine[:3, :3] @ centre + affine[:3, 3]
-        self.assertTrue(np.allclose(mesh["verts"].mean(axis=0), world_centre, atol=1.0))
-        self.assertTrue(np.allclose(np.linalg.norm(mesh["normals"], axis=1), 1.0, atol=1e-4))
-        outward = ((mesh["verts"] - world_centre) * mesh["normals"]).sum(axis=1)
-        self.assertGreater((outward > 0).mean(), 0.99)
+    def test_sphere_mesh_is_watertight_outward_and_in_world_millimetres(self):
+        mask = sphere_mask()
+        for flip in (False, True):  # a mirrored x axis (negative determinant) is common in CT headers
+            affine = np.diag([-0.8 if flip else 0.8, 0.8, 2.0, 1.0])
+            affine[:3, 3] = [100.0, -50.0, 30.0]
+            poly, info = pipeline.mesh_from_mask(mask, affine, target_tris=100000)
+            self.assertTrue(info["watertight"])
+            self.assertTrue(info["normals_outward"])
+            self.assertEqual((info["boundary_edges"], info["nonmanifold_edges"]), (0, 0))
+            self.assertEqual(info["decimation"], "none")
+            mask_ml = mask.sum() * 0.8 * 0.8 * 2.0 / 1000.0
+            self.assertAlmostEqual(info["enclosed_volume_ml"], mask_ml, delta=0.05 * mask_ml)
+            world_centre = affine[:3, :3] @ np.array([20, 20, 10]) + affine[:3, 3]
+            bounds = np.array(info["bounds_ras_mm"]).reshape(3, 2)
+            self.assertTrue(np.allclose(bounds.mean(axis=1), world_centre, atol=1.0), (flip, bounds))
+            self.assertTrue(np.allclose(bounds[:, 1] - bounds[:, 0], 20.0, atol=2.5), (flip, bounds))
+            normals = poly.GetPointData().GetNormals()
+            self.assertEqual(normals.GetNumberOfTuples(), poly.GetNumberOfPoints())
 
-    def test_vtp_round_trip(self):
-        mask = np.zeros((12, 12, 12), np.uint8)
-        mask[3:9, 4:8, 2:10] = 1
-        path = self.tmp / "box.nii.gz"
-        path.write_bytes(nifti_gz(mask))
-        mesh = pipeline.mask_to_mesh(path, step_size=1)
-        out = self.tmp / "box.vtp"
-        pipeline.write_vtp(out, mesh["verts"], mesh["faces"], mesh["normals"])
-        xml = out.read_text()
-        self.assertIn('header_type="UInt32"', xml)
-        self.assertTrue(np.array_equal(read_vtp_array(xml, "Points", "<f4").reshape(-1, 3), mesh["verts"]))
-        self.assertTrue(np.array_equal(read_vtp_array(xml, "connectivity", "<i4").reshape(-1, 3), mesh["faces"]))
-        offsets = read_vtp_array(xml, "offsets", "<i4")
-        self.assertEqual(offsets[-1], 3 * len(mesh["faces"]))
+    def test_meshes_above_the_budget_are_decimated_and_stay_watertight(self):
+        # At 500 triangles quadric decimation tears this small sphere; the ladder falls back to
+        # topology-preserving DecimatePro, which may stop above the budget but stays closed.
+        for budget in (2000, 500):
+            _, info = pipeline.mesh_from_mask(sphere_mask(), np.diag([0.8, 0.8, 2.0, 1.0]), target_tris=budget)
+            self.assertGreater(info["triangles_before_decimation"], budget)
+            self.assertNotEqual(info["decimation"], "none")
+            self.assertLess(info["triangles"], info["triangles_before_decimation"])
+            self.assertTrue(info["watertight"] and info["normals_outward"], (budget, info))
 
-    def test_tiny_bone_falls_back_to_step_one_and_empty_mask_has_no_mesh(self):
-        mask = np.zeros((20, 20, 20), np.uint8)
-        mask[10, 10, 10] = 1
-        path = self.tmp / "dot.nii.gz"
-        path.write_bytes(nifti_gz(mask))
-        mesh = pipeline.mask_to_mesh(path, step_size=4)
-        self.assertEqual(mesh["voxels"], 1)
-        self.assertGreater(len(mesh["faces"]), 0)
-        path.write_bytes(nifti_gz(np.zeros((20, 20, 20), np.uint8)))
-        self.assertNotIn("faces", pipeline.mask_to_mesh(path))
+    def test_vtp_is_zlib_binary_and_reads_back(self):
+        poly, info = pipeline.mesh_from_mask(sphere_mask(), np.diag([0.8, 0.8, 2.0, 1.0]), target_tris=100000)
+        out = self.tmp / "sphere.vtp"
+        pipeline.write_vtp(poly, out)
+        head = out.read_bytes()[:400].decode("ascii", "replace")
+        self.assertIn('compressor="vtkZLibDataCompressor"', head)
+        self.assertIn('header_type="UInt32"', head)
+        back = read_vtp(out)
+        self.assertEqual(back.GetNumberOfPoints(), info["points"])
+        self.assertEqual(back.GetNumberOfPolys(), info["triangles"])
+        self.assertIsNotNone(back.GetPointData().GetNormals())
+
+    def test_union_of_classes(self):
+        self.assertEqual(pipeline.roi_classes(pipeline.DEFAULT_BONES), ROI)
+        self.assertEqual(pipeline.roi_classes(["sacrum", "rib_left_1"]), ["sacrum", "vertebrae_S1", "rib_left_1"])
+
+
+class ValidationTests(unittest.TestCase):
+    def test_swapped_hip_names_and_sacrum_with_s1(self):
+        shape = (30, 10, 10)
+        ts = {name: np.zeros(shape, bool) for name in ("sacrum", "vertebrae_S1", "hip_left", "hip_right", "vertebrae_L5")}
+        ts["sacrum"][12:18, :, 0:5] = True
+        ts["vertebrae_S1"][12:18, :, 5:8] = True
+        ts["hip_left"][0:8] = True  # low x
+        ts["hip_right"][22:30] = True  # high x
+        expert = np.zeros(shape, np.int16)
+        expert[12:18, :, 0:8] = 1  # sacrum including S1
+        expert[0:8] = 2  # named "right_hip" but where TotalSegmentator's hip_left is
+        expert[22:30] = 3
+        affine = np.diag([2.0, 1.0, 1.0, 1.0])
+        result = pipeline.validate_against_reference(ts, expert, affine, same_grid=True)
+        self.assertEqual(set(result), VALIDATION_KEYS)
+        self.assertEqual(result["dice"]["hip_left_vs_expert_left_hip"], 0.0)
+        self.assertTrue(result["expert_lr_names_swapped_vs_totalsegmentator"])
+        self.assertEqual(result["dice_overlap_matched"]["hip_left"], 1.0)
+        self.assertEqual(result["dice_overlap_matched"]["hip_right"], 1.0)
+        self.assertEqual(result["dice_overlap_matched"]["sacrum_incl_S1"], 1.0)
+        self.assertLess(result["dice_overlap_matched"]["sacrum_ts_sacrum_only"], 1.0)
+        self.assertEqual(result["dice_pelvis_union_sacrum_hips"], 1.0)
+        self.assertEqual(result["centroid_x_ras_mm"]["ts_hip_left"], result["centroid_x_ras_mm"]["expert_right_hip(2)"])
+        self.assertIsNone(result["informational_dice_vertebrae_L5_vs_expert_lumbar_vertebra"])  # both empty
 
 
 class UploadTests(TempDirTest):
@@ -407,7 +465,8 @@ class CommandLineTests(TempDirTest):
         code, out, _ = self.main("--cases", "3", "--fast", "--device", "mps", "--dry-run")
         self.assertEqual(code, 0)
         plan = json.loads(out)
-        self.assertEqual(plan["command"][-4:], ["femur_right", "--fast", "--device", "mps"])
+        self.assertEqual(plan["command"][-11:], ["--roi_subset", *ROI, "--fast", "--device", "mps"])
+        self.assertEqual(plan["meshes"]["sacrum"], ["sacrum", "vertebrae_S1"])
         self.assertEqual(plan["data_file"]["checksum"], f"md5:{hashlib.md5(self.zenodo.blobs[self.zenodo.data_url()]).hexdigest()}")
         self.assertEqual(self.zenodo.calls, [self.zenodo.api_url])
         self.assertEqual(self.ts_calls(), [])
@@ -418,6 +477,13 @@ class CommandLineTests(TempDirTest):
             code = pipeline.main(["--work-dir", str(pipeline.REPO_ROOT / "public" / "scans"), "--skip-upload"])
         self.assertEqual(code, 2)
         self.assertIn("inside the repository", err.getvalue())
+
+    def test_work_dir_and_from_processed_are_exclusive(self):
+        for argv in ([], ["--work-dir", str(self.work), "--from-processed", str(self.tmp)]):
+            with contextlib.redirect_stderr(io.StringIO()) as err, self.assertRaises(SystemExit) as caught:
+                pipeline.parse_args(argv)
+            self.assertEqual(caught.exception.code, 2)
+            self.assertIn("exactly one of --work-dir and --from-processed", err.getvalue())
 
     def test_bone_names_that_are_not_class_names_are_refused(self):
         with contextlib.redirect_stderr(io.StringIO()) as err, self.assertRaises(SystemExit) as caught:
@@ -431,41 +497,76 @@ class CommandLineTests(TempDirTest):
         self.assertEqual(code, 1)
         self.assertIn("TotalSegmentator exited with code 3", err)
 
+    def bucket(self):
+        s3 = boto3.client("s3", region_name="ewr1", endpoint_url=ENDPOINT)
+        s3.create_bucket(Bucket=BUCKET, CreateBucketConfiguration={"LocationConstraint": "ewr1"})
+        return s3
+
+    def keys(self, s3) -> list[str]:
+        return sorted(o["Key"] for o in s3.list_objects_v2(Bucket=BUCKET).get("Contents", []))
+
     @mock_aws()
     def test_end_to_end_upload_then_rerun(self):
         os.environ.update(S3_ENV)
         os.environ["FAKE_TS_EMPTY"] = "femur_right"
-        boto3.client("s3", region_name="ewr1", endpoint_url=ENDPOINT).create_bucket(
-            Bucket=BUCKET, CreateBucketConfiguration={"LocationConstraint": "ewr1"}
-        )
+        s3 = self.bucket()
         code, out, err = self.main("--cases", "2", "--fast", "--device", "cpu")
         self.assertEqual(code, 0, err)
 
         calls = self.ts_calls()
         self.assertEqual(len(calls), 2)
         for call in calls:
-            roi = call[call.index("--roi_subset") + 1: call.index("--roi_subset") + 6]
-            self.assertEqual(roi, ["sacrum", "hip_left", "hip_right", "femur_left", "femur_right"])
+            roi = call[call.index("--roi_subset") + 1: call.index("--roi_subset") + 1 + len(ROI)]
+            self.assertEqual(roi, ROI)
             self.assertIn("--fast", call)
             self.assertEqual(call[call.index("--device") + 1], "cpu")
+            self.assertTrue(call[call.index("--report") + 1].endswith(".report.json"))
 
-        s3 = boto3.client("s3", region_name="ewr1", endpoint_url=ENDPOINT)
         manifest = json.loads(s3.get_object(Bucket=BUCKET, Key="ctpelvic1k/manifest.json")["Body"].read())
-        self.assertEqual(manifest["dataset"]["licence"], "cc-by-4.0")
+        self.assertEqual(set(manifest), MANIFEST_KEYS)
+        self.assertEqual(set(manifest["dataset"]), DATASET_KEYS)
+        self.assertEqual(set(manifest["segmentation_tool"]), TOOL_KEYS)
+        self.assertEqual(manifest["dataset"]["license"], "cc-by-4.0")
+        self.assertEqual(set(manifest["dataset"]["source_archives"]), {DATA, MASKS})
+        self.assertIn("stopped after the first 2 CT member(s)", manifest["dataset"]["acquisition_note"])
         self.assertIn("ryai.230024", manifest["segmentation_tool"]["citation"])
+        self.assertEqual(manifest["segmentation_tool"]["version"], "2.18.0")
+        self.assertIn("vtkFlyingEdges3D", manifest["mesh_method"])
         self.assertEqual([c["case_id"] for c in manifest["cases"]], ["dataset6_CLINIC_0007", "dataset6_CLINIC_0060"])
+
         case = manifest["cases"][0]
-        self.assertEqual(case["bones_without_voxels"], ["femur_right"])
-        self.assertFalse(case["source"]["archive_md5_verified"])
-        self.assertEqual(case["segmentation"]["command"][:5], ["TotalSegmentator", "-i", "<ct.nii.gz>", "-o", "<output_dir>"])
-        for key in ("extract", "totalsegmentator", "meshes"):
-            self.assertIsInstance(case["timings_seconds"][key], float)
-        kinds = sorted((f["kind"], f["bone"]) for f in case["files"] if f["bone"] == "sacrum" or f["kind"] == "reference_mask")
-        self.assertEqual(kinds, [("mask", "sacrum"), ("mesh", "sacrum"), ("reference_mask", None)])
+        self.assertEqual(set(case), CASE_KEYS)
+        self.assertEqual(set(case["source_file"]), SOURCE_FILE_KEYS)
+        self.assertEqual(set(case["expert_mask_file"]), EXPERT_FILE_KEYS)
+        self.assertEqual(case["expert_mask_file"]["archive_member"], "ipcai2021_dataset6_Anonymized/dataset6_CLINIC_0007_mask_4label.nii.gz")
+        self.assertEqual(set(case["segmentation"]), SEGMENTATION_KEYS)
+        self.assertEqual(case["segmentation"]["roi_subset"], ROI)
+        self.assertEqual((case["segmentation"]["device"], case["segmentation"]["nnunetv2_version"]), ("cpu", "fake"))
+        self.assertEqual(set(case["validation"]), VALIDATION_KEYS)
+        self.assertTrue(case["validation"]["expert_grid_identical_to_ts_grid"])
+
+        bones = {b["name"]: b for b in case["bones"]}
+        self.assertEqual(list(bones), list(pipeline.DEFAULT_BONES))
+        self.assertEqual(bones["sacrum"]["source_ts_classes"], ["sacrum", "vertebrae_S1"])
+        self.assertEqual(set(bones["sacrum"]), BONE_KEYS | {"mesh_enclosed_volume_ml"})
+        self.assertEqual(set(bones["femur_right"]), BONE_KEYS)  # empty: no mesh
+        self.assertEqual(bones["femur_right"]["voxels"], 0)
+
+        masks = [f for f in case["files"] if f["kind"] == "mask"]
+        meshes = [f for f in case["files"] if f["kind"] == "mesh"]
+        self.assertEqual([f["ts_class"] for f in masks], ROI)
+        self.assertEqual([f["bone"] for f in meshes], [b for b in pipeline.DEFAULT_BONES if b != "femur_right"])
+        for entry in masks:
+            self.assertEqual(set(entry), MASK_FILE_KEYS)
+        for entry in meshes:
+            self.assertEqual(set(entry), MESH_FILE_KEYS)
+            self.assertTrue(entry["watertight"] and entry["normals_outward"])
         for entry in case["files"]:
-            body = s3.get_object(Bucket=BUCKET, Key=entry["key"])["Body"].read()
+            self.assertEqual(entry["path"].split("/")[0], case["case_id"])
+            body = s3.get_object(Bucket=BUCKET, Key=f"ctpelvic1k/{entry['path']}")["Body"].read()
             self.assertEqual(hashlib.sha256(body).hexdigest(), entry["sha256"])
             self.assertEqual(len(body), entry["bytes"])
+        self.assertEqual(len(self.keys(s3)), 1 + sum(len(c["files"]) for c in manifest["cases"]))
         self.assertNotIn(str(self.tmp), json.dumps(manifest))  # no local paths in the published manifest
         first = json.loads(out[out.rindex("\n{"):])["upload"]
         self.assertEqual(first["skipped"], 0)
@@ -477,9 +578,77 @@ class CommandLineTests(TempDirTest):
         self.assertEqual(self.zenodo.bytes_read[self.zenodo.data_url()], data_bytes)
         self.assertEqual(len(self.ts_calls()), 2)
         second = json.loads(out[out.rindex("\n{"):])["upload"]
-        self.assertLessEqual(second["uploaded"], 1)  # manifest.json, whose timestamp and timings change
+        self.assertLessEqual(second["uploaded"], 1)  # manifest.json, whose time stamp changes
         self.assertEqual(second["uploaded"] + second["skipped"], first["uploaded"])
         self.assertIn("unchanged ctpelvic1k/dataset6_CLINIC_0060/meshes/sacrum.vtp", out)
+
+    def processed(self) -> Path:
+        code, _, err = self.main("--cases", "1", "--skip-upload")
+        self.assertEqual(code, 0, err)
+        return self.work / "processed"
+
+    def publish(self, processed: Path, *extra: str) -> tuple[int, str, str]:
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = pipeline.main(["--from-processed", str(processed), *extra])
+        return code, out.getvalue(), err.getvalue()
+
+    @mock_aws()
+    def test_from_processed_uploads_what_the_manifest_lists_without_zenodo_or_totalsegmentator(self):
+        processed = self.processed()
+        calls_before, ts_before = list(self.zenodo.calls), len(self.ts_calls())
+        os.environ.update(S3_ENV)
+        s3 = self.bucket()
+        code, out, err = self.publish(processed, "--cors-origin", "http://localhost:3200")
+        self.assertEqual(code, 0, err)
+        self.assertEqual(self.zenodo.calls, calls_before)
+        self.assertEqual(len(self.ts_calls()), ts_before)
+        manifest = json.loads((processed / "manifest.json").read_text())
+        listed = sorted(["ctpelvic1k/manifest.json"] + [f"ctpelvic1k/{f['path']}" for c in manifest["cases"] for f in c["files"]])
+        self.assertEqual(self.keys(s3), listed)
+        rules = s3.get_bucket_cors(Bucket=BUCKET)["CORSRules"]
+        self.assertEqual(rules[0]["AllowedOrigins"], ["http://localhost:3200"])
+        summary = json.loads(out[out.rindex("\n{"):])
+        self.assertEqual(summary["upload"]["uploaded"], len(listed))
+
+    @mock_aws()
+    def test_from_processed_refuses_a_file_that_differs_from_the_manifest(self):
+        processed = self.processed()
+        os.environ.update(S3_ENV)
+        s3 = self.bucket()
+        mesh = processed / "dataset6_CLINIC_0060" / "meshes" / "hip_left.vtp"
+        mesh.write_bytes(mesh.read_bytes() + b" ")
+        code, _, err = self.publish(processed)
+        self.assertEqual(code, 1)
+        self.assertIn("dataset6_CLINIC_0060/meshes/hip_left.vtp does not match", err)
+        self.assertEqual(self.keys(s3), [])
+
+    def test_from_processed_refuses_unsafe_paths_and_local_paths(self):
+        processed = self.processed()
+        manifest_path = processed / "manifest.json"
+        original = manifest_path.read_text()
+        manifest = json.loads(original)
+        manifest["cases"][0]["files"][0]["path"] = "../outside.nii.gz"
+        manifest_path.write_text(json.dumps(manifest))
+        code, _, err = self.publish(processed, "--skip-upload")
+        self.assertEqual(code, 1)
+        self.assertIn("unsafe path '../outside.nii.gz'", err)
+
+        manifest = json.loads(original)
+        manifest["cases"][0]["note"] = str(processed.resolve() / "x")
+        manifest_path.write_text(json.dumps(manifest))
+        code, _, err = self.publish(processed, "--skip-upload")
+        self.assertEqual(code, 2)
+        self.assertIn("contains a local path", err)
+
+    def test_from_processed_needs_the_upload_variables_unless_skipping(self):
+        processed = self.processed()
+        code, _, err = self.publish(processed)
+        self.assertEqual(code, 2)
+        self.assertIn("VULTR_S3_ENDPOINT", err)
+        code, out, err = self.publish(processed, "--dry-run")
+        self.assertEqual(code, 0, err)
+        self.assertEqual(json.loads(out[out.index("{"):])["upload"], "skipped (--dry-run)")
 
 
 if __name__ == "__main__":

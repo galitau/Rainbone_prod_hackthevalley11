@@ -1,14 +1,16 @@
 """GET /api/bones: the bone manifest in Vultr Object Storage, with short-lived pre-signed URLs.
 
 scripts/vultr_pipeline/pipeline.py uploads the masks, meshes and ctpelvic1k/manifest.json as
-private objects. This route reads that manifest and signs a GET URL for every file it lists, so
-the browser fetches the files straight from the bucket without seeing any credentials.
+private objects. Each manifest file entry has a "path" relative to the manifest; its object key
+is ctpelvic1k/<path>. This route reads that manifest and signs a GET URL for every file it lists,
+so the browser fetches the files straight from the bucket without seeing any credentials.
 """
 from __future__ import annotations
 
 import json
 import logging
 import os
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 from urllib.parse import urlparse
@@ -20,6 +22,9 @@ ENV_VARS = ("VULTR_S3_ENDPOINT", "VULTR_S3_ACCESS_KEY", "VULTR_S3_SECRET_KEY", "
 BUCKET_PREFIX = "ctpelvic1k/"
 MANIFEST_KEY = BUCKET_PREFIX + "manifest.json"
 URL_TTL_SECONDS = 15 * 60
+# A manifest "path": relative, "/"-separated, no "." or ".." segments (same rule as pipeline.py).
+SAFE_PATH_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9._-]*(?:/[A-Za-z0-9_][A-Za-z0-9._-]*)*$")
+CONTENT_TYPES = {".nii.gz": "application/gzip", ".vtp": "application/xml", ".json": "application/json"}
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["bones"])
@@ -28,9 +33,11 @@ router = APIRouter(tags=["bones"])
 class BoneFile(BaseModel):
     model_config = ConfigDict(extra="allow")
 
-    kind: str = Field(description="mask, mesh, reference_mask or ct.")
-    bone: Optional[str] = Field(default=None, description="TotalSegmentator class name, e.g. sacrum.")
-    key: str
+    kind: str = Field(description="mask, mesh or ct.")
+    bone: Optional[str] = Field(default=None, description="Mesh bone, e.g. sacrum (TotalSegmentator sacrum + vertebrae_S1).")
+    ts_class: Optional[str] = Field(default=None, description="TotalSegmentator class of a mask, e.g. vertebrae_S1.")
+    path: str = Field(description="Path relative to the manifest, e.g. <case>/meshes/sacrum.vtp.")
+    key: str = Field(description="Object key: ctpelvic1k/<path>.")
     url: str = Field(description="Pre-signed GET URL, valid for expires_in_seconds.")
     bytes: int
     sha256: str
@@ -48,12 +55,18 @@ class BonesResponse(BaseModel):
     expires_in_seconds: int
     expires_at: datetime
     manifest_key: str
-    generated_at: Optional[str] = None
+    generated_utc: Optional[str] = None
     dataset: dict[str, Any] = Field(default_factory=dict)
     segmentation_tool: dict[str, Any] = Field(default_factory=dict)
-    mesh: dict[str, Any] = Field(default_factory=dict)
-    notice: Optional[str] = None
+    mesh_method: Optional[str] = None
     cases: list[BoneCase]
+
+
+def _content_type(path: str) -> str:
+    for suffix, content_type in CONTENT_TYPES.items():
+        if path.endswith(suffix):
+            return content_type
+    return "application/octet-stream"
 
 
 def _settings() -> dict[str, str]:
@@ -124,24 +137,24 @@ def list_bones() -> BonesResponse:
     for case in raw_cases:
         files = []
         for entry in case.get("files") or []:
-            key = entry.get("key", "") if isinstance(entry, dict) else ""
-            if not key.startswith(BUCKET_PREFIX):
-                continue  # only sign objects the pipeline owns
+            path = entry.get("path") if isinstance(entry, dict) else None
+            if not isinstance(path, str) or not SAFE_PATH_RE.match(path):
+                continue  # only sign objects under ctpelvic1k/
+            key = BUCKET_PREFIX + path
             url = client.generate_presigned_url(
                 "get_object",
                 Params={"Bucket": settings["bucket"], "Key": key},
                 ExpiresIn=URL_TTL_SECONDS,
             )
-            files.append({**entry, "url": url})
+            files.append({**entry, "key": key, "content_type": _content_type(path), "url": url})
         cases.append({**case, "files": files})
     return BonesResponse(
         expires_in_seconds=URL_TTL_SECONDS,
         expires_at=datetime.now(timezone.utc) + timedelta(seconds=URL_TTL_SECONDS),
         manifest_key=MANIFEST_KEY,
-        generated_at=manifest.get("generated_at"),
+        generated_utc=manifest.get("generated_utc"),
         dataset=manifest.get("dataset") or {},
         segmentation_tool=manifest.get("segmentation_tool") or {},
-        mesh=manifest.get("mesh") or {},
-        notice=manifest.get("notice"),
+        mesh_method=manifest.get("mesh_method"),
         cases=cases,
     )

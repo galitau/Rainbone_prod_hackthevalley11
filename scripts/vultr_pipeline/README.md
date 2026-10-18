@@ -9,14 +9,23 @@ bucket (S3-compatible). For each CT case it:
    only the first `--cases N` `.nii.gz` scans, then stops reading. It also downloads
    the whole `CTPelvic1K_dataset6_Anonymized_mask.tar.gz` (21,918,797 bytes),
    checks its MD5, and keeps the dataset's own annotation for the same cases.
-3. Runs the TotalSegmentator CLI with `--roi_subset` (default `sacrum hip_left
-   hip_right femur_left femur_right`, the class names of TotalSegmentator 2.18.0's
-   `total` task), plus `--fast` and `--device` when given.
-4. Writes one mask (`.nii.gz`) and one surface mesh (`.vtp`, the format the
-   viewer's vtk.js `XMLPolyDataReader` reads) per bone, and `manifest.json`.
-5. Uploads them as **private** objects with boto3, with the right content type and
-   the file's sha256 in the object metadata. Unchanged objects are skipped.
-   `manifest.json` is uploaded last.
+3. Runs the TotalSegmentator CLI with `--roi_subset sacrum vertebrae_S1 hip_left
+   hip_right femur_left femur_right vertebrae_L5` (class names of TotalSegmentator
+   2.18.0's `total` task) and `--report`, plus `--fast` and `--device` when given.
+4. Writes `processed/`: every TotalSegmentator mask (`.nii.gz`, unmodified), one
+   watertight surface mesh per bone (`.vtp`, the format the viewer's vtk.js
+   `XMLPolyDataReader` reads), Dice scores against the dataset's own annotation, and
+   `manifest.json`. The sacrum mesh is TotalSegmentator's `sacrum` plus
+   `vertebrae_S1`, because TotalSegmentator labels S1 separately: against the
+   CTPelvic1K sacrum label that raised Dice from 0.81-0.83 to 0.91-0.94 on cases
+   0012, 0023 and 0060.
+5. Uploads `processed/` under `ctpelvic1k/` as **private** objects with boto3, with
+   the right content type and the file's sha256 in the object metadata. Unchanged
+   objects are skipped. `manifest.json` is uploaded last.
+
+`--from-processed <dir>` skips steps 1-4 and uploads a `processed/` folder made
+earlier (by this script or by the same steps run by hand), after checking every
+file against the manifest.
 
 The backend then serves `GET /api/bones` (see `backend/README.md`): it reads the
 manifest from the bucket and returns 15-minute pre-signed GET URLs, so the
@@ -108,24 +117,28 @@ python scripts/vultr_pipeline/pipeline.py --work-dir /data/ctpelvic1k --cases 2 
 # Upload too, and allow the front end's origin to GET the pre-signed URLs.
 python scripts/vultr_pipeline/pipeline.py --work-dir /data/ctpelvic1k --cases 2 --device mps \
   --cors-origin http://localhost:3000
+
+# Upload a processed/ folder that already exists (no Zenodo, no TotalSegmentator).
+python scripts/vultr_pipeline/pipeline.py --from-processed /data/ctpelvic1k/processed \
+  --cors-origin http://localhost:3000
 ```
 
 | Option | Default | Meaning |
 |---|---|---|
-| `--work-dir` | required | Downloads, scans, masks and meshes. Refused if inside the repository |
+| `--work-dir` | one of these two | Downloads, scans, masks and meshes. Refused if inside the repository |
+| `--from-processed` | one of these two | Upload an existing `processed/` folder: every file `manifest.json` lists must be there with the listed bytes and sha256, under a relative path, and the manifest must hold no local path. Refused if inside the repository |
 | `--record` | `4588403` | Zenodo record |
 | `--data-file` | `CTPelvic1K_dataset6_data.tar.gz` | CT tarball in the record. Only dataset 6 has been run |
 | `--mask-file` | `CTPelvic1K_dataset6_Anonymized_mask.tar.gz` | Reference annotations, matched to scans by case id (`<case>_data` / `<case>_mask_*`); `''` to skip |
 | `--cases` | `1` | Number of cases taken from the start of the tarball |
-| `--bones` | `sacrum hip_left hip_right femur_left femur_right` | TotalSegmentator `--roi_subset` class names (list them with `TotalSegmentator --list-classes`) |
+| `--bones` | `sacrum hip_left hip_right femur_left femur_right vertebrae_L5` | Bones to mesh. `sacrum` is TotalSegmentator's `sacrum` + `vertebrae_S1`; any other TotalSegmentator class name (list them with `TotalSegmentator --list-classes`) is meshed on its own. `--roi_subset` is the union of their classes |
 | `--device` | TotalSegmentator's (`gpu`) | `gpu`, `cpu`, `mps` or `gpu:N`. Without CUDA, TotalSegmentator falls back to CPU; on Apple silicon use `mps` |
 | `--fast` | off | TotalSegmentator's 3 mm model |
-| `--mesh-step` | `2` | Marching-cubes step in voxels; larger is coarser and smaller |
 | `--verify-archive` | off | Read the whole CT tarball to check its MD5 (downloads all 8.8 GB) |
 | `--include-ct` | off | Also upload each source CT volume |
 | `--cors-origin` | none | Replace the bucket's CORS rules with GET/HEAD from these origins (repeatable) |
 | `--totalseg-bin` | `TotalSegmentator` on `PATH` | TotalSegmentator executable |
-| `--dry-run` | off | No downloads, segmentation or uploads |
+| `--dry-run` | off | No downloads, segmentation or uploads (with `--from-processed`: check the folder only) |
 | `--skip-upload` | off | Everything except the upload |
 
 ## Outputs
@@ -133,32 +146,54 @@ python scripts/vultr_pipeline/pipeline.py --work-dir /data/ctpelvic1k --cases 2 
 ```
 <work-dir>/
   raw/ct/<case>_data.nii.gz, index.json        extracted scans (never uploaded unless --include-ct)
-  raw/reference/<case>_mask_4label.nii.gz       CTPelvic1K annotation
+  raw/reference/<case>_mask_4label.nii.gz       CTPelvic1K annotation (used for Dice, not uploaded)
   downloads/CTPelvic1K_dataset6_Anonymized_mask.tar.gz
-  segment/<case>/<bone>.nii.gz, segmentation.json   TotalSegmentator output
+  segment/<case>/<class>.nii.gz, segmentation.json   TotalSegmentator output
+  segment/<case>.report.json                    TotalSegmentator --report (versions, device, runtime)
   cases/<case>.json                             one manifest entry per case
-  bucket/ctpelvic1k/...                         exactly what is uploaded, under the same keys
+  processed/                                    exactly what is uploaded, under ctpelvic1k/
+    manifest.json
+    <case>/masks/<class>.nii.gz
+    <case>/meshes/<bone>.vtp
+    <case>/ct/<file>.nii.gz                     --include-ct only
 ```
 
-Bucket keys:
+Each file in `manifest.json` has a `path` relative to the manifest; its object key
+is `ctpelvic1k/<path>`. Content types: `.nii.gz` `application/gzip`, `.vtp`
+`application/xml`, `.json` `application/json`.
 
-```
-ctpelvic1k/manifest.json
-ctpelvic1k/<case>/masks/<bone>.nii.gz        application/gzip
-ctpelvic1k/<case>/meshes/<bone>.vtp          application/xml
-ctpelvic1k/<case>/reference/<file>.nii.gz    application/gzip
-ctpelvic1k/<case>/ct/<file>.nii.gz           application/gzip (--include-ct only)
-```
+`manifest.json`:
 
-`manifest.json` lists every case with its source (record, file, URL, MD5, whether
-the archive MD5 was checked), the CT's sha256, bytes, shape and spacing, the
-TotalSegmentator settings and command (with placeholders instead of local paths),
-timings in seconds (extract, TotalSegmentator, meshes), bones with no voxels, and
-for each file its key, bytes, sha256 and content type. Masks also carry the voxel
-count and volume in mL; meshes carry point and triangle counts. Mesh coordinates
-are the CT's NIfTI world coordinates (RAS+, millimetres); triangles face outward
-and every point has a normal. A bone with no voxels (outside the scan) gets no
-mask or mesh in the bucket and is listed in `bones_without_voxels`.
+| Field | Content |
+|---|---|
+| `generated_utc` | Time stamp |
+| `dataset` | Name, Zenodo record, DOI, licence, creators and citation (from the Zenodo API), preprint, repository, the CTPelvic1K label map and its source file, the source archives (bytes, MD5, URL) and how they were read |
+| `segmentation_tool` | TotalSegmentator version, licence, citation, nnU-Net citation, repository, "not a medical device" disclaimer |
+| `mesh_method` | How meshes are made, with the VTK version |
+| `cases[].source_file` | Archive member, bytes, sha256, shape, spacing, orientation of the CT |
+| `cases[].expert_mask_file` | The CTPelvic1K annotation used for Dice, with its label volumes in mL |
+| `cases[].bones` | Per bone: source TotalSegmentator classes, voxels, volume (mL), connected components, whether it touches the top or bottom slice of the scan (cut off), mesh volume |
+| `cases[].files` | Masks (`kind: mask`, `ts_class`) and meshes (`kind: mesh`, `bone`) with `path`, `format`, `bytes`, `sha256`; meshes also carry points, triangles, decimation, watertight check, bounds (RAS mm), surface area and enclosed volume |
+| `cases[].segmentation` | TotalSegmentator, nnU-Net and PyTorch versions, task, classes, `--fast`, device, wall time and TotalSegmentator's own runtime |
+| `cases[].validation` | Dice against the annotation (see below), hip centroids, and what was not compared |
+
+Meshes: `vtkFlyingEdges3D` at 0.5 on the binary mask (zero-padded, so bones cut off
+by the scan are still closed), transformed by the NIfTI affine to RAS world
+millimetres, windowed-sinc smoothing, then decimation to a per-bone triangle budget.
+A mesh is kept only if it has no boundary or non-manifold edges and its triangles
+face outward; otherwise the next step of the ladder is tried (topology-preserving
+`vtkDecimatePro`, then 1.5x, 2x and 3x the budget), and the run fails if none passes.
+Files are VTK XML PolyData, binary with zlib compression. A bone with no voxels gets
+no mesh; its `bones` entry shows `voxels: 0`.
+
+Dice: CTPelvic1K labels 1 sacrum, 2 right_hip, 3 left_hip, 4 lumbar_vertebra
+(`nnunet/dataset_conversion/JstPelvisSegmentation_5label.py` in the CTPelvic1K
+repository). On the dataset 6 cases checked, label 2 ("right_hip") lies where
+TotalSegmentator's `hip_left` is, so matched by name the hip Dice is 0.0. The
+manifest therefore also scores each hip against the opposite label, sets
+`expert_lr_names_swapped_vs_totalsegmentator`, and keeps the pairing that overlaps
+in `dice_overlap_matched`. Femurs have no CTPelvic1K label, and label 4 is the
+lumbar spine in view rather than L5 alone, so the L5 Dice is informational only.
 
 ## Integrity and re-runs
 
@@ -172,7 +207,10 @@ mask or mesh in the bucket and is listed in `bones_without_voxels`.
 - Re-runs reuse extracted scans (`raw/ct/index.json`) and TotalSegmentator output
   made with the same classes, `--fast` and TotalSegmentator version. Uploads skip
   every object whose stored sha256 metadata matches; `manifest.json` changes on
-  each run (time stamp and timings) and is uploaded again.
+  each run (time stamp) and is uploaded again.
+- Before any upload, every file the manifest lists is checked against its bytes and
+  sha256, its path must be relative with no `..`, and the manifest must not contain
+  the folder's own path or the home directory. Any failure uploads nothing.
 
 ## Tests
 

@@ -5,15 +5,16 @@
 2. Stream the CT tarball and extract only the first N `.nii.gz` cases. The small
    reference-mask tarball is downloaded whole and its MD5 is checked.
 3. Run the TotalSegmentator CLI on each case with --roi_subset.
-4. Write one mask and one surface mesh (VTK XML PolyData, .vtp) per bone, and manifest.json.
-5. Upload them as private objects with boto3. Objects whose sha256 is unchanged are skipped.
+4. Write processed/: every TotalSegmentator mask, one watertight surface mesh (VTK XML
+   PolyData, .vtp) per bone, Dice against the CTPelvic1K reference masks, and manifest.json.
+5. Upload processed/ under ctpelvic1k/ as private objects with boto3. Objects whose sha256 is
+   unchanged are skipped. --from-processed uploads an existing processed/ folder instead.
 
 Credentials come only from the VULTR_S3_* environment variables. See README.md.
 """
 from __future__ import annotations
 
 import argparse
-import base64
 import gzip
 import hashlib
 import http.client
@@ -21,7 +22,6 @@ import json
 import os
 import re
 import shutil
-import struct
 import subprocess
 import sys
 import tarfile
@@ -35,21 +35,39 @@ from urllib.request import Request, urlopen
 
 import nibabel as nib
 import numpy as np
-from nibabel.affines import apply_affine
-from skimage.measure import marching_cubes
+import vtk
+from nibabel.processing import resample_from_to
+from scipy import ndimage
+from vtk.util import numpy_support
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ZENODO_API = "https://zenodo.org/api/records/{record}"
 DEFAULT_RECORD = "4588403"
 DEFAULT_DATA_FILE = "CTPelvic1K_dataset6_data.tar.gz"
 DEFAULT_MASK_FILE = "CTPelvic1K_dataset6_Anonymized_mask.tar.gz"
-# TotalSegmentator 2.18.0 class names (task "total"), from totalsegmentator/map_to_binary.py.
-DEFAULT_BONES = ("sacrum", "hip_left", "hip_right", "femur_left", "femur_right")
+# Mesh bone -> the TotalSegmentator 2.18.0 classes (task "total", `TotalSegmentator --list-classes`)
+# whose union it is. TotalSegmentator labels S1 apart from "sacrum", so the anatomical sacrum is
+# their union: against the CTPelvic1K sacrum label, Dice was 0.81-0.83 for "sacrum" alone and
+# 0.91-0.94 for the union on dataset 6 cases 0012, 0023 and 0060.
+MESH_BONES = {
+    "sacrum": ("sacrum", "vertebrae_S1"),
+    "hip_left": ("hip_left",),
+    "hip_right": ("hip_right",),
+    "femur_left": ("femur_left",),
+    "femur_right": ("femur_right",),
+    "vertebrae_L5": ("vertebrae_L5",),
+}
+DEFAULT_BONES = tuple(MESH_BONES)
+# Triangle budget per mesh before decimation; a bone not listed gets DEFAULT_TRIANGLE_BUDGET.
+TRIANGLE_BUDGET = {"sacrum": 30000, "hip_left": 40000, "hip_right": 40000,
+                   "femur_left": 30000, "femur_right": 30000, "vertebrae_L5": 20000}
+DEFAULT_TRIANGLE_BUDGET = 30000
 DEVICE_RE = re.compile(r"^(gpu|cpu|mps|gpu:\d+)$")  # what TotalSegmentator's -d/--device accepts
 BONE_RE = re.compile(r"^[A-Za-z0-9_]+$")  # class names become file names and object keys
-# backend/routes_bones.py reads <BUCKET_PREFIX>/manifest.json.
+# manifest.json "path" values: relative, "/"-separated, no "." or ".." segments, no hidden files.
+SAFE_PATH_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9._-]*(?:/[A-Za-z0-9_][A-Za-z0-9._-]*)*$")
+# backend/routes_bones.py reads <BUCKET_PREFIX>/manifest.json; object key = <BUCKET_PREFIX>/<path>.
 BUCKET_PREFIX = "ctpelvic1k"
-MANIFEST_SCHEMA = "rainbowbone.bones/v1"
 ENV_VARS = ("VULTR_S3_ENDPOINT", "VULTR_S3_ACCESS_KEY", "VULTR_S3_SECRET_KEY", "VULTR_S3_BUCKET")
 USER_AGENT = "RainbowBone-vultr-pipeline/1.0"
 CHUNK = 1 << 20
@@ -57,19 +75,54 @@ CONTENT_TYPES = {".nii.gz": "application/gzip", ".vtp": "application/xml", ".jso
 # "<case>_data.nii.gz" and "<case>_mask_4label.nii.gz" share one case id.
 CASE_RE = re.compile(r"^(?P<case>[A-Za-z0-9][A-Za-z0-9._-]*?)(?:_data|_mask(?:_[A-Za-z0-9]+)?)?\.nii\.gz$")
 
-CTPELVIC1K_REPOSITORY = "https://github.com/MIRACLE-Center/CTPelvic1K"
+MASK_FORMAT = "nifti-gz uint8 binary, same grid as source CT (TotalSegmentator output, unmodified)"
+MESH_FORMAT = "VTK XML PolyData, binary zlib, float32 points, RAS world mm"
+CT_FORMAT = "nifti-gz CT volume, unmodified member of the source archive"
+MESH_METHOD = (
+    "vtkFlyingEdges3D at 0.5 on the binary mask (1-voxel zero padding, closed surface), transformed by the "
+    "NIfTI affine to RAS world mm, vtkWindowedSincPolyDataFilter (20 iterations, passband 0.05), "
+    "vtkQuadricDecimation to a per-bone triangle budget (vtkDecimatePro with PreserveTopology, or a larger "
+    "budget, when needed to stay watertight), point normals. VTK "
+)
+
+CTPELVIC1K_REPOSITORY = "https://github.com/MIRACLE-Center/CTPelvic1K (formerly ICT-MIRACLE-lab/CTPelvic1K)"
+CTPELVIC1K_PREPRINT = (
+    "Pengbo Liu, Hu Han, Yuanqi Du, Heqin Zhu, Yinhao Li, Feng Gu, Honghu Xiao, Jun Li, Chunpeng Zhao, "
+    "Li Xiao, Xinbao Wu, S. Kevin Zhou. Deep Learning to Segment Pelvic Bones: Large-scale CT Datasets and "
+    "Baseline Models. arXiv:2012.08721 (2020)."
+)
+# CTPelvic1K reference-mask labels, from MIRACLE-Center/CTPelvic1K
+# nnunet/dataset_conversion/JstPelvisSegmentation_5label.py (json_dict['labels']).
+EXPERT_LABELS = {1: "sacrum", 2: "right_hip", 3: "left_hip", 4: "lumbar_vertebra"}
+EXPERT_LABEL_SOURCE = "nnunet/dataset_conversion/JstPelvisSegmentation_5label.py (json_dict['labels'])"
+DATASET_DESCRIPTION = (
+    "Pelvic CT with expert pelvic-bone segmentation (sacrum, left/right hip, lumbar vertebra)."
+)
+DATASET_NAMES = {"CTPelvic1K_dataset6_data.tar.gz": "CTPelvic1K (sub-dataset 6, CLINIC)"}
+DATASET_NOTES = {
+    "CTPelvic1K_dataset6_data.tar.gz": (
+        " Sub-dataset 6 (CLINIC) is preoperative pelvic-fracture CT without metal artifacts per the dataset README."
+    ),
+}
+# TotalSegmentator attribution, from its README (github.com/wasserth/TotalSegmentator).
 TOTALSEGMENTATOR = {
     "name": "TotalSegmentator",
-    "repository": "https://github.com/wasserth/TotalSegmentator",
-    "licence": "Apache-2.0 (code and the weights of the default 'total' task)",
+    "license": "Apache-2.0 (code and the 'total' task; no licence key required for 'total')",
     "citation": (
-        "Wasserthal, J., Breit, H.-C., Meyer, M.T., Pradella, M., Hinck, D., Sauter, A.W., Heye, T., "
-        "Boll, D., Cyriac, J., Yang, S., Bach, M., Segeroth, M., 2023. TotalSegmentator: Robust "
-        "Segmentation of 104 Anatomic Structures in CT Images. Radiology: Artificial Intelligence. "
-        "https://doi.org/10.1148/ryai.230024"
+        "Wasserthal, J., Breit, H.-C., Meyer, M.T., Pradella, M., Hinck, D., Sauter, A.W., Heye, T., Boll, D., "
+        "Cyriac, J., Yang, S., Bach, M., Segeroth, M., 2023. TotalSegmentator: Robust Segmentation of 104 "
+        "Anatomic Structures in CT Images. Radiology: Artificial Intelligence. https://doi.org/10.1148/ryai.230024"
     ),
-    "also_cite": "nnU-Net, https://github.com/MIC-DKFZ/nnUNet",
+    "also_cite": (
+        "Isensee, F., Jaeger, P. F., Kohl, S. A., Petersen, J., & Maier-Hein, K. H. (2021). nnU-Net: a "
+        "self-configuring method for deep learning-based biomedical image segmentation. Nature Methods, 18(2), 203-211."
+    ),
+    "repository": "https://github.com/wasserth/TotalSegmentator",
+    "disclaimer": "TotalSegmentator is not a medical device and is not intended for clinical usage (per its README).",
 }
+# Dice pairs: TotalSegmentator class -> CTPelvic1K label of the same name, and the swapped pairs.
+DICE_PAIRS = (("sacrum", 1), ("hip_left", 3), ("hip_right", 2))
+DICE_CROSS = (("hip_left", 2), ("hip_right", 3))
 
 
 class PipelineError(Exception):
@@ -183,16 +236,15 @@ def resolve_record(record_id: str, names: Iterable[str]) -> tuple[dict[str, Any]
             f"Available: {', '.join(sorted(available))}"
         )
     metadata = record.get("metadata", {})
-    doi = record.get("doi")
+    references = metadata.get("references") or []
     attribution = {
         "title": metadata.get("title"),
-        "zenodo_record": str(record.get("id", record_id)),
-        "doi": doi,
-        "doi_url": f"https://doi.org/{doi}" if doi else None,
-        "licence": (metadata.get("license") or {}).get("id"),
+        "zenodo_record": (record.get("links") or {}).get("self_html")
+        or f"https://zenodo.org/records/{record.get('id', record_id)}",
+        "doi": record.get("doi"),
+        "license": (metadata.get("license") or {}).get("id"),
         "creators": [creator.get("name") for creator in metadata.get("creators", [])],
-        "references": metadata.get("references", []),
-        "repository": CTPELVIC1K_REPOSITORY,
+        "citation": references[0] if references else None,
     }
     return attribution, {name: available[name] for name in wanted}
 
@@ -300,7 +352,11 @@ def stream_extract_cases(remote: RemoteFile, dest: Path, limit: int, verify_arch
 
 
 def extract_cases(remote: RemoteFile, raw_dir: Path, limit: int, verify_archive: bool) -> dict[str, Any]:
-    """Reuse earlier extractions recorded in index.json when they cover `limit` cases."""
+    """Reuse earlier extractions recorded in index.json when they cover `limit` cases.
+
+    "streamed_cases" is how many scans were read from the archive in all, which can be more
+    than the `limit` returned in "cases".
+    """
     index_path = raw_dir / "index.json"
     if index_path.is_file():
         index = json.loads(index_path.read_text())
@@ -311,11 +367,11 @@ def extract_cases(remote: RemoteFile, raw_dir: Path, limit: int, verify_archive:
             cases = index["cases"][:limit]
             if all((raw_dir / c["file"]).is_file() and (raw_dir / c["file"]).stat().st_size == c["bytes"] for c in cases):
                 log(f"Reusing {len(cases)} extracted case(s) from {index_path}")
-                return {**index, "cases": cases, "reused": True}
+                return {**index, "cases": cases, "streamed_cases": len(index["cases"]), "reused": True}
     log(f"Streaming {remote.key} ({remote.size:,} bytes) for the first {limit} case(s)...")
     index = stream_extract_cases(remote, raw_dir, limit, verify_archive)
     index_path.write_text(json.dumps(index, indent=2))
-    return {**index, "reused": False}
+    return {**index, "streamed_cases": len(index["cases"]), "reused": False}
 
 
 def download_verified(remote: RemoteFile, dest_dir: Path) -> Path:
@@ -346,10 +402,13 @@ def download_verified(remote: RemoteFile, dest_dir: Path) -> Path:
     return target
 
 
-def extract_reference_masks(archive_path: Path, case_ids: set[str], dest: Path) -> dict[str, Path]:
-    """Copy the dataset's own annotation for each wanted case out of a local mask tarball."""
+def extract_reference_masks(archive_path: Path, case_ids: set[str], dest: Path) -> dict[str, tuple[Path, str]]:
+    """Copy the dataset's own annotation for each wanted case out of a local mask tarball.
+
+    Returns case id -> (extracted file, archive member name).
+    """
     dest.mkdir(parents=True, exist_ok=True)
-    found: dict[str, Path] = {}
+    found: dict[str, tuple[Path, str]] = {}
     with tarfile.open(archive_path, mode="r:gz") as archive:
         for member in archive:
             case_id = case_id_for(member.name)
@@ -358,11 +417,16 @@ def extract_reference_masks(archive_path: Path, case_ids: set[str], dest: Path) 
             target = dest / PurePosixPath(member.name).name
             with archive.extractfile(member) as source, target.open("wb") as out:
                 shutil.copyfileobj(source, out, CHUNK)
-            found[case_id] = target
+            found[case_id] = (target, member.name)
     return found
 
 
 # --------------------------------------------------------------------------- TotalSegmentator
+
+
+def roi_classes(bones: Iterable[str]) -> list[str]:
+    """TotalSegmentator classes needed for these mesh bones, in order, without repeats."""
+    return list(dict.fromkeys(cls for bone in bones for cls in MESH_BONES.get(bone, (bone,))))
 
 
 def find_totalsegmentator(explicit: str | None = None) -> str | None:
@@ -377,8 +441,10 @@ def totalsegmentator_version(executable: str) -> str:
     return (result.stdout or result.stderr).strip() or "unknown"
 
 
-def totalsegmentator_command(executable: str, ct: str, out: str, bones: list[str], fast: bool, device: str | None) -> list[str]:
-    command = [executable, "-i", ct, "-o", out, "--roi_subset", *bones]
+def totalsegmentator_command(
+    executable: str, ct: str, out: str, report: str, classes: list[str], fast: bool, device: str | None
+) -> list[str]:
+    command = [executable, "-i", ct, "-o", out, "--report", report, "--roi_subset", *classes]
     if fast:
         command.append("--fast")
     if device:
@@ -386,134 +452,284 @@ def totalsegmentator_command(executable: str, ct: str, out: str, bones: list[str
     return command
 
 
-def segment_case(executable: str, version: str, ct_path: Path, out_dir: Path, bones: list[str], fast: bool, device: str | None) -> dict[str, Any]:
-    """Run TotalSegmentator unless this folder already holds masks made with the same settings."""
-    settings = {"roi_subset": bones, "fast": fast, "totalsegmentator_version": version}
-    record_path = out_dir / "segmentation.json"
-    if record_path.is_file():
-        previous = json.loads(record_path.read_text())
-        if previous.get("settings") == settings and all((out_dir / f"{bone}.nii.gz").is_file() for bone in bones):
+def segment_case(
+    executable: str, version: str, ct_path: Path, out_dir: Path, classes: list[str], fast: bool, device: str | None
+) -> dict[str, Any]:
+    """Run TotalSegmentator unless this folder already holds masks made with the same settings.
+
+    Returns the case's "segmentation" record; versions and runtime come from TotalSegmentator's
+    own --report JSON.
+    """
+    settings = {"roi_subset": classes, "fast": fast, "totalsegmentator_version": version}
+    state_path = out_dir / "segmentation.json"
+    if state_path.is_file():
+        previous = json.loads(state_path.read_text())
+        reusable = previous.get("settings") == settings and "record" in previous
+        if reusable and all((out_dir / f"{c}.nii.gz").is_file() for c in classes):
             log(f"  reusing TotalSegmentator masks in {out_dir}")
-            return {**previous, "reused": True}
+            return previous["record"]
     out_dir.mkdir(parents=True, exist_ok=True)
-    command = totalsegmentator_command(executable, str(ct_path), str(out_dir), bones, fast, device)
+    report_path = out_dir.with_name(out_dir.name + ".report.json")
+    report_path.unlink(missing_ok=True)
+    command = totalsegmentator_command(executable, str(ct_path), str(out_dir), str(report_path), classes, fast, device)
     log("  " + " ".join(command))
     started = time.perf_counter()
     result = subprocess.run(command)
-    seconds = round(time.perf_counter() - started, 3)
+    wall = round(time.perf_counter() - started, 2)
     if result.returncode != 0:
         raise PipelineError(f"TotalSegmentator exited with code {result.returncode} on {ct_path.name}.")
-    missing = [bone for bone in bones if not (out_dir / f"{bone}.nii.gz").is_file()]
+    missing = [c for c in classes if not (out_dir / f"{c}.nii.gz").is_file()]
     if missing:
         raise PipelineError(f"TotalSegmentator wrote no mask for {', '.join(missing)} ({ct_path.name}).")
-    # Placeholders instead of local paths: the manifest is served to browsers.
-    public_command = totalsegmentator_command("TotalSegmentator", "<ct.nii.gz>", "<output_dir>", bones, fast, device)
-    record = {"settings": settings, "device": device, "command": public_command, "seconds": seconds}
-    record_path.write_text(json.dumps(record, indent=2))
-    return {**record, "reused": False}
+    report = json.loads(report_path.read_text()) if report_path.is_file() else {}
+    used_device = report.get("device", device)
+    record = {
+        "tool": "TotalSegmentator",
+        "version": report.get("totalsegmentator_version", version),
+        "nnunetv2_version": report.get("nnunetv2_version"),
+        "torch_version": report.get("torch_version"),
+        "task": report.get("task", "total"),
+        "roi_subset": classes,
+        "fast": fast,
+        "device": used_device,
+        "wall_s": wall,
+        "tool_reported_runtime_s": report.get("runtime_seconds"),
+        "attempts": [{"device": used_device, "returncode": result.returncode, "wall_s": wall, "ok": True}],
+        "cpu_benchmark_same_settings": None,
+        "first_run_wall_s_incl_weight_download": None,
+        "first_run_note": None,
+    }
+    state_path.write_text(json.dumps({"settings": settings, "record": record}, indent=2))
+    return record
+
+
+# --------------------------------------------------------------------------- validation
+
+
+def dice(a: np.ndarray, b: np.ndarray) -> float | None:
+    total = int(a.sum()) + int(b.sum())
+    return None if total == 0 else round(2.0 * int(np.logical_and(a, b).sum()) / total, 4)
+
+
+def validate_against_reference(ts: dict[str, np.ndarray], expert: np.ndarray, affine: np.ndarray, same_grid: bool) -> dict[str, Any]:
+    """Voxelwise Dice of TotalSegmentator masks against the CTPelvic1K reference labels.
+
+    CTPelvic1K's left/right hip names are the reverse of TotalSegmentator's on the dataset 6 cases
+    checked so far, so the hips are also scored against the opposite label ("lr_cross_check_dice")
+    and "dice_overlap_matched" keeps whichever pairing overlaps.
+    """
+
+    def union(*names: str) -> np.ndarray | None:
+        return np.logical_or.reduce([ts[n] for n in names]) if all(n in ts for n in names) else None
+
+    def score(mask: np.ndarray | None, labels) -> float | None:
+        return None if mask is None else dice(mask, np.isin(expert, labels))
+
+    def centroid_x(mask: np.ndarray | None) -> float | None:
+        if mask is None or not mask.any():
+            return None
+        ijk = np.argwhere(mask).mean(axis=0)
+        return round(float((affine @ np.r_[ijk, 1.0])[0]), 1)
+
+    pairs = {f"{b}_vs_expert_{EXPERT_LABELS[label]}": score(ts.get(b), label) for b, label in DICE_PAIRS}
+    pairs["sacrum_plus_vertebrae_S1_vs_expert_sacrum"] = score(union("sacrum", "vertebrae_S1"), 1)
+    cross = {f"{b}_vs_expert_{EXPERT_LABELS[label]}": score(ts.get(b), label) for b, label in DICE_CROSS}
+    swapped = (cross["hip_left_vs_expert_right_hip"] or 0) > (pairs["hip_left_vs_expert_left_hip"] or 0) and (
+        cross["hip_right_vs_expert_left_hip"] or 0
+    ) > (pairs["hip_right_vs_expert_right_hip"] or 0)
+    return {
+        "metric": "Dice (2|A∩B|/(|A|+|B|)), voxelwise on the source CT grid",
+        "expert_grid_identical_to_ts_grid": bool(same_grid),
+        "dice": pairs,
+        "dice_pelvis_union_sacrum_hips": score(union("sacrum", "vertebrae_S1", "hip_left", "hip_right"), [1, 2, 3]),
+        "lr_cross_check_dice": cross,
+        "expert_lr_names_swapped_vs_totalsegmentator": bool(swapped),
+        "dice_overlap_matched": {
+            "sacrum_ts_sacrum_only": pairs["sacrum_vs_expert_sacrum"],
+            "sacrum_incl_S1": pairs["sacrum_plus_vertebrae_S1_vs_expert_sacrum"],
+            "hip_left": cross["hip_left_vs_expert_right_hip"] if swapped else pairs["hip_left_vs_expert_left_hip"],
+            "hip_right": cross["hip_right_vs_expert_left_hip"] if swapped else pairs["hip_right_vs_expert_right_hip"],
+        },
+        "centroid_x_ras_mm": {
+            "ts_hip_left": centroid_x(ts.get("hip_left")),
+            "ts_hip_right": centroid_x(ts.get("hip_right")),
+            "expert_left_hip(3)": centroid_x(expert == 3),
+            "expert_right_hip(2)": centroid_x(expert == 2),
+        },
+        "not_compared": (
+            "femurs are not labelled in CTPelvic1K; CTPelvic1K label 4 is 'lumbar_vertebra' (lumbar spine in the "
+            "field of view, not L5 alone), so the L5 Dice below is informational only"
+        ),
+        "informational_dice_vertebrae_L5_vs_expert_lumbar_vertebra": score(ts.get("vertebrae_L5"), 4),
+    }
 
 
 # --------------------------------------------------------------------------- meshes
 
 
-def mask_to_mesh(mask_path: Path, step_size: int = 2) -> dict[str, Any]:
-    """Marching-cubes surface of a binary mask, in NIfTI world coordinates (RAS+, mm)."""
-    image = nib.load(str(mask_path))
-    mask = np.asanyarray(image.dataobj) > 0
-    voxels = int(mask.sum())
-    zooms = [float(z) for z in image.header.get_zooms()[:3]]
-    result: dict[str, Any] = {"voxels": voxels, "volume_ml": round(voxels * float(np.prod(zooms)) / 1000.0, 3)}
-    if voxels == 0:
-        return result
-    indices = np.argwhere(mask)
-    low, high = indices.min(axis=0), indices.max(axis=0) + 1
-    # One empty voxel of padding closes surfaces that touch the edge of the scan.
-    crop = np.pad(mask[low[0]:high[0], low[1]:high[1], low[2]:high[2]], 1).astype(np.uint8)
-    for step in dict.fromkeys((step_size, 1)):  # a coarse step can miss a very small bone
-        try:
-            verts, faces, _normals, _values = marching_cubes(crop, level=0.5, step_size=step, allow_degenerate=False)
-        except (ValueError, RuntimeError):
-            continue
-        if len(faces):
-            break
+def mesh_from_mask(mask: np.ndarray, affine: np.ndarray, target_tris: int) -> tuple[Any, dict[str, Any]]:
+    """Watertight, outward-facing surface of a binary mask in NIfTI world coordinates (RAS+, mm).
+
+    Raises PipelineError when no decimation in the budget ladder gives a watertight, outward mesh.
+    """
+    padded = np.pad(mask.astype(np.uint8), 1)
+    image = vtk.vtkImageData()
+    image.SetDimensions(*padded.shape)
+    image.SetOrigin(-1.0, -1.0, -1.0)  # the padding, in voxel index space
+    image.SetSpacing(1.0, 1.0, 1.0)
+    scalars = numpy_support.numpy_to_vtk(padded.ravel(order="F"), deep=True, array_type=vtk.VTK_UNSIGNED_CHAR)
+    image.GetPointData().SetScalars(scalars)
+
+    surface = vtk.vtkFlyingEdges3D()
+    surface.SetInputData(image)
+    surface.SetValue(0, 0.5)
+    surface.ComputeNormalsOff()
+    surface.ComputeGradientsOff()
+    surface.ComputeScalarsOff()
+    surface.Update()
+    raw_tris = surface.GetOutput().GetNumberOfCells()
+
+    matrix = vtk.vtkMatrix4x4()
+    for r in range(4):
+        for c in range(4):
+            matrix.SetElement(r, c, float(affine[r, c]))
+    transform = vtk.vtkTransform()
+    transform.SetMatrix(matrix)
+    to_world = vtk.vtkTransformPolyDataFilter()
+    to_world.SetInputConnection(surface.GetOutputPort())
+    to_world.SetTransform(transform)
+    to_world.SetOutputPointsPrecision(vtk.vtkAlgorithm.SINGLE_PRECISION)
+    last = to_world
+    if np.linalg.det(affine[:3, :3]) < 0:  # a mirroring affine turns the triangles inside out
+        reverse = vtk.vtkReverseSense()
+        reverse.SetInputConnection(to_world.GetOutputPort())
+        reverse.ReverseCellsOn()
+        last = reverse
+
+    smooth = vtk.vtkWindowedSincPolyDataFilter()
+    smooth.SetInputConnection(last.GetOutputPort())
+    smooth.SetNumberOfIterations(20)
+    smooth.SetPassBand(0.05)
+    smooth.BoundarySmoothingOff()
+    smooth.FeatureEdgeSmoothingOff()
+    smooth.NonManifoldSmoothingOn()
+    smooth.NormalizeCoordinatesOn()
+    smooth.Update()
+    smoothed_tris = smooth.GetOutput().GetNumberOfCells()
+
+    def finish(source) -> Any:
+        clean = vtk.vtkCleanPolyData()
+        clean.SetInputConnection(source.GetOutputPort())
+        clean.SetOutputPointsPrecision(vtk.vtkAlgorithm.SINGLE_PRECISION)
+        normals = vtk.vtkPolyDataNormals()
+        normals.SetInputConnection(clean.GetOutputPort())
+        normals.ConsistencyOn()
+        normals.SplittingOff()
+        normals.ComputePointNormalsOn()
+        normals.ComputeCellNormalsOff()
+        normals.SetOutputPointsPrecision(vtk.vtkAlgorithm.SINGLE_PRECISION)
+        normals.Update()
+        return normals.GetOutput()
+
+    def topology(poly) -> dict[str, Any]:
+        out: dict[str, Any] = {}
+        for key, (boundary, nonmanifold) in (("boundary_edges", (1, 0)), ("nonmanifold_edges", (0, 1))):
+            edges = vtk.vtkFeatureEdges()
+            edges.SetInputData(poly)
+            edges.SetBoundaryEdges(boundary)
+            edges.SetNonManifoldEdges(nonmanifold)
+            edges.FeatureEdgesOff()
+            edges.ManifoldEdgesOff()
+            edges.Update()
+            out[key] = edges.GetOutput().GetNumberOfCells()
+        mass = vtk.vtkMassProperties()
+        mass.SetInputData(poly)
+        mass.Update()
+        vx, vy, vz = mass.GetVolumeX(), mass.GetVolumeY(), mass.GetVolumeZ()
+        out["watertight"] = (
+            out["boundary_edges"] == 0
+            and out["nonmanifold_edges"] == 0
+            and max(vx, vy, vz) - min(vx, vy, vz) <= 0.01 * abs(mass.GetVolume())
+        )
+        out["area"], out["volume"] = mass.GetSurfaceArea(), mass.GetVolume()
+        return out
+
+    if smoothed_tris <= target_tris:
+        method, budget, poly = "none", smoothed_tris, finish(smooth)
+        topo = topology(poly)
     else:
-        return result
-    verts = apply_affine(image.affine, verts + (low - 1))
-    if signed_volume(verts, faces) < 0:
-        faces = faces[:, ::-1]  # outward-facing triangles, also after a mirroring affine
-    result.update(
-        verts=verts.astype(np.float32),
-        faces=faces.astype(np.int32),
-        normals=vertex_normals(verts, faces).astype(np.float32),
-        step_size=step,
-    )
-    return result
+        # Budget ladder: keep the first watertight result (quadric preferred, then topology-
+        # preserving DecimatePro, then a larger triangle budget).
+        for budget in (target_tris, int(target_tris * 1.5), target_tris * 2, target_tris * 3):
+            if budget >= smoothed_tris:
+                method, budget, poly = "none", smoothed_tris, finish(smooth)
+                topo = topology(poly)
+                break
+            for method in ("vtkQuadricDecimation", "vtkDecimatePro(PreserveTopology)"):
+                if method == "vtkQuadricDecimation":
+                    decimate = vtk.vtkQuadricDecimation()
+                    decimate.VolumePreservationOn()
+                else:
+                    decimate = vtk.vtkDecimatePro()
+                    decimate.PreserveTopologyOn()
+                    decimate.SplittingOff()
+                    decimate.BoundaryVertexDeletionOff()
+                decimate.SetInputConnection(smooth.GetOutputPort())
+                decimate.SetTargetReduction(1.0 - budget / smoothed_tris)
+                decimate.Update()
+                poly = finish(decimate)
+                topo = topology(poly)
+                if topo["watertight"]:
+                    break
+            if topo["watertight"]:
+                break
+    # Outward orientation: positive signed volume (divergence theorem).
+    points = numpy_support.vtk_to_numpy(poly.GetPoints().GetData()).astype(np.float64)
+    triangles = numpy_support.vtk_to_numpy(poly.GetPolys().GetConnectivityArray()).reshape(-1, 3)
+    a, b, c = points[triangles[:, 0]], points[triangles[:, 1]], points[triangles[:, 2]]
+    topo["outward"] = float(np.einsum("ij,ij->i", a, np.cross(b, c)).sum() / 6.0) > 0
+    if not topo["watertight"] or not topo["outward"]:
+        raise PipelineError(
+            f"Mesh check failed (watertight={topo['watertight']}, outward={topo['outward']}, "
+            f"boundary_edges={topo['boundary_edges']}, nonmanifold_edges={topo['nonmanifold_edges']})."
+        )
+    return poly, {
+        "points": poly.GetNumberOfPoints(),
+        "triangles": poly.GetNumberOfPolys(),
+        "triangles_before_decimation": smoothed_tris,
+        "marching_cubes_triangles": raw_tris,
+        "decimation": method,
+        "triangle_budget": budget,
+        "normals_outward": bool(topo["outward"]),
+        "watertight": topo["watertight"],
+        "boundary_edges": topo["boundary_edges"],
+        "nonmanifold_edges": topo["nonmanifold_edges"],
+        "bounds_ras_mm": [round(v, 2) for v in poly.GetBounds()],
+        "surface_area_mm2": round(topo["area"], 1),
+        "enclosed_volume_ml": round(topo["volume"] / 1000.0, 2),
+    }
 
 
-def signed_volume(verts: np.ndarray, faces: np.ndarray) -> float:
-    """Divergence-theorem volume: positive when triangles wind counter-clockwise seen from outside."""
-    a, b, c = (verts[faces[:, i]] for i in range(3))
-    return float(np.einsum("ij,ij->i", a, np.cross(b, c)).sum() / 6.0)
-
-
-def vertex_normals(verts: np.ndarray, faces: np.ndarray) -> np.ndarray:
-    face_normals = np.cross(verts[faces[:, 1]] - verts[faces[:, 0]], verts[faces[:, 2]] - verts[faces[:, 0]])
-    normals = np.zeros_like(verts, dtype=np.float64)
-    for i in range(3):
-        np.add.at(normals, faces[:, i], face_normals)
-    lengths = np.linalg.norm(normals, axis=1, keepdims=True)
-    return normals / np.where(lengths == 0, 1.0, lengths)
-
-
-def _vtk_binary(array: np.ndarray) -> str:
-    """VTK XML inline binary: base64 of a little-endian UInt32 byte count followed by the data."""
-    raw = np.ascontiguousarray(array, dtype=array.dtype.newbyteorder("<")).tobytes()
-    return base64.b64encode(struct.pack("<I", len(raw)) + raw).decode("ascii")
-
-
-def write_vtp(path: Path, verts: np.ndarray, faces: np.ndarray, normals: np.ndarray) -> None:
-    """Write a triangle surface as VTK XML PolyData, readable by vtk.js vtkXMLPolyDataReader."""
-    offsets = np.arange(3, 3 * len(faces) + 1, 3, dtype=np.int32)
-    xml = (
-        '<?xml version="1.0"?>\n'
-        '<VTKFile type="PolyData" version="1.0" byte_order="LittleEndian" header_type="UInt32">\n'
-        "  <PolyData>\n"
-        f'    <Piece NumberOfPoints="{len(verts)}" NumberOfVerts="0" NumberOfLines="0" '
-        f'NumberOfStrips="0" NumberOfPolys="{len(faces)}">\n'
-        '      <PointData Normals="Normals">\n'
-        '        <DataArray type="Float32" Name="Normals" NumberOfComponents="3" format="binary">'
-        f"{_vtk_binary(normals.astype(np.float32))}</DataArray>\n"
-        "      </PointData>\n"
-        "      <Points>\n"
-        '        <DataArray type="Float32" Name="Points" NumberOfComponents="3" format="binary">'
-        f"{_vtk_binary(verts.astype(np.float32))}</DataArray>\n"
-        "      </Points>\n"
-        "      <Polys>\n"
-        '        <DataArray type="Int32" Name="connectivity" format="binary">'
-        f"{_vtk_binary(faces.astype(np.int32).ravel())}</DataArray>\n"
-        '        <DataArray type="Int32" Name="offsets" format="binary">'
-        f"{_vtk_binary(offsets)}</DataArray>\n"
-        "      </Polys>\n"
-        "    </Piece>\n"
-        "  </PolyData>\n"
-        "</VTKFile>\n"
-    )
+def write_vtp(poly, path: Path) -> None:
+    """VTK XML PolyData, binary with zlib compression, as vtk.js vtkXMLPolyDataReader reads it."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(xml, encoding="ascii")
+    writer = vtk.vtkXMLPolyDataWriter()
+    writer.SetFileName(str(path))
+    writer.SetInputData(poly)
+    writer.SetDataModeToBinary()
+    writer.SetCompressorTypeToZLib()
+    writer.SetHeaderTypeToUInt32()
+    if writer.Write() != 1:
+        raise PipelineError(f"Could not write {path.name}.")
 
 
 # --------------------------------------------------------------------------- outputs
 
 
-def _file_entry(bucket_dir: Path, key: str, **extra: Any) -> dict[str, Any]:
-    path = bucket_dir / key
-    return {
-        "key": key,
-        "bytes": path.stat().st_size,
-        "sha256": sha256_file(path),
-        "content_type": content_type_for(key),
-        **extra,
-    }
+def _file_entry(processed_dir: Path, rel: str, kind: str, label: dict[str, Any], fmt: str, **extra: Any) -> dict[str, Any]:
+    path = processed_dir / rel
+    return {"path": rel, "kind": kind, **label, "format": fmt, "bytes": path.stat().st_size,
+            "sha256": sha256_file(path), **extra}
 
 
 def build_case(
@@ -521,107 +737,187 @@ def build_case(
     ct_path: Path,
     segmentation: dict[str, Any],
     seg_dir: Path,
-    bucket_dir: Path,
+    processed_dir: Path,
     bones: list[str],
-    mesh_step: int,
-    reference: Path | None,
+    reference: tuple[Path, str] | None,
     include_ct: bool,
-    source: dict[str, Any],
+    data_remote: RemoteFile,
+    mask_remote: RemoteFile | None,
 ) -> dict[str, Any]:
-    """Copy masks into the bucket mirror, mesh them, and describe the case for the manifest."""
+    """Copy masks into processed/<case>/, mesh each bone, score against the reference, describe the case."""
     case_id = case["case_id"]
-    prefix = f"{BUCKET_PREFIX}/{case_id}"
+    classes = roi_classes(bones)
+    grid = nib.load(str(seg_dir / f"{classes[0]}.nii.gz"))
+    affine = grid.affine
+    voxel_ml = float(np.prod(grid.header.get_zooms()[:3])) / 1000.0
+    ts = {c: np.asanyarray(nib.load(str(seg_dir / f"{c}.nii.gz")).dataobj) > 0 for c in classes}
+
     files: list[dict[str, Any]] = []
-    empty: list[str] = []
-    mesh_started = time.perf_counter()
+    for cls in classes:
+        rel = f"{case_id}/masks/{cls}.nii.gz"
+        (processed_dir / rel).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(seg_dir / f"{cls}.nii.gz", processed_dir / rel)
+        files.append(_file_entry(processed_dir, rel, "mask", {"ts_class": cls}, MASK_FORMAT))
+
+    bone_records: list[dict[str, Any]] = []
     for bone in bones:
-        mask_key = f"{prefix}/masks/{bone}.nii.gz"
-        mesh = mask_to_mesh(seg_dir / f"{bone}.nii.gz", mesh_step)
-        if mesh["voxels"] == 0:
-            empty.append(bone)
-            continue
-        (bucket_dir / mask_key).parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(seg_dir / f"{bone}.nii.gz", bucket_dir / mask_key)
-        files.append(_file_entry(bucket_dir, mask_key, kind="mask", bone=bone, voxels=mesh["voxels"], volume_ml=mesh["volume_ml"]))
-        mesh_key = f"{prefix}/meshes/{bone}.vtp"
-        write_vtp(bucket_dir / mesh_key, mesh["verts"], mesh["faces"], mesh["normals"])
-        files.append(
-            _file_entry(
-                bucket_dir, mesh_key, kind="mesh", bone=bone,
-                points=int(len(mesh["verts"])), triangles=int(len(mesh["faces"])), marching_cubes_step=mesh["step_size"],
-            )
-        )
-    mesh_seconds = round(time.perf_counter() - mesh_started, 3)
+        sources = list(MESH_BONES.get(bone, (bone,)))
+        mask = np.logical_or.reduce([ts[s] for s in sources])
+        voxels = int(mask.sum())
+        z_slices = np.where(mask.any(axis=(0, 1)))[0]
+        record: dict[str, Any] = {
+            "name": bone,
+            "source_ts_classes": sources,
+            "voxels": voxels,
+            "volume_ml": round(voxels * voxel_ml, 2),
+            "connected_components": int(ndimage.label(mask)[1]) if voxels else 0,
+            "touches_scan_z_limit": bool(voxels and (z_slices[0] == 0 or z_slices[-1] == mask.shape[2] - 1)),
+        }
+        if voxels:
+            poly, info = mesh_from_mask(mask, affine, TRIANGLE_BUDGET.get(bone, DEFAULT_TRIANGLE_BUDGET))
+            rel = f"{case_id}/meshes/{bone}.vtp"
+            write_vtp(poly, processed_dir / rel)
+            files.append(_file_entry(processed_dir, rel, "mesh", {"bone": bone}, MESH_FORMAT, **info))
+            record["mesh_enclosed_volume_ml"] = info["enclosed_volume_ml"]
+        bone_records.append(record)
+
+    expert_file = validation = None
     if reference is not None:
-        ref_key = f"{prefix}/reference/{reference.name}"
-        (bucket_dir / ref_key).parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(reference, bucket_dir / ref_key)
-        files.append(_file_entry(bucket_dir, ref_key, kind="reference_mask", bone=None, origin="CTPelvic1K annotation"))
-    ct_image = nib.load(str(ct_path))
-    ct_info = {
-        "file": ct_path.name,
-        "archive_member": case["member"],
-        "bytes": case["bytes"],
-        "sha256": case["sha256"],
-        "shape": [int(n) for n in ct_image.shape[:3]],
-        "spacing_mm": [round(float(z), 4) for z in ct_image.header.get_zooms()[:3]],
-        "uploaded": include_ct,
-    }
+        ref_path, ref_member = reference
+        ref_image = nib.load(str(ref_path))
+        same_grid = ref_image.shape[:3] == grid.shape[:3] and np.allclose(ref_image.affine, affine, atol=1e-3)
+        if not same_grid:
+            ref_image = resample_from_to(ref_image, grid, order=0)
+        expert = np.asarray(ref_image.dataobj).astype(np.int16)
+        expert_file = {
+            "archive": mask_remote.key if mask_remote else None,
+            "archive_member": ref_member,
+            "bytes": ref_path.stat().st_size,
+            "sha256": sha256_file(ref_path),
+            "volume_ml": {name: round(int((expert == label).sum()) * voxel_ml, 2) for label, name in EXPERT_LABELS.items()},
+        }
+        validation = validate_against_reference(ts, expert, affine, same_grid)
+
     if include_ct:
-        ct_key = f"{prefix}/ct/{ct_path.name}"
-        (bucket_dir / ct_key).parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(ct_path, bucket_dir / ct_key)
-        files.append(_file_entry(bucket_dir, ct_key, kind="ct", bone=None))
+        rel = f"{case_id}/ct/{ct_path.name}"
+        (processed_dir / rel).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(ct_path, processed_dir / rel)
+        files.append(_file_entry(processed_dir, rel, "ct", {}, CT_FORMAT))
+
+    ct_image = nib.load(str(ct_path))
     return {
         "case_id": case_id,
-        "source": source,
-        "ct": ct_info,
-        "segmentation": {k: segmentation[k] for k in ("settings", "device", "command", "seconds") if k in segmentation},
-        "timings_seconds": {
-            "extract": case.get("extract_seconds"),
-            "totalsegmentator": segmentation.get("seconds"),
-            "meshes": mesh_seconds,
+        "source_file": {
+            "archive": data_remote.key,
+            "archive_member": case["member"],
+            "bytes": case["bytes"],
+            "sha256": case["sha256"],
+            "shape_ijk": [int(n) for n in ct_image.shape[:3]],
+            "spacing_mm": [round(float(z), 6) for z in ct_image.header.get_zooms()[:3]],
+            "orientation": "".join(nib.aff2axcodes(ct_image.affine)),
         },
-        "bones_without_voxels": empty,
+        "expert_mask_file": expert_file,
+        "bones": bone_records,
         "files": files,
+        "segmentation": segmentation,
+        "validation": validation,
     }
 
 
-def write_manifest(work_dir: Path, dataset: dict[str, Any], mesh_step: int) -> Path:
-    """Merge every case record in work_dir/cases into the bucket-mirror manifest."""
-    cases = [json.loads(p.read_text()) for p in sorted((work_dir / "cases").glob("*.json"))]
-    manifest = {
-        "schema": MANIFEST_SCHEMA,
-        "generated_at": utc_now(),
-        "dataset": dataset,
-        "segmentation_tool": TOTALSEGMENTATOR,
-        "mesh": {
-            "format": "VTK XML PolyData (.vtp), triangles with point normals",
-            "method": "skimage.measure.marching_cubes at level 0.5 on the binary mask",
-            "requested_step_size": mesh_step,
-            "coordinates": "NIfTI world coordinates of the CT (RAS+, millimetres)",
+def dataset_record(
+    attribution: dict[str, Any], data_remote: RemoteFile, mask_remote: RemoteFile | None, extraction: dict[str, Any]
+) -> dict[str, Any]:
+    if extraction["archive_md5_verified"]:
+        data_note = "The data archive was read in full and md5-verified against the Zenodo API."
+    else:
+        data_note = (
+            f"The {data_remote.size / 1e9:.2f} GB data archive was streamed and stopped after the first "
+            f"{extraction['streamed_cases']} CT member(s), so its archive checksum cannot be verified; each "
+            "extracted member passed its gzip CRC check."
+        )
+    mask_note = "Mask archive downloaded in full and md5-verified against the Zenodo API. " if mask_remote else ""
+    title = attribution.get("title") or "Zenodo record"
+    return {
+        "name": DATASET_NAMES.get(data_remote.key, f"{title} ({data_remote.key})"),
+        "zenodo_record": attribution["zenodo_record"],
+        "doi": attribution["doi"],
+        "license": attribution["license"],
+        "creators": attribution["creators"],
+        "citation": attribution["citation"],
+        "citation_preprint": CTPELVIC1K_PREPRINT,
+        "repository": CTPELVIC1K_REPOSITORY,
+        "expert_label_map": {str(k): v for k, v in EXPERT_LABELS.items()} if mask_remote else None,
+        "expert_label_map_source": EXPERT_LABEL_SOURCE if mask_remote else None,
+        "description": DATASET_DESCRIPTION + DATASET_NOTES.get(data_remote.key, ""),
+        "source_archives": {
+            remote.key: {"bytes": remote.size, "checksum": remote.checksum, "url": remote.url}
+            for remote in (data_remote, mask_remote)
+            if remote is not None
         },
-        "notice": "Research data. Automatic segmentation, not reviewed by a clinician. Not for clinical use.",
+        "acquisition_note": mask_note + data_note,
+    }
+
+
+def write_manifest(work_dir: Path, dataset: dict[str, Any], ts_version: str) -> Path:
+    """Merge every case record in work_dir/cases into processed/manifest.json."""
+    cases = [json.loads(p.read_text()) for p in sorted((work_dir / "cases").glob("*.json"))]
+    tool = {"name": TOTALSEGMENTATOR["name"], "version": ts_version,
+            **{k: v for k, v in TOTALSEGMENTATOR.items() if k != "name"}}
+    manifest = {
+        "generated_utc": utc_now(),
+        "dataset": dataset,
+        "segmentation_tool": tool,
+        "mesh_method": MESH_METHOD + vtk.vtkVersion.GetVTKVersion(),
         "cases": cases,
     }
-    path = work_dir / "bucket" / BUCKET_PREFIX / "manifest.json"
+    path = work_dir / "processed" / "manifest.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(manifest, indent=2))
     return path
 
 
-def upload_plan(work_dir: Path, manifest_path: Path) -> list[UploadItem]:
-    """Every file the manifest lists, then the manifest itself (last, so it never points at a missing object)."""
-    bucket_dir = work_dir / "bucket"
-    manifest = json.loads(manifest_path.read_text())
-    items = [
-        UploadItem(bucket_dir / entry["key"], entry["key"], entry["sha256"], entry["content_type"])
-        for case in manifest["cases"]
-        for entry in case["files"]
-    ]
-    manifest_key = manifest_path.relative_to(bucket_dir).as_posix()
-    items.append(UploadItem(manifest_path, manifest_key, sha256_file(manifest_path), "application/json"))
-    return items
+def load_processed(processed_dir: Path) -> tuple[dict[str, Any], list[UploadItem]]:
+    """Check a processed/ folder against its manifest.json and list what to upload.
+
+    Every file the manifest lists must exist with the listed bytes and sha256 under a safe
+    relative path; the manifest itself goes last, so it never points at a missing object.
+    """
+    manifest_path = processed_dir / "manifest.json"
+    if not manifest_path.is_file():
+        raise ConfigError(f"{manifest_path} does not exist.")
+    text = manifest_path.read_text(encoding="utf-8")
+    for local in {str(processed_dir.resolve()), str(processed_dir.absolute()), str(Path.home())}:
+        if len(local) > 1 and local in text:
+            raise ConfigError("manifest.json contains a local path. It is served to browsers; remove local paths first.")
+    try:
+        manifest = json.loads(text)
+        cases = manifest["cases"]
+        if not isinstance(cases, list) or not all(isinstance(c, dict) for c in cases):
+            raise TypeError("cases must be a list of objects")
+    except (ValueError, KeyError, TypeError) as exc:
+        raise ConfigError(f"{manifest_path} is not a bone manifest: {exc}") from exc
+    items: list[UploadItem] = []
+    problems: list[str] = []
+    for case in cases:
+        for entry in case.get("files") or []:
+            rel = entry.get("path") if isinstance(entry, dict) else None
+            if not isinstance(rel, str) or not SAFE_PATH_RE.match(rel):
+                problems.append(f"unsafe path {rel!r}")
+                continue
+            path = processed_dir / rel
+            if not path.is_file():
+                problems.append(f"{rel} is missing")
+                continue
+            digest = sha256_file(path)
+            if path.stat().st_size != entry.get("bytes") or digest != entry.get("sha256"):
+                problems.append(f"{rel} does not match its bytes/sha256 in manifest.json")
+                continue
+            items.append(UploadItem(path, f"{BUCKET_PREFIX}/{rel}", digest, content_type_for(rel)))
+    if problems:
+        more = f" (and {len(problems) - 5} more)" if len(problems) > 5 else ""
+        raise ChecksumError(f"{processed_dir} does not match its manifest.json: " + "; ".join(problems[:5]) + more)
+    items.append(UploadItem(manifest_path, f"{BUCKET_PREFIX}/manifest.json", sha256_file(manifest_path), "application/json"))
+    return manifest, items
 
 
 # --------------------------------------------------------------------------- object storage
@@ -711,6 +1007,20 @@ def apply_cors(client, bucket: str, origins: list[str]) -> None:
     )
 
 
+def publish(items: list[UploadItem], settings: dict[str, str], cors_origins: list[str]) -> dict[str, int]:
+    from botocore.exceptions import BotoCoreError, ClientError
+
+    client = make_s3_client(settings)
+    try:
+        if cors_origins:
+            apply_cors(client, settings["bucket"], cors_origins)
+            log(f"CORS: GET allowed from {', '.join(cors_origins)}")
+        log(f"Uploading {len(items)} object(s) to bucket {settings['bucket']}...")
+        return upload_items(client, settings["bucket"], items)
+    except (BotoCoreError, ClientError) as exc:  # botocore messages carry no secret key
+        raise PipelineError(f"Object storage request failed: {exc}") from exc
+
+
 # --------------------------------------------------------------------------- CLI
 
 
@@ -718,18 +1028,21 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Download CTPelvic1K CT cases, segment bones with TotalSegmentator, upload masks and meshes to Vultr Object Storage.",
     )
-    parser.add_argument("--work-dir", type=Path, required=True,
+    parser.add_argument("--work-dir", type=Path,
                         help="Folder for downloads, scans, masks and meshes. Must be outside the repository.")
+    parser.add_argument("--from-processed", type=Path, metavar="DIR",
+                        help="Skip download and segmentation: check DIR/manifest.json and the files it lists, "
+                             "then upload them (instead of --work-dir).")
     parser.add_argument("--record", default=DEFAULT_RECORD, help=f"Zenodo record id (default {DEFAULT_RECORD}).")
     parser.add_argument("--data-file", default=DEFAULT_DATA_FILE, help=f"CT tarball in the record (default {DEFAULT_DATA_FILE}).")
     parser.add_argument("--mask-file", default=DEFAULT_MASK_FILE,
                         help=f"Reference-mask tarball in the record (default {DEFAULT_MASK_FILE}); '' to skip.")
     parser.add_argument("--cases", type=int, default=1, help="Number of CT cases to extract and process (default 1).")
     parser.add_argument("--bones", nargs="+", default=list(DEFAULT_BONES),
-                        help="TotalSegmentator class names for --roi_subset (default: %(default)s).")
+                        help="Bones to mesh (default: %(default)s). sacrum is TotalSegmentator's sacrum plus "
+                             "vertebrae_S1; any other TotalSegmentator class name is meshed on its own.")
     parser.add_argument("--device", help="Passed to TotalSegmentator --device: gpu, cpu, mps or gpu:N.")
     parser.add_argument("--fast", action="store_true", help="Pass --fast to TotalSegmentator (3 mm model).")
-    parser.add_argument("--mesh-step", type=int, default=2, help="Marching-cubes step size in voxels (default 2).")
     parser.add_argument("--verify-archive", action="store_true",
                         help="Read the whole CT tarball to check its MD5 (downloads all of it).")
     parser.add_argument("--include-ct", action="store_true", help="Also upload each source CT volume.")
@@ -737,13 +1050,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                         help="Set the bucket's CORS rules to allow GET from this origin (repeatable).")
     parser.add_argument("--totalseg-bin", help="Path to the TotalSegmentator executable (default: found on PATH).")
     parser.add_argument("--dry-run", action="store_true",
-                        help="Resolve the files and print the plan; no downloads, segmentation or uploads.")
+                        help="Print the plan; no downloads, segmentation or uploads.")
     parser.add_argument("--skip-upload", action="store_true", help="Do everything except the upload.")
     args = parser.parse_args(argv)
+    if bool(args.work_dir) == bool(args.from_processed):
+        parser.error("give exactly one of --work-dir and --from-processed")
     if args.cases < 1:
         parser.error("--cases must be at least 1")
-    if args.mesh_step < 1:
-        parser.error("--mesh-step must be at least 1")
     if args.device and not DEVICE_RE.match(args.device):
         parser.error("--device must be gpu, cpu, mps or gpu:N")
     bad = [bone for bone in args.bones if not BONE_RE.match(bone)]
@@ -760,14 +1073,37 @@ def _inside_repo(path: Path) -> bool:
         return False
 
 
+def run_from_processed(args: argparse.Namespace, upload: bool) -> dict[str, Any]:
+    processed_dir: Path = args.from_processed.expanduser()
+    if _inside_repo(processed_dir):
+        raise ConfigError(f"--from-processed {processed_dir} is inside the repository; keep scans and masks outside it.")
+    settings = s3_settings_from_env() if upload else None
+    manifest, items = load_processed(processed_dir)
+    summary: dict[str, Any] = {
+        "manifest": str(processed_dir / "manifest.json"),
+        "cases": [case.get("case_id") for case in manifest["cases"]],
+        "files_in_manifest": len(items) - 1,
+        "bytes": sum(item.path.stat().st_size for item in items),
+        "bucket_prefix": f"{BUCKET_PREFIX}/",
+    }
+    summary["upload"] = publish(items, settings, args.cors_origin) if upload else (
+        "skipped (--dry-run)" if args.dry_run else "skipped (--skip-upload)"
+    )
+    log(json.dumps(summary, indent=2))
+    return summary
+
+
 def run(args: argparse.Namespace) -> dict[str, Any]:
+    upload = not (args.skip_upload or args.dry_run)
+    if args.from_processed:
+        return run_from_processed(args, upload)
     work_dir: Path = args.work_dir.expanduser()
     if _inside_repo(work_dir):
         raise ConfigError(f"--work-dir {work_dir} is inside the repository; keep scans and masks outside it.")
-    upload = not (args.skip_upload or args.dry_run)
     settings = s3_settings_from_env() if upload else None  # fail before any download
+    classes = roi_classes(args.bones)
 
-    dataset, remote = resolve_record(args.record, [args.data_file, args.mask_file])
+    attribution, remote = resolve_record(args.record, [args.data_file, args.mask_file])
     data_remote = remote[args.data_file]
     mask_remote = remote.get(args.mask_file) if args.mask_file else None
     executable = find_totalsegmentator(args.totalseg_bin)
@@ -775,12 +1111,15 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     if args.dry_run:
         plan = {
             "dry_run": True,
-            "dataset": dataset,
+            "dataset": attribution,
             "data_file": data_remote.describe(),
             "mask_file": mask_remote.describe() if mask_remote else None,
             "cases": args.cases,
             "totalsegmentator": executable or "not found on PATH",
-            "command": totalsegmentator_command("TotalSegmentator", "<ct.nii.gz>", "<output_dir>", args.bones, args.fast, args.device),
+            "command": totalsegmentator_command(
+                "TotalSegmentator", "<ct.nii.gz>", "<output_dir>", "<report.json>", classes, args.fast, args.device
+            ),
+            "meshes": {bone: list(MESH_BONES.get(bone, (bone,))) for bone in args.bones},
             "bucket_prefix": f"{BUCKET_PREFIX}/",
             "upload_env_vars_set": {name: bool(os.environ.get(name)) for name in ENV_VARS},
         }
@@ -793,53 +1132,36 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     log(f"TotalSegmentator {version}")
 
     extraction = extract_cases(data_remote, work_dir / "raw" / "ct", args.cases, args.verify_archive)
-    references: dict[str, Path] = {}
+    references: dict[str, tuple[Path, str]] = {}
     if mask_remote is not None:
         mask_archive = download_verified(mask_remote, work_dir / "downloads")
         references = extract_reference_masks(
             mask_archive, {c["case_id"] for c in extraction["cases"]}, work_dir / "raw" / "reference"
         )
 
-    source = {
-        "zenodo_record": dataset["zenodo_record"],
-        "file": data_remote.describe(),
-        "archive_md5_verified": extraction["archive_md5_verified"],
-        "reference_file": mask_remote.describe() if mask_remote else None,
-    }
+    processed_dir = work_dir / "processed"
     (work_dir / "cases").mkdir(parents=True, exist_ok=True)
     for case in extraction["cases"]:
         case_id = case["case_id"]
         log(f"Case {case_id}")
         ct_path = work_dir / "raw" / "ct" / case["file"]
         seg_dir = work_dir / "segment" / case_id
-        segmentation = segment_case(executable, version, ct_path, seg_dir, args.bones, args.fast, args.device)
+        segmentation = segment_case(executable, version, ct_path, seg_dir, classes, args.fast, args.device)
         record = build_case(
-            case, ct_path, segmentation, seg_dir, work_dir / "bucket", args.bones, args.mesh_step,
-            references.get(case_id), args.include_ct, source,
+            case, ct_path, segmentation, seg_dir, processed_dir, args.bones,
+            references.get(case_id), args.include_ct, data_remote, mask_remote,
         )
         (work_dir / "cases" / f"{case_id}.json").write_text(json.dumps(record, indent=2))
-    manifest_path = write_manifest(work_dir, dataset, args.mesh_step)
-    items = upload_plan(work_dir, manifest_path)
+    dataset = dataset_record(attribution, data_remote, mask_remote, extraction)
+    write_manifest(work_dir, dataset, version)
+    manifest, items = load_processed(processed_dir)
     summary: dict[str, Any] = {
-        "manifest": str(manifest_path),
-        "cases": [c["case_id"] for c in extraction["cases"]],
-        "files_in_manifest": len(items),
+        "manifest": str(processed_dir / "manifest.json"),
+        "cases": [c["case_id"] for c in manifest["cases"]],
+        "files_in_manifest": len(items) - 1,
         "archive_md5_verified": extraction["archive_md5_verified"],
     }
-    if upload:
-        from botocore.exceptions import BotoCoreError, ClientError
-
-        client = make_s3_client(settings)
-        try:
-            if args.cors_origin:
-                apply_cors(client, settings["bucket"], args.cors_origin)
-                log(f"CORS: GET allowed from {', '.join(args.cors_origin)}")
-            log(f"Uploading {len(items)} object(s) to bucket {settings['bucket']}...")
-            summary["upload"] = upload_items(client, settings["bucket"], items)
-        except (BotoCoreError, ClientError) as exc:  # botocore messages carry no secret key
-            raise PipelineError(f"Object storage request failed: {exc}") from exc
-    else:
-        summary["upload"] = "skipped (--skip-upload)"
+    summary["upload"] = publish(items, settings, args.cors_origin) if upload else "skipped (--skip-upload)"
     log(json.dumps(summary, indent=2))
     return summary
 

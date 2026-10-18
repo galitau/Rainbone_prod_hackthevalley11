@@ -3,4 +3,5 @@
 boto3
 nibabel
 numpy
-scikit-image
+scipy
+vtk
