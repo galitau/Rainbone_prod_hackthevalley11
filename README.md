@@ -9,6 +9,9 @@
 
 **A stress test for bones, explained by AI.**
 
+Built for PointClickCare's *Catch It Early* challenge at Hack the Valley 11: catch bone weakness
+early, so prevention can start before the fall.
+
 Rainbone combines CT-derived 3D models, physics simulations and AI to explore how bone
 vulnerability can be made visible and understandable early enough to support prevention.
 
@@ -17,16 +20,21 @@ Rainbone shows, in 3D and in colour, where a real femur takes the most strain un
 load. Then Gemini explains in plain words, for the care team, where she stands among
 those 101 women. Try it: <https://rainbone.health>
 
-**The AI, in one line:** code computes and Gemini only puts the results into words. Every
+**The AI, in one line:** code computes and the Gemini API only puts the results into words. Every
 number it writes is checked against the data before it's shown, its facts are read from
-Vultr Object Storage with a verified sha256, and each new model answer is logged in Tiger Cloud when the database is reachable.
-See [The AI layer](#the-ai-layer).
+Vultr Object Storage with a verified sha256, and each new model answer is logged in Tiger Data's
+Tiger Cloud (TimescaleDB) when the database is reachable. Follow-up questions go to **Ask Rainbone**,
+an **AI agent pipeline** whose recorded steps you can watch in its drawer: five stages (triage, read-only evidence tools,
+writer, code critic, audit) orchestrated with **LangGraph**, running in the FastAPI service on Vultr
+Compute. The model agents choose tools and approved statements; they never write free prose.
+See [The AI layer](#the-ai-layer) and
+[the Ask Rainbone agent pipeline](#ask-rainbone-the-agent-pipeline-orchestrated-with-langgraph).
 
 | Sponsor tech | What it does in Rainbone | Where to see it |
 |---|---|---|
-| **Gemini API** | Writes the AI fracture-risk analysis and the plain-words explanation, and picks which checked statements Ask Rainbone shows, only over facts the code computed; every number is checked before it is shown | Dashboard AI cards, the Ask Rainbone drawer |
+| **Gemini API** | Writes the AI fracture-risk analysis and the plain-words explanation; in the Ask Rainbone AI agent pipeline (orchestrated with LangGraph) it chooses the read-only evidence tools for open questions through native function calling and picks which checked statements are shown, only over facts the code computed; every number is checked before it is shown | Dashboard AI cards, the Ask Rainbone drawer and its step trace |
 | **Vultr** | Compute runs the FastAPI and SfePy engine at api.rainbone.health; Object Storage holds the AI's sha256-pinned clinical facts and the pelvic meshes | Imaging library, the provenance line under each AI card |
-| **Tiger Data** | TimescaleDB stores completed simulation runs (hypertable plus an hourly continuous aggregate) and the provenance of each new AI generation; a cached or saved answer adds no row | History chart, Secure datasets → Recent AI answers, `/api/ai-log` |
+| **Tiger Data** | TimescaleDB stores completed simulation runs (hypertable plus an hourly continuous aggregate) and the provenance of each new AI generation, including the evidence tools Ask Rainbone's agent pipeline ran; a cached or saved answer adds no row | History chart, Secure datasets → Recent AI answers, `/api/ai-log` |
 | **GoDaddy Registry** | The `.health` domain | <https://rainbone.health> |
 
 ## What it does
@@ -80,6 +88,7 @@ flowchart TB
 
     subgraph AI["AI layer"]
       eps["POST /api/risk-analysis<br/>POST /api/explain<br/>POST /api/ask"]
+      agent["Ask Rainbone AI agent pipeline<br/>LangGraph StateGraph · ask_graph.py<br/>triage → evidence tools → writer → critic → audit"]
       ground["Grounding · clinical_store.py<br/>reads clinical/ from Vultr Object Storage<br/>sha256 pinned in the repo, bundled copy as fallback"]
       facts["Facts built in code<br/>no model computes a number"]
       cache["Answer cache · current-checker revalidation<br/>case + source hash + facts + checker version<br/>Gemini answer 1 h · Groq or template 60 s"]
@@ -95,6 +104,8 @@ flowchart TB
       chain -->|"each answer"| check
       check -->|"rejected: next provider"| chain
       check -->|"passed"| audit
+      eps -.->|"/api/ask"| agent
+      agent -.->|"triage and writer calls"| chain
     end
 
     caddy --> api
@@ -155,13 +166,13 @@ else: straight from the private bucket, through links the API signs.
 
 This is a fixed evidence-to-explanation workflow: retrieval, deterministic calculation,
 generation, validation and provenance. It does not use autonomous clinical agents.
-Ask Rainbone adds a bounded tool-using workflow: known data and navigation intents use
+Ask Rainbone adds a bounded AI agent pipeline, orchestrated with LangGraph: known data and navigation intents use
 explicit rules; other questions use native Gemini function calls to choose up to four
 read-only evidence tools; a constrained writer selects approved statement IDs from their
 outputs; a code critic checks that selection. The server renders exact source statements,
 citations and navigation links. Unavailable native routing is explicitly labeled rules triage. The two
 existing explanation cards still use checked model prose. A broader typed review brief
-remains a proposal; an agent framework or vector database is not needed for known-case lookup.
+remains a proposal; a vector database is not needed for known-case lookup.
 
 All three AI endpoints run inside the FastAPI process and share provider configuration, cooldowns and
 logging (`backend/services/risk.py`, `explain.py`, `ask.py`, `llm_providers.py`, `clinical_store.py`,
@@ -219,6 +230,48 @@ logging (`backend/services/risk.py`, `explain.py`, `ask.py`, `llm_providers.py`,
   and a saved Gemini answer is not logged again, since no model was called for it.
   `GET /api/ai-log` reads the latest rows. Logging is best effort: the UI says
   "Logged in Tiger Cloud" only when the API returns a confirmed log identity.
+
+#### Ask Rainbone: the agent pipeline, orchestrated with LangGraph
+
+Ask Rainbone (`POST /api/ask`, `backend/services/ask.py`) answers in five stages. Each stage is a
+node in a LangGraph `StateGraph` (`backend/services/ask_graph.py`, `langgraph==1.2.16`):
+
+```mermaid
+flowchart LR
+  q(["Question"]) --> triage["triage<br/>rules, or Gemini<br/>native function calls"]
+  triage --> evidence["evidence<br/>read-only tools"]
+  evidence --> writer["writer<br/>selects statement IDs"]
+  writer --> critic{"critic<br/>code checks"}
+  critic -->|"no accepted selection:<br/>one rewrite, then next provider"| writer
+  critic -->|"accepted"| audit["audit<br/>render, log to Tiger Cloud"]
+  audit --> out(["Cited answer<br/>and its trace"])
+```
+
+| Stage | What it does |
+|---|---|
+| **triage** | Chooses the evidence tools. Known chips, follow-ups and clear intents use rules (`known_selection` in `ask.py`); questions asking for personal data or medical advice route to one fixed refusal statement. Any other question gets one Gemini native function-calling turn (`ask_triage.py`, at most 6 s) that shares the Gemini cooldowns with the AI cards. If it fails or returns no valid plan, rules triage takes over and the trace says so. |
+| **evidence** | Validates the plan (1 to 4 calls, allowlisted tool names, enum arguments, only case `Pat001`) and runs the read-only tools in `ask_tools.py`: `get_patient_facts`, `compare_with_cohort`, `get_fea_result`, `get_page_guide`, `get_dataset_info`. Each returns facts and the statement IDs it allows. |
+| **writer** | Selects one to three of the allowed statement IDs; no model writes prose. Providers in order: `gemini-3.8-flash`, `gemini-3.5-flash-lite`, the saved Gemini selection for the same inputs, Groq `openai/gpt-oss-120b`, then a rules writer. |
+| **critic** | Code, not a model. It checks each selection (known IDs, required IDs, citations, links, 120 words). With no accepted selection it sends the request back to the writer: once with a rewrite instruction after a rejection, otherwise to the next provider. An accepted selection goes to audit. |
+| **audit** | Renders the exact statements with their citations and the disclaimer, and writes one `ai_analyses` row to Tiger Cloud: provider, model, latency, hashes and tool names, never the question text. A saved selection is not logged again. |
+
+How the orchestration works:
+
+- **Graph.** Fixed edges triage → evidence → writer → critic, a conditional edge from critic to
+  either writer or audit, and audit → end. The graph state holds only the name of the next stage;
+  the question, credentials and evidence stay inside the stage functions.
+- **No checkpointer, tracing off.** The graph compiles without a checkpointer and runs inside
+  `tracing_context(enabled=False)` with no callbacks, so LangSmith tracing stays off even if it is
+  configured in the environment.
+- **Built-in fallback runner.** If LangGraph itself fails, a built-in runner continues from the same
+  stage, without replaying stages that already finished. An error raised by a stage is passed on
+  unchanged, not retried.
+- **The trace names the orchestrator.** The last step of every answer is
+  `Orchestrator: LangGraph StateGraph`, or `Orchestrator: built-in (LangGraph unavailable)` after a
+  fallback. The Ask drawer shows the five stages and replays the recorded steps once the response
+  arrives; the trace is not streamed while the request runs. A production answer checked on
+  18 October 2026 ended with `Audit: Generation provenance and tool names logged in Tiger Cloud` and
+  `Orchestrator: LangGraph StateGraph`; Groq `openai/gpt-oss-120b` wrote that selection.
 
 ### Ask Rainbone: source statements and navigation
 
@@ -410,7 +463,7 @@ credentials, and checks each mesh's sha256 before drawing it.
 | `GET /health` | Liveness: `{"status": "ok", "service": "rainbowbone-fea"}` |
 | `POST /api/simulate` | Multipart `file`, one `.nii` or `.nii.gz` of at most 512 MiB. Up to 8 uploads received at once (each must finish within 60 s, else 408); at most 3 uncached solves admitted per process, one running at a time; an already-solved file is answered from the cache and never refused; HTTP 429 with `Retry-After` when busy. Returns execution UUID/hash and persistence state; identical contents reuse the execution |
 | `POST /api/explain` | Plain-words explanation of simulation numbers, or of `case_id` `Pat001` read from `clinical/`. AI layer |
-| `POST /api/ask` | Cited reference-data and navigation answers from checked source statements; question length, rate and concurrency limits |
+| `POST /api/ask` | Cited reference-data and navigation answers from checked source statements, produced by the five-stage Ask Rainbone agent pipeline (LangGraph); question length, rate and concurrency limits |
 | `POST /api/risk-analysis` | AI-worded fracture risk analysis of one HFValid subject (`case_id`, optional `fe`) from the published table in `clinical/`. AI layer |
 | `GET /api/history?limit=&source_filename=&run_id=` | Exact execution when `run_id` is supplied (takes precedence); otherwise latest or filename-filtered runs, plus hourly activity buckets |
 | `GET /api/ai-log?limit=` | Latest `ai_analyses` rows: provider, model, latency, grounding store, fallbacks and hashes, without the text |
@@ -579,6 +632,7 @@ optional FSL bone segmentation.
 Future work, not features of this build:
 
 - **A timeline per resident, once the right approvals are in place.** With resident consent, research-ethics review and a PHIPA-compliant agreement with the care home, and a de-identified resident ID, each new CT is solved and compared with her last one, so a care team sees her bone's strength and stress changing between scans, before a fall. Tiger Cloud already stores every simulation run as a time series; this adds the resident ID and the comparison.
+- **Run the check where care teams already work,** alongside the care home's records system (such as PointClickCare), once the approvals are in place. Rainbone has no PointClickCare integration today and uses no PointClickCare data or API.
 - **Privacy work that has to come first.** Real records would need consent, encryption, access control and Ontario PHIPA compliance. Today Rainbone stores no patient records, and nobody should upload a real patient's CT to the public demo, because history file names are publicly readable.
 - **Calibrated bone material.** CT-density-based stiffness instead of one assumed modulus, plus a mesh-convergence study.
 - **All 101 HFValid femurs solved,** so our solve can be compared with each woman's recorded outcome.

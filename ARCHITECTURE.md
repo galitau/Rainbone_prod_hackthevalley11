@@ -18,7 +18,9 @@ CTPelvic1K pelvic meshes in a private Vultr Object Storage bucket, records solve
 provenance in Tiger Cloud (TimescaleDB), and hosts the AI layer: three endpoints that read
 sha256-pinned research facts, compute every number in code, let Gemini (or Groq, or a template) put
 those facts into words or select checked statements, check the result in code, and log hashes of what
-was produced. Offline scripts build the static femur assets and publish the bucket contents.
+was produced. The third endpoint, Ask Rainbone, is an AI agent pipeline of five stages (triage,
+evidence, writer, critic, audit) orchestrated as a LangGraph `StateGraph`. Offline scripts build the
+static femur assets and publish the bucket contents.
 
 ```mermaid
 flowchart LR
@@ -152,7 +154,8 @@ and logging.
 | Grounding: read `clinical/` facts with sha256 pins, bundled fallback | `services/clinical_store.py` |
 | Plain-words card: facts, checker, template | `services/explain.py` |
 | Fracture risk card: facts, checker, template | `services/risk.py` |
-| Ask Rainbone: evidence catalogue, writer chain, code critic | `services/ask.py` |
+| Ask Rainbone: evidence catalogue, the five stage functions, writer chain, code critic | `services/ask.py` |
+| Ask orchestration: LangGraph `StateGraph` of the five stages, built-in fallback runner | `services/ask_graph.py` |
 | Ask triage: one native Gemini function-call turn | `services/ask_triage.py` |
 | Ask tools: five allowlisted read-only evidence tools | `services/ask_tools.py` |
 | Gemini and Groq adapters, cooldowns, answer cache, saved Gemini answers | `services/llm_providers.py` |
@@ -165,6 +168,57 @@ the template. No model computes a number and
 no model receives a scan or a file name; the risk card also keeps our own FE numbers out of the model
 input. ARF0 in the risk card is the HFValid authors' published model estimate for subject Pat001,
 not a figure Rainbone computes.
+
+#### Ask Rainbone agent pipeline
+
+`ask.py` defines five stage functions and `ask_graph.py` runs them as nodes of a LangGraph
+`StateGraph` (`langgraph==1.2.16`). The edges are fixed except one: after the critic, a conditional
+edge returns to the writer (one rewrite after a rejection, otherwise the next provider) or goes on to
+audit. The graph state holds only the name of the next stage; no question text, credentials or
+evidence pass into LangGraph. The graph has no checkpointer and runs inside
+`tracing_context(enabled=False)` with no callbacks. If the framework fails, a built-in runner
+continues from the same stage without replaying finished ones; an error raised by a stage is passed
+on unchanged. The trace's last step names the orchestrator: `Orchestrator: LangGraph StateGraph` or
+`Orchestrator: built-in (LangGraph unavailable)`.
+
+```mermaid
+flowchart LR
+  q(["POST /api/ask<br/>question, case_id, page"])
+
+  subgraph LG["LangGraph StateGraph · services/ask_graph.py · no checkpointer · tracing off"]
+    direction LR
+    triage["triage<br/>rules, or one Gemini<br/>native function-call turn"]
+    evidence["evidence<br/>validate 1 to 4 calls,<br/>run read-only tools"]
+    writer["writer<br/>select 1 to 3<br/>approved statement IDs"]
+    critic{"critic<br/>code checks"}
+    audit["audit<br/>render statements,<br/>log provenance"]
+    triage --> evidence --> writer --> critic
+    critic -->|"no accepted selection:<br/>one rewrite, else next provider"| writer
+    critic -->|"accepted"| audit
+  end
+
+  subgraph TOOLS["Read-only tools · services/ask_tools.py"]
+    tools["get_patient_facts · compare_with_cohort<br/>get_fea_result · get_page_guide<br/>get_dataset_info<br/>enum arguments, case Pat001 only"]
+  end
+
+  subgraph PROV["Writer providers, in order"]
+    direction TB
+    p1["Gemini gemini-3.8-flash"] --> p2["Gemini gemini-3.5-flash-lite"] --> p3["saved Gemini selection<br/>for the same inputs"] --> p4["Groq openai/gpt-oss-120b"] --> p5["rules template<br/>no network"]
+  end
+
+  gem["Gemini API<br/>function calling"]
+  tiger[("Tiger Cloud · ai_analyses<br/>provider, model, latency,<br/>hashes, tools_used")]
+  builtin["Built-in runner<br/>continues from the same stage<br/>if LangGraph fails"]
+  out(["Cited answer, trace ending in<br/>Orchestrator: LangGraph StateGraph"])
+
+  q --> triage
+  triage -.->|"questions rules do not recognise"| gem
+  evidence --> tools
+  writer --> p1
+  audit -->|"best effort, at most 2.5 s,<br/>not for a saved selection"| tiger
+  LG -.->|"framework failure"| builtin
+  audit --> out
+```
 
 ### Authentication and identity
 
@@ -377,6 +431,7 @@ sequenceDiagram
   alt same question hash, evidence, page and chain answered before
     Note over A: reuse the checked selection, trace stage cache,<br/>no triage, tools, writer or audit
   else new question
+    Note over A: LangGraph StateGraph runs the nodes triage → evidence → writer → critic → audit
     alt known chip, follow-up or clear intent
       Note over A: rules triage picks the matching tools
     else any other question
@@ -403,14 +458,17 @@ sequenceDiagram
     opt still none
       Note over A: rules writer selects the IDs
     end
-    Note over A: render the exact statements, citations, page links and disclaimer
+    Note over A: audit node renders the exact statements, citations, page links and disclaimer
     A->>T: INSERT INTO ai_analyses with hashes and tools_used, at most 2.5 s, not for a saved selection
+    Note over A: last trace step names the orchestrator, LangGraph StateGraph or the built-in runner
   end
   A-->>B: answer, provider, model, served, sources, grounding, logged, tools_used, trace, usage, workflow_usage
 ```
 
-The five tools are `get_patient_facts`, `compare_with_cohort`, `get_fea_result`, `get_page_guide`
-and `get_dataset_info`. Their arguments are enums (`case_id` can only be `Pat001`), so no call can
+The diagram's triage, tool loop, writer attempts, critic and audit are the five LangGraph nodes
+described under [Ask Rainbone agent pipeline](#ask-rainbone-agent-pipeline); the loop from the critic
+back to the writer is the graph's conditional edge. The five tools are `get_patient_facts`,
+`compare_with_cohort`, `get_fea_result`, `get_page_guide` and `get_dataset_info`. Their arguments are enums (`case_id` can only be `Pat001`), so no call can
 select an arbitrary case, file, URL or SQL. Besides the question and the page, the writer sees only
 the executed tools' outputs and the statement IDs they allow, and the model never writes prose: the
 server renders statements from a fixed catalogue. Each request is independent; prior turns and
@@ -559,7 +617,9 @@ All state below is in memory and belongs to one API process.
   template. The template needs no network and passes its checker for every valid request; if it ever
   did not, the request fails rather than show unchecked text.
 - **Ask:** rules triage for recognised intents, native Gemini triage otherwise, rules triage if that
-  fails. Writers follow the same provider chain and end with a rules writer.
+  fails. Writers follow the same provider chain and end with a rules writer. If LangGraph fails, a
+  built-in runner continues from the same stage and the trace says `Orchestrator: built-in
+  (LangGraph unavailable)`.
 - **Database:** an unset or failing database never fails a simulation or an AI answer; the response
   reports `persistence: "unavailable"` or `logged: null`, and the UI claims a save only when the API
   confirms it.

@@ -68,7 +68,7 @@ flowchart TB
     ga{"Gemini answer<br/>passes the<br/>checker?"}
     fb["Fallback in order:<br/>saved Gemini answer → Groq<br/>→ template, each checked"]
     i5["Audit row: provider, model,<br/>latency, hashes<br/>(not for a saved or reused answer)"]
-    i4["Ask pipeline: triage → read-only<br/>tools → writer → code critic → audit<br/>(sub-process below)"]
+    i4["Ask Rainbone AI agent pipeline<br/>on LangGraph: triage → read-only<br/>tools → writer → code critic → audit<br/>(sub-process below)"]
   end
 
   subgraph DATA["Data sources"]
@@ -110,7 +110,7 @@ flowchart TB
 | 3 | Care team | Rotate the femur, turn on Cut-away and set the depth to see stress inside the bone. The standing-load stress ratio is 11 % (10.55 %): peak stress 15.83 MPa divided by an assumed 150 MPa strength. It is not a fracture probability. | `frontend/public/models/hfvalid-femur/manifest.json`, `backend/services/explain.py` |
 | 4 | Care team | Read the published measures on the risk-analysis card. ARF0 is 47.1 %, higher than 56 of the 101 women (study median 44.3 %; the 4 women with a fracture recorded during follow-up had 53.7–73.2 %). MSF is 1,339 N, weaker than 75 of the 101. A sideways fall loads the hip with 2.90–4.26 kN (van den Kroonenberg 1995), 2.17–3.18 times that strength. | `frontend/public/models/hfvalid-risk.json`, `backend/services/risk.py` |
 | 5 | AI layer, then care team | The dashboard requests `POST /api/explain` and `POST /api/risk-analysis`. Under each card a provenance line says where the facts were read from ("Facts read from Vultr Object Storage · sha256 verified", or the bundled backup copy with the reason) and "Logged in Tiger Cloud" when the audit row is confirmed. The card label names the model, a saved Gemini answer, the Groq backup or "Offline summary (no AI)". | `frontend/components/grounding-line.tsx`, `frontend/lib/ai-label.ts` |
-| 6 | Care team, AI layer | Ask Rainbone (header button, `/` key, or **Ask a follow-up** on either card) answers from approved, cited source statements. See the sub-process below. | `frontend/components/ask-rainbone.tsx`, `backend/services/ask.py` |
+| 6 | Care team, AI layer | Ask Rainbone (header button, `/` key, or **Ask a follow-up** on either card) answers from approved, cited source statements through a five-stage AI agent pipeline orchestrated with LangGraph; the drawer shows each recorded step. See the sub-process below. | `frontend/components/ask-rainbone.tsx`, `backend/services/ask.py` |
 | 7 | Care team, clinician, resident | The conversation and any action happen outside Rainbone, under the facility's existing fall-prevention protocols. Rainbone has no connection to a care record system and stores no care decision. | — |
 | Import | Care team, Rainbone app | **Import scan** posts a `.nii` or `.nii.gz` (at most 512 MiB) to `POST /api/simulate`. The API keeps the largest connected region at or above 150 HU, maps HU to stiffness, solves an 800 N compression with SfePy and returns the 99.5th-percentile stress, mean stiffness, bone volume and the stress ratio. The file itself is not saved; the file name and results are saved to `simulation_runs` in Tiger Cloud when the database is reachable. | `backend/main.py`, `backend/services/fea_solver.py`, `backend/services/history.py` |
 
@@ -125,32 +125,50 @@ flowchart TB
 
 ### Ask Rainbone sub-process
 
+A care-team user types a question in the Ask Rainbone drawer (or picks a chip or a follow-up) and
+gets a checked, cited answer. The five stages inside the box are the nodes of a LangGraph
+`StateGraph` (`backend/services/ask_graph.py`); each one adds timed steps to the trace the drawer
+shows.
+
 ```mermaid
 flowchart TB
-  q(("Question<br/>up to 500 characters"))
+  q(("Care-team question<br/>up to 500 characters"))
   adm{"Within limits?<br/>8 per minute per<br/>connecting address,<br/>4 active requests"}
   busy["HTTP 429<br/>with Retry-After"]
   ev{"Evidence verified?<br/>risk table and<br/>femur manifest"}
   no503["HTTP 503<br/>before any model call"]
-  known{"Known question,<br/>chip or follow-up?"}
-  rules["Rules triage"]
-  native["Gemini native<br/>function calls<br/>(at most 6 s)"]
-  nok{"Valid calls<br/>returned?"}
-  general["Rules fallback:<br/>site-help guide"]
-  plan["Validate the plan:<br/>1 to 4 calls, allowlisted<br/>tools and arguments"]
-  tools["Run read-only evidence tools<br/>get_patient_facts · compare_with_cohort<br/>get_fea_result · get_page_guide<br/>get_dataset_info"]
-  writer["Writer selects 1 to 3<br/>approved statement IDs<br/>Gemini → saved selection<br/>→ Groq → rules"]
-  critic{"Code critic passes?<br/>known IDs, citations,<br/>links, 120 words"}
-  rewrite["One bounded rewrite,<br/>then the next provider"]
-  render["Server renders the exact<br/>statements, citations<br/>and disclaimer"]
-  audit[("Tiger ai_analyses<br/>hashes and tool names,<br/>no question text")]
-  out(("Cited answer<br/>with its trace"))
+
+  subgraph LG["Ask Rainbone AI agent pipeline · LangGraph StateGraph"]
+    subgraph S1["1 · triage"]
+      refuse{"Asks for personal data<br/>or medical advice?<br/>name, address, birth date,<br/>diagnosis, treatment, dose"}
+      known{"Known question,<br/>chip or follow-up?"}
+      rules["Rules triage"]
+      norule["Rules triage selects only<br/>the fixed refusal statement"]
+      native["Gemini native<br/>function calls<br/>(at most 6 s)"]
+      nok{"Valid calls<br/>returned?"}
+      general["Rules fallback:<br/>site-help guide"]
+    end
+    subgraph S2["2 · evidence"]
+      plan["Validate the plan:<br/>1 to 4 calls, allowlisted<br/>tools and arguments"]
+      tools["Run read-only evidence tools<br/>get_patient_facts · compare_with_cohort<br/>get_fea_result · get_page_guide<br/>get_dataset_info"]
+    end
+    writer["3 · writer selects 1 to 3<br/>approved statement IDs<br/>Gemini → saved selection<br/>→ Groq → rules"]
+    critic{"4 · code critic passes?<br/>known IDs, required IDs,<br/>citations, links, 120 words"}
+    rewrite["Conditional edge back to the writer:<br/>one bounded rewrite,<br/>then the next provider"]
+    render["5 · audit: render the exact<br/>statements, citations<br/>and disclaimer"]
+  end
+
+  audit[("Tiger Cloud ai_analyses<br/>provider, model, hashes,<br/>tool names, no question text")]
+  out(("Cited answer with its steps:<br/>triage, evidence, writer, critic,<br/>audit, orchestrator"))
+  refout(("Fixed statement: Rainbone answers<br/>only about its own data and pages"))
 
   q --> adm
   adm -->|"no"| busy
   adm -->|"yes"| ev
   ev -->|"no"| no503
-  ev -->|"yes"| known
+  ev -->|"yes"| refuse
+  refuse -->|"yes"| norule --> plan
+  refuse -->|"no"| known
   known -->|"yes"| rules --> plan
   known -->|"no"| native --> nok
   nok -->|"yes"| plan
@@ -159,15 +177,24 @@ flowchart TB
   critic -->|"no"| rewrite --> writer
   critic -->|"yes"| render
   render -.->|"unless a saved selection"| audit
-  render --> out
+  render -->|"normal question"| out
+  render -->|"refused question"| refout
 ```
 
 - **Bounded, not autonomous.** The model never writes free prose here. It chooses tools from a
   fixed list with fixed argument values (only case `Pat001`), and the writer picks statement IDs
   from the outputs of the tools that ran. The server renders those exact statements with their
   citations and links, and adds "Research prototype; not a medical device or medical advice."
-- **Personal medical questions** (diagnosis, treatment, medication, "my risk", "should I") go to
-  a fixed statement saying Rainbone answers only questions about its own data and pages.
+- **Agent steps are visible.** The drawer shows the five stages (triage, evidence, writer, critic,
+  audit) with their recorded times, and **Steps used for this answer** lists each step, the tools
+  that ran and, last, the orchestrator: `Orchestrator: LangGraph StateGraph`, or
+  `Orchestrator: built-in (LangGraph unavailable)` if the framework failed and the built-in runner
+  continued from the same stage. The steps arrive with the finished answer; they are not streamed.
+- **Refusal: personal data.** Questions asking for a person's name, address, date of birth, phone,
+  email, health card, hospital or where she lives are routed by rules triage to the fixed statement
+  "I can only answer questions about Rainbone's data and pages", before any model chooses tools.
+- **Refusal: medical advice.** Personal medical questions (diagnosis, treatment, medication, dose,
+  surgery, "my risk", "should I", "should she") go to the same fixed statement.
   Questions about whether or when she will fracture get the research limitation, the recorded
   Pat001 follow-up outcome and the published ARF0, never a forecast.
 - **Privacy.** Each question is sent on its own, without earlier turns or uploaded scans. The
@@ -176,6 +203,11 @@ flowchart TB
   not to put personal or medical information in questions.
 - **Reuse.** An identical question over the same evidence can be answered from the in-memory
   cache (128 answers); it is re-checked and not logged again.
+- **Audit trail.** Every newly produced answer, refusals included, passes the audit stage, which
+  writes one `ai_analyses` row to Tiger Cloud when the database is reachable: provider, model,
+  latency, fallbacks, grounding store, the evidence tools that ran, and sha256 hashes of the facts and
+  the answer. The drawer's audit step and "Logged in Tiger Cloud" appear only when the row is
+  confirmed; `/datasets` lists the latest rows.
 
 ## 2. Data and operations process
 
