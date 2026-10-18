@@ -16,7 +16,7 @@ from typing import Any, Optional
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 ENV_VARS = ("VULTR_S3_ENDPOINT", "VULTR_S3_ACCESS_KEY", "VULTR_S3_SECRET_KEY", "VULTR_S3_BUCKET")
 BUCKET_PREFIX = "ctpelvic1k/"
@@ -74,7 +74,8 @@ def _settings() -> dict[str, str]:
     if missing:
         raise HTTPException(
             status_code=503,
-            detail="Bone storage is not configured: set " + ", ".join(missing) + " (see backend/README.md).",
+            detail="Bone storage is not configured: set " + ", ".join(missing)
+            + " (see scripts/vultr_pipeline/README.md).",
         )
     endpoint = os.environ["VULTR_S3_ENDPOINT"].strip()
     if "://" not in endpoint:
@@ -110,7 +111,10 @@ def list_bones() -> BonesResponse:
     from botocore.exceptions import BotoCoreError, ClientError
 
     settings = _settings()
-    client = _client(settings)
+    try:
+        client = _client(settings)
+    except ValueError as exc:  # botocore rejects the endpoint URL; its message is not echoed
+        raise HTTPException(status_code=503, detail="VULTR_S3_ENDPOINT is not a valid URL.") from exc
     try:
         body = client.get_object(Bucket=settings["bucket"], Key=MANIFEST_KEY)["Body"].read()
     except ClientError as exc:
@@ -148,13 +152,19 @@ def list_bones() -> BonesResponse:
             )
             files.append({**entry, "key": key, "content_type": _content_type(path), "url": url})
         cases.append({**case, "files": files})
-    return BonesResponse(
-        expires_in_seconds=URL_TTL_SECONDS,
-        expires_at=datetime.now(timezone.utc) + timedelta(seconds=URL_TTL_SECONDS),
-        manifest_key=MANIFEST_KEY,
-        generated_utc=manifest.get("generated_utc"),
-        dataset=manifest.get("dataset") or {},
-        segmentation_tool=manifest.get("segmentation_tool") or {},
-        mesh_method=manifest.get("mesh_method"),
-        cases=cases,
-    )
+    try:
+        return BonesResponse(
+            expires_in_seconds=URL_TTL_SECONDS,
+            expires_at=datetime.now(timezone.utc) + timedelta(seconds=URL_TTL_SECONDS),
+            manifest_key=MANIFEST_KEY,
+            generated_utc=manifest.get("generated_utc"),
+            dataset=manifest.get("dataset") or {},
+            segmentation_tool=manifest.get("segmentation_tool") or {},
+            mesh_method=manifest.get("mesh_method"),
+            cases=cases,
+        )
+    except ValidationError as exc:
+        # Log where the manifest is wrong, never the values (they include pre-signed URLs).
+        where = sorted({".".join(str(part) for part in error["loc"]) for error in exc.errors()})
+        logger.warning("%s failed validation at %s", MANIFEST_KEY, ", ".join(where[:10]))
+        raise HTTPException(status_code=502, detail=f"{MANIFEST_KEY} is not a valid bone manifest.") from exc

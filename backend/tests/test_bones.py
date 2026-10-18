@@ -149,6 +149,39 @@ class PresignedUrlTests(unittest.TestCase):
         self.put_manifest(json.dumps({"cases": {"not": "a list"}}).encode())
         self.assertEqual(self.client.get("/api/bones").status_code, 502)
 
+    def test_502_not_500_for_entries_with_missing_or_wrong_fields(self):
+        broken = (
+            ("files", 0, "sha256", None),  # field removed
+            ("files", 0, "bytes", "big"),
+            ("case_id", None, None, None),  # case without case_id
+        )
+        for field, index, key, value in broken:
+            manifest = json.loads(json.dumps(MANIFEST))
+            case = manifest["cases"][0]
+            if index is None:
+                case.pop(field)
+            elif value is None:
+                case[field][index].pop(key)
+            else:
+                case[field][index][key] = value
+            self.put_manifest(json.dumps(manifest).encode())
+            with self.subTest(field=field, key=key), self.assertLogs("routes_bones", level="WARNING") as logs:
+                response = self.client.get("/api/bones")
+            self.assertEqual(response.status_code, 502, response.text)
+            self.assertEqual(response.json()["detail"], "ctpelvic1k/manifest.json is not a valid bone manifest.")
+            for line in logs.output:
+                self.assertNotIn("X-Amz-Signature", line)
+        manifest = json.loads(json.dumps(MANIFEST))
+        manifest["dataset"] = "x"
+        self.put_manifest(json.dumps(manifest).encode())
+        self.assertEqual(self.client.get("/api/bones").status_code, 502)
+
+    def test_503_not_500_for_an_endpoint_that_is_not_a_url(self):
+        with mock.patch.dict(os.environ, {"VULTR_S3_ENDPOINT": "https://bad host.example"}):
+            response = self.client.get("/api/bones")
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.json()["detail"], "VULTR_S3_ENDPOINT is not a valid URL.")
+
     def test_502_without_leaking_keys_when_the_bucket_is_wrong(self):
         with mock.patch.dict(os.environ, {"VULTR_S3_BUCKET": "no-such-bucket"}):
             with self.assertLogs("routes_bones", level="WARNING") as logs:
