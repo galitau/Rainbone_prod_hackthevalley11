@@ -15,8 +15,8 @@ plain language, and a checker rejects any answer containing a number it was not 
 
 Rainbone (RainbowBone) shows how a real bone carries load. It runs a finite-element
 analysis (FEA) on a complete femur segmented from CT, colours the bone by von Mises
-stress in a 3D viewer you can rotate and cut open, reports an illustrative fracture
-risk index (peak stress against an assumed 150 MPa bone strength), and explains the
+stress in a 3D viewer you can rotate and cut open, reports a standing-load stress
+ratio (peak stress against an assumed 150 MPa bone strength), and explains the
 numbers in plain language. A FastAPI back end runs the same kind of solve on an
 uploaded CT volume, with each voxel's stiffness taken from its Hounsfield units. It is
 a research prototype built at Hack the Valley 11, **not a medical device**: material
