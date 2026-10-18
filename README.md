@@ -2,7 +2,9 @@
 
 ![Rainbone: a stress test for bones](docs/images/rainbone-cover.png)
 
-**[Live site](https://rainbone.health)** · **[Demo video](https://youtu.be/SCrmSu9aVzs)** · **[Devpost](https://devpost.com/software/rainbowbone)**
+- **Live site:** <https://rainbone.health>
+- **Devpost:** <https://devpost.com/software/rainbowbone>
+- **Demo video:** <https://youtu.be/SCrmSu9aVzs>
 
 **A stress test for bones, explained by AI.**
 
