@@ -3,10 +3,8 @@
 import { useEffect, useMemo, useRef } from "react";
 import {
   Activity,
-  Bell,
   ChevronDown,
   ChevronRight,
-  CircleHelp,
   Database,
   FileUp,
   FolderOpen,
@@ -27,6 +25,8 @@ import { LiveRun, ALL_NUMBERS_ID } from "@/components/live-run";
 import { PlainExplanation } from "@/components/plain-explanation";
 import { FractureRiskAnalysis } from "@/components/risk-analysis";
 import { LesionProgression } from "@/components/lesion-progression";
+import { HeaderHelp } from "@/components/header-help";
+import { HeaderNotifications } from "@/components/header-notifications";
 import { CollapsiblePanel, PanelSplitter, useOverviewLayout, type PanelId } from "@/components/overview-layout";
 import { API_BASE_URL, type ExplanationState, type HistoryState, type RiskAnalysisState, type SimulationResult } from "@/lib/api";
 import { FEMUR_AUTHORS, FEMUR_INSTITUTION, FEMUR_MODEL } from "@/lib/model";
@@ -122,10 +122,10 @@ export function Dashboard(props: DashboardProps) {
                 )}
                 <span className="truncate font-medium text-ink" aria-current="page">{VIEW_TITLES[view]}</span>
               </nav>
-              <div className="flex items-center gap-2">
+              <div className="flex shrink-0 items-center gap-2">
                 {health && <ApiStatus health={health} />}
-                <IconButton label="Help"><CircleHelp size={18} /></IconButton>
-                <IconButton label="Notifications"><Bell size={18} /></IconButton>
+                <HeaderHelp />
+                <HeaderNotifications health={health} risk={"run" in props ? props.risk : undefined} explanation={"run" in props ? props.explanation : undefined} />
                 <div className="ml-2 hidden items-center gap-3 border-l border-line pl-4 sm:flex" title="Demo account">
                   <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-[11px] font-semibold text-white">DR</div>
                   <div className="hidden text-left xl:block"><p className="text-[13px] font-medium leading-4 text-ink">Dr. Rowan</p><p className="text-[11px] text-muted">Radiology · demo</p></div>
@@ -263,10 +263,6 @@ function ApiStatus({ health }: { health: ApiHealth }) {
 function NavHealth({ health }: { health: ApiHealth }) {
   const state = HEALTH[health];
   return <p className={`flex items-center gap-2 text-xs font-medium ${state.nav}`}><span className={`h-2 w-2 rounded-full ${state.dot}`} aria-hidden /> {state.label}</p>;
-}
-
-function IconButton({ label, children }: { label: string; children: React.ReactNode }) {
-  return <button type="button" className="rounded-lg p-2 text-muted transition hover:bg-sunken hover:text-ink" aria-label={label}>{children}</button>;
 }
 
 function RainboneMarkSmall() {
