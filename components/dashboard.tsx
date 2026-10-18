@@ -74,7 +74,7 @@ export function Dashboard(props: DashboardProps) {
                 <span className="lg:hidden"><RainboneMarkSmall /></span>
                 <span className="hidden sm:inline">Patients</span>
                 <ChevronRight size={14} className="hidden shrink-0 sm:block" aria-hidden />
-                <span className="hidden sm:inline">{FEMUR_MODEL.dataset} {FEMUR_MODEL.caseId}</span>
+                <span className="hidden sm:inline">{view === "imaging" ? "CTPelvic1K" : `${FEMUR_MODEL.dataset} ${FEMUR_MODEL.caseId}`}</span>
                 <ChevronRight size={14} className="hidden shrink-0 sm:block" aria-hidden />
                 <span className="truncate font-medium text-ink" aria-current="page">{view === "physics" ? "Physics simulations" : view === "imaging" ? "Imaging library" : "Patient overview"}</span>
               </nav>

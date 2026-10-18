@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Cloud, RotateCcw, ShieldAlert, ShieldCheck } from "lucide-react";
+import { API_BASE_URL } from "@/lib/api";
 import type vtkActor from "@kitware/vtk.js/Rendering/Core/Actor";
 import type vtkPolyData from "@kitware/vtk.js/Common/DataModel/PolyData";
 
@@ -40,8 +41,6 @@ type BonesData = BonesResponse & { validUntil: number };
 type Integrity = "verified" | "unchecked";
 type LoadedBone = { name: string; triangles: number; bytes: number; integrity: Integrity };
 
-// Same variable and default as the rest of the front end: NEXT_PUBLIC_API_BASE_URL, inlined at build time.
-const API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
 const LICENSE_URLS: Record<string, string> = { "cc-by-4.0": "https://creativecommons.org/licenses/by/4.0/" };
 const BONE_STYLE: Record<string, { label: string; color: string; dice?: string }> = {
   sacrum: { label: "Sacrum (incl. S1)", color: "#f2c46d", dice: "sacrum_incl_S1" },
@@ -264,7 +263,7 @@ export function CloudBones() {
     <div className="mx-auto max-w-6xl space-y-4">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="flex items-center gap-2 text-lg font-medium"><Cloud size={18} className="text-link" /> Pelvic bones from Vultr Object Storage</h1>
+          <h1 className="flex items-center gap-2 font-serif text-[22px] font-semibold leading-tight tracking-[-0.01em] text-ink"><Cloud size={20} className="text-link" /> Pelvic bones from Vultr Object Storage</h1>
           <p className="mt-1 max-w-2xl text-xs text-muted">
             TotalSegmentator bone meshes of CTPelvic1K CT scans. The browser downloads each mesh from a private bucket
             through a pre-signed link that the API issues for {data ? Math.round(data.expires_in_seconds / 60) : 15} minutes.
@@ -286,9 +285,9 @@ export function CloudBones() {
         <section aria-label="Interactive pelvic bone meshes" className="flex flex-col overflow-hidden rounded-xl border border-line bg-viewport">
           <div className="relative min-h-[440px] flex-1 sm:min-h-[520px]">
             <div ref={containerRef} role="img" aria-label={`Bone meshes of ${selected.case_id}, anterior view`} className="absolute inset-0 touch-none" />
-            {status === "ready" && <p className="pointer-events-none absolute bottom-3 left-3 right-3 text-center text-[10px] text-[#7d91a4]">Anterior view · drag to rotate · scroll to zoom · shift + drag to pan</p>}
-            {status === "loading" && <div role="status" className="absolute inset-0 flex items-center justify-center text-sm text-[#7d91a4]"><span className="mr-3 h-3 w-3 animate-pulse rounded-full bg-[#4fdbd1]" />Downloading meshes from object storage…</div>}
-            {status === "error" && <div role="alert" className="absolute inset-0 flex flex-col items-center justify-center gap-4 p-8 text-center"><p className="max-w-sm text-sm text-[#f8bd72]">{meshError}</p><button className={buttonClass} onClick={() => { if (urlsFresh(data)) setAttempt(n => n + 1); else void refresh(); }}>Reload</button></div>}
+            {status === "ready" && <p className="pointer-events-none absolute bottom-3 left-3 right-3 text-center text-[10px] text-viewport-ink">Anterior view · drag to rotate · scroll to zoom · shift + drag to pan</p>}
+            {status === "loading" && <div role="status" className="absolute inset-0 flex items-center justify-center text-sm text-viewport-ink"><span className="mr-3 h-3 w-3 animate-pulse rounded-full bg-spectrum-cyan" />Downloading meshes from object storage…</div>}
+            {status === "error" && <div role="alert" className="absolute inset-0 flex flex-col items-center justify-center gap-4 p-8 text-center"><p className="max-w-sm text-sm text-spectrum-amber">{meshError}</p><button className={buttonClass} onClick={() => { if (urlsFresh(data)) setAttempt(n => n + 1); else void refresh(); }}>Reload</button></div>}
           </div>
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line px-4 py-3 text-[11px] text-muted">
             <span className="flex items-center gap-1.5">

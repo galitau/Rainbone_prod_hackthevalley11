@@ -310,6 +310,8 @@ npm run dev            # then open http://localhost:3000/bones
 
 The backend's CORS list (`backend/main.py`) allows `http://localhost:3000`, and the
 bucket's CORS rule must list the same origin (`--cors-origin http://localhost:3000`).
+`--cors-origin` replaces the bucket's whole rule, so list every origin that loads the meshes in one run,
+for example `--cors-origin http://localhost:3000 --cors-origin https://rainbone.health --cors-origin https://www.rainbone.health`.
 
 ## Tests
 
