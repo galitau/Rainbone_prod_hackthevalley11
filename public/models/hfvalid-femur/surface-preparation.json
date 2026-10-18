@@ -1,0 +1,5 @@
+{
+  "surface_points": 14303,
+  "surface_triangles": 28602,
+  "method": "Slicer closed surface; vtkDecimatePro 80% triangle reduction with topology preservation. Complete femur; no cut planes."
+}

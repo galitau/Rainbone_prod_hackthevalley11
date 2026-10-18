@@ -1,0 +1,47 @@
+{
+  "dataset": "HFValid",
+  "case_id": "Pat001",
+  "anatomy": "Complete right femur",
+  "source_url": "https://amsacta.unibo.it/id/eprint/8431/",
+  "download_url": "https://amsacta.unibo.it/id/eprint/8431/31/HFValid_Collection_v3.zip",
+  "source_sha256": {
+    "Pat001.nrrd": "9a5efcd007500c735c7bda88bcfd4ca1b26b17730982f4b00f628506494d5ec0",
+    "Pat001.stl": "809747ed6f5c11436c9808edfe4beca9b2ad3f1c035df88d307c32b99ff4a93f"
+  },
+  "license": "CC BY 4.0",
+  "attribution": "Aldieri, La Mattina, Szyszko, Baruffaldi, Viceconti (2025). HFValid collection. University of Bologna. DOI:10.6092/unibo/amsacta/8431",
+  "source_spacing_mm": [
+    0.703125,
+    0.703125,
+    2.0
+  ],
+  "source_shape_ijk": [
+    256,
+    331,
+    220
+  ],
+  "slicer_version": "5.12.4",
+  "source_surface_points": 71510,
+  "source_surface_triangles": 143016,
+  "surface_bounds_ras_mm": [
+    52.9713249206543,
+    137.0594024658203,
+    -44.34449005126953,
+    20.084796905517578,
+    -428.8161315917969,
+    -31.803131103515625
+  ],
+  "head_center_ras_mm": [
+    74.5402,
+    -1.2438,
+    -50.4298
+  ],
+  "segmentation": "Dataset author CT segmentation reviewed and corrected in Slicer 4.11; imported with its full CT into Slicer 5.12.4, saved as a segmentation and exported as a closed surface. No synthetic anatomy.",
+  "limitations": [
+    "Original DICOM-derived CT is distributed by the authors as an NRRD volume.",
+    "This demonstration uses homogeneous material, not CT density-calibrated properties.",
+    "Distal fixation and head compression are illustrative boundary conditions, not a full musculoskeletal loading model.",
+    "This independently computed FEA does not reproduce the dataset authors' fracture-risk analyses.",
+    "No mesh-convergence study or clinical validation is claimed."
+  ]
+}

@@ -1,0 +1,95 @@
+{
+  "dataset": "HFValid",
+  "case_id": "Pat001",
+  "anatomy": "Complete right femur",
+  "source_url": "https://amsacta.unibo.it/id/eprint/8431/",
+  "download_url": "https://amsacta.unibo.it/id/eprint/8431/31/HFValid_Collection_v3.zip",
+  "source_sha256": {
+    "Pat001.nrrd": "9a5efcd007500c735c7bda88bcfd4ca1b26b17730982f4b00f628506494d5ec0",
+    "Pat001.stl": "809747ed6f5c11436c9808edfe4beca9b2ad3f1c035df88d307c32b99ff4a93f"
+  },
+  "license": "CC BY 4.0",
+  "attribution": "Aldieri, La Mattina, Szyszko, Baruffaldi, Viceconti (2025). HFValid collection. University of Bologna. DOI:10.6092/unibo/amsacta/8431",
+  "source_spacing_mm": [
+    0.703125,
+    0.703125,
+    2.0
+  ],
+  "source_shape_ijk": [
+    256,
+    331,
+    220
+  ],
+  "slicer_version": "5.12.4",
+  "source_surface_points": 71510,
+  "source_surface_triangles": 143016,
+  "surface_bounds_ras_mm": [
+    52.9713249206543,
+    137.0594024658203,
+    -44.34449005126953,
+    20.084796905517578,
+    -428.8161315917969,
+    -31.803131103515625
+  ],
+  "head_center_ras_mm": [
+    74.5402,
+    -1.2438,
+    -50.4298
+  ],
+  "segmentation": "Dataset author CT segmentation reviewed and corrected in Slicer 4.11; imported with its full CT into Slicer 5.12.4, saved as a segmentation and exported as a closed surface. No synthetic anatomy.",
+  "limitations": [
+    "Original DICOM-derived CT is distributed by the authors as an NRRD volume.",
+    "This demonstration uses homogeneous material, not CT density-calibrated properties.",
+    "Distal fixation and head compression are illustrative boundary conditions, not a full musculoskeletal loading model.",
+    "This independently computed FEA does not reproduce the dataset authors' fracture-risk analyses.",
+    "No mesh-convergence study or clinical validation is claimed."
+  ],
+  "mesh_target_volume_mm3": 80.0,
+  "mesh_max_volume_mm3": 1891.8300287346458,
+  "mesher": "TetGen 1.6.0",
+  "surface_preparation": {
+    "surface_points": 14303,
+    "surface_triangles": 28602,
+    "method": "Slicer closed surface; vtkDecimatePro 80% triangle reduction with topology preservation. Complete femur; no cut planes."
+  },
+  "solver_version": "2026.3",
+  "metrics": {
+    "solver": "SfePy",
+    "element_type": "4-node linear tetrahedron",
+    "nodes": 17361,
+    "elements": 60819,
+    "load_newtons": 800.0,
+    "youngs_modulus_mpa": 10000.0,
+    "poisson_ratio": 0.3,
+    "loaded_area_mm2": 1208.1532898076305,
+    "support_depth_mm": 15.0,
+    "load_depth_mm": 8.0,
+    "fixed_nodes": 2040,
+    "loaded_surface_triangles": 1060,
+    "volume_cm3": 408.0918950766294,
+    "min_element_volume_mm3": 3.1974425897773296e-05,
+    "max_element_volume_mm3": 1891.8300287346458,
+    "max_von_mises_mpa": 41.98067573741869,
+    "max_displacement_mm": 3.934018692918333,
+    "reaction_newtons": [
+      -6.082475495494677e-08,
+      -1.5209913328817493e-08,
+      799.999999984406
+    ],
+    "relative_free_residual": 6.557031898403258e-11,
+    "relative_force_balance_error": 8.075971440407963e-11,
+    "max_nodal_von_mises_mpa": 15.830300387042152
+  },
+  "coordinate_system": "RAS, mm, original CT geometry converted from LPS by Slicer",
+  "stress_association": "Raw element stress retained in VTU and boundary cells; displayed contours use volume-weighted nodal averages of solved element von Mises stress",
+  "displacement_association": "Solved nodal displacements, magnitude in surface VTP, vector in VTU",
+  "mesh_processing": "TetGen boundary-conforming tetrahedra from the Slicer surface; switches -pYq1.4a80z. Boundary triangles preserved.",
+  "boundary_conditions": "Clamp nodes within 15 mm of distal minimum Z; uniform -Z traction totaling 800 N on exterior triangles within 8 mm of maximum Z and within 25 mm of femoral head center",
+  "material": "Homogeneous isotropic linear elasticity, E=10000 MPa, nu=0.3, uncalibrated",
+  "files_sha256": {
+    "bone.seg.nrrd": "66dae95940ec6e5002b5037d9e1432291830d8ed2e105add056c96ee1a50599e",
+    "slicer-surface.vtp": "5f342bf906efa73d3bb0acafc1cf4f5ea4ccfaa53776cca75e9d27ed5412454b",
+    "fea-surface.vtp": "e0e7e55a56d9fcf46624a435041d8463c3e09273ab6407f320d0e6ffbb8f607b",
+    "bone-fea.vtu": "e012cddb9bb49ac570d9ff405944b0edce244669a7c3c324b3a1d2fd5d90f235"
+  }
+}
