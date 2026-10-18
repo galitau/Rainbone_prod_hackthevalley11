@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { CloudBones } from "@/components/CloudBones";
+import { Dashboard } from "@/components/dashboard";
 
 export const metadata: Metadata = {
   title: "Pelvic bones | RainbowBone",
@@ -7,9 +7,5 @@ export const metadata: Metadata = {
 };
 
 export default function BonesPage() {
-  return (
-    <main className="min-h-screen bg-canvas px-4 py-6 font-sans text-ink sm:px-8">
-      <CloudBones />
-    </main>
-  );
+  return <Dashboard view="imaging" />;
 }

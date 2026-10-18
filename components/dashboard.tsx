@@ -13,6 +13,7 @@ import { StressChart } from "@/components/stress-chart";
 import { API_BASE_URL, type ExplanationState, type HistoryState, type SimulationResult } from "@/lib/api";
 import { FEMUR_AUTHORS, FEMUR_INSTITUTION, FEMUR_MODEL } from "@/lib/model";
 const PhysicsSimulations = dynamic(() => import("@/components/physics-simulations").then(module => module.PhysicsSimulations));
+const CloudBones = dynamic(() => import("@/components/CloudBones").then(module => module.CloudBones));
 
 export type ApiHealth = "checking" | "online" | "offline";
 export type RunInput = { name: string; kind: "sample" | "upload" };
@@ -31,12 +32,12 @@ type OverviewProps = {
   onUpload: (file: File) => void;
 };
 
-// app/physics-simulations/page.tsx renders <Dashboard view="physics" />.
-type DashboardProps = OverviewProps | { view: "physics" };
+// app/physics-simulations/page.tsx renders <Dashboard view="physics" />, app/bones/page.tsx <Dashboard view="imaging" />.
+type DashboardProps = OverviewProps | { view: "physics" | "imaging" };
 
 export function Dashboard(props: DashboardProps) {
-  const view = props.view === "physics" ? "physics" : "overview";
-  const health = props.view === "physics" ? undefined : props.health;
+  const view = "run" in props ? "overview" : props.view;
+  const health = "run" in props ? props.health : undefined;
   return (
     <main className="min-h-screen bg-canvas">
       <div className="flex min-h-screen">
@@ -53,7 +54,7 @@ export function Dashboard(props: DashboardProps) {
           <nav className="mt-12 space-y-1.5">
             <NavItem active={view === "overview"} href="/" icon={<LayoutDashboard size={17} />} label="Overview" />
             <NavItem active={view === "physics"} href="/physics-simulations" icon={<Activity size={17} />} label="Physics simulations" />
-            <NavItem icon={<FileUp size={17} />} label="Imaging library" />
+            <NavItem active={view === "imaging"} href="/bones" icon={<FileUp size={17} />} label="Imaging library" />
           </nav>
           {health && (
             <div className="mt-auto rounded-xl border border-line bg-panel p-4">
@@ -67,16 +68,17 @@ export function Dashboard(props: DashboardProps) {
           <header className="flex h-[76px] items-center justify-between border-b border-line px-5 md:px-8">
             <div>
               <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-cyan">Bone stress simulation</p>
-              <h1 className="mt-1 text-lg font-medium tracking-tight text-ink">{view === "physics" ? "Physics simulations" : "Patient analysis"}</h1>
+              <h1 className="mt-1 text-lg font-medium tracking-tight text-ink">{view === "physics" ? "Physics simulations" : view === "imaging" ? "Imaging library" : "Patient analysis"}</h1>
             </div>
             {health && <div className="lg:hidden"><ApiStatus health={health} /></div>}
           </header>
           <nav aria-label="Mobile workspace navigation" className="flex gap-2 border-b border-line px-5 py-3 lg:hidden">
             <NavItem active={view === "overview"} href="/" icon={<LayoutDashboard size={15} />} label="Overview" />
             <NavItem active={view === "physics"} href="/physics-simulations" icon={<Activity size={15} />} label="Physics simulations" />
+            <NavItem active={view === "imaging"} href="/bones" icon={<FileUp size={15} />} label="Imaging library" />
           </nav>
 
-          {props.view === "physics" ? <PhysicsSimulations /> : <Overview {...props} />}
+          {"run" in props ? <Overview {...props} /> : props.view === "physics" ? <PhysicsSimulations /> : <div className="p-5 md:p-8"><CloudBones /></div>}
         </section>
       </div>
     </main>
