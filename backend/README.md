@@ -479,9 +479,10 @@ bundled copy. Each response says which in `grounding`:
 ```
 
 For the backup, `verified` says whether the bundled copy matches its pin. A
-bucket read is kept in memory for 10 minutes and a fallback for 1 minute, and
-bucket calls give up after 3 s to connect or 5 s to read, so an outage costs
-one request a few seconds, not every request. A reason names an HTTP status
+bucket read is kept in memory for 10 minutes and a fallback for 1 minute,
+concurrent requests share one read, and each object gets one attempt that gives
+up after 1 s to connect or 1.5 s to read, so an outage costs one request about
+1.5 s, not every request. A reason names an HTTP status
 and error code only, never a key, the endpoint, the bucket name or a URL. The
 checkers are unchanged: the facts are the same bytes either way.
 
@@ -506,13 +507,19 @@ names (see [Simulation history](#simulation-history-timescaledb)). The same
 migration file in order. A row holds the time, an `id`, the endpoint, the
 `case_id`, the provider and model, the fallbacks taken before it, the latency,
 the grounding store, and the sha256 of the facts and of the text. The text and
-the facts themselves are not stored, nor are keys or URLs.
+the facts themselves are not stored, nor are keys or URLs, and a fallback's
+reason is stored without the fragment a rejection quotes (`rejected: blocked
+wording`, not the word).
 
 The response's `logged` is `{"id": "<uuid>", "store": "tiger"}` once the row is
 written, and null when `DATABASE_URL` is unset or the write fails (logged as a
-warning with the password masked; the answer is unaffected). An answer the API
-kept and serves again (the answer cache above) is not logged a second time:
-it carries the `id` of the row written when it was produced.
+warning with the password masked; the answer is unaffected). The write is
+bounded: 2 s to connect, a 1.5 s statement timeout, 2.5 s in all; after a
+failure the log is skipped for 60 s, so a slow database costs one answer that
+wait. An answer the API kept and serves again (the answer cache above, keyed
+by case, grounding store, facts and chain) is not logged a second time: it
+carries the `id` of the row written when it was produced. An answer whose row
+was not written is kept for at most 60 s, so a later one is logged.
 
 `GET /api/ai-log?limit=N` (1 to 200, default 20) returns the latest rows,
 newest first, without text. It answers 503 when `DATABASE_URL` is unset, the

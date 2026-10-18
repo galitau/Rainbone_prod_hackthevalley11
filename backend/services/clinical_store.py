@@ -20,8 +20,10 @@ says whether the bundled copy matches its pin. A bundled copy that is missing or
 ClinicalDataUnavailable.
 
 Answers are kept in memory: a bucket read for CACHE_TTL_S, a fallback for FALLBACK_TTL_S, so an outage
-costs one request its timeout rather than every request. The cache is keyed by file and bucket, and
-only names in CATALOGUE are accepted, so it stays bounded.
+costs one request its timeout rather than every request. Concurrent misses for one file wait for a single
+read. A bucket read makes one attempt per object with short timeouts, so a hanging bucket costs about
+CONNECT_TIMEOUT_S + READ_TIMEOUT_S before the bundled copy answers. The cache is keyed by file and bucket,
+and only names in CATALOGUE are accepted, so it stays bounded.
 
 Settings come from runtime_env() (process environment over backend/.env). Credentials, the endpoint,
 the bucket name and signed URLs are never logged or returned: a reason names an error code only.
@@ -52,9 +54,10 @@ INDEX_KEY = PREFIX + "index.json"
 CACHE_TTL_S = 600.0
 FALLBACK_TTL_S = 60.0
 MAX_OBJECT_BYTES = 4 << 20  # the files are tens of kB; a bigger object is not one of them
-# A slow or unreachable bucket must not hold up an answer for long: the bundled copy is a fallback away.
-CONNECT_TIMEOUT_S = 3
-READ_TIMEOUT_S = 5
+# A slow or unreachable bucket must not hold up an answer for long: the bundled copy is a fallback away. One
+# attempt per object (no retries), so a hanging endpoint costs about 1.5 s, not three attempts of each timeout.
+CONNECT_TIMEOUT_S = 1
+READ_TIMEOUT_S = 1.5
 
 LICENCE = "CC BY 4.0"
 DATA_NOTE = "de-identified public research data, not patient records"
@@ -182,7 +185,7 @@ def make_client(settings: Mapping[str, str]):
         aws_access_key_id=settings["access_key"],
         aws_secret_access_key=settings["secret_key"],
         config=Config(signature_version="s3v4", connect_timeout=CONNECT_TIMEOUT_S, read_timeout=READ_TIMEOUT_S,
-                      retries={"max_attempts": 2, "mode": "standard"}),
+                      retries={"total_max_attempts": 1}),
     )
 
 
@@ -256,6 +259,7 @@ def _read_local(entry: ClinicalFile, pin: Optional[str], reason: str) -> tuple[A
 # ----------------------------------------------------------------------------- cache and entry point
 _cache: dict[tuple[str, Optional[str], Optional[str]], tuple[float, Any, Grounding]] = {}
 _cache_lock = threading.Lock()
+_miss_locks: dict[str, threading.Lock] = {}
 
 
 def _now() -> float:
@@ -267,6 +271,17 @@ def reset_cache() -> None:
         _cache.clear()
 
 
+def _cached(cache_key) -> Optional[tuple[Any, Grounding]]:
+    with _cache_lock:
+        kept = _cache.get(cache_key)
+    return (kept[1], kept[2]) if kept is not None and _now() < kept[0] else None
+
+
+def _miss_lock(name: str) -> threading.Lock:
+    with _cache_lock:
+        return _miss_locks.setdefault(name, threading.Lock())
+
+
 def get_clinical_json(name: str, env: Optional[Mapping[str, str]] = None, *, client=None) -> tuple[Any, Grounding]:
     """The parsed JSON of catalogue file `name` and where it came from. Never raises for a bucket problem;
     raises KeyError for an unknown name and ClinicalDataUnavailable when the bundled copy is unusable too.
@@ -276,24 +291,27 @@ def get_clinical_json(name: str, env: Optional[Mapping[str, str]] = None, *, cli
     e = runtime_env() if env is None else env
     settings = s3_settings(e)
     cache_key = (name, settings and settings["endpoint"], settings and settings["bucket"])
-    with _cache_lock:
-        kept = _cache.get(cache_key)
-    if kept is not None and _now() < kept[0]:
-        return kept[1], kept[2]
-    try:
-        pin: Optional[str] = pinned_sha256(entry)
-    except (OSError, ValueError):
-        pin = None
-    try:
-        if pin is None:
-            raise _Fallback(f"no sha256 pinned for {entry.key}")
-        data, grounding = _read_bucket(entry, pin, e, client)
-        ttl = CACHE_TTL_S
-    except Exception as exc:  # noqa: BLE001 - whatever the bucket does, the bundled copy answers
-        reason = str(exc) if isinstance(exc, _Fallback) else f"object storage read failed ({type(exc).__name__})"
-        log.warning("clinical: %s read from the bundled copy: %s", name, reason)
-        data, grounding = _read_local(entry, pin, reason)
-        ttl = FALLBACK_TTL_S
-    with _cache_lock:
-        _cache[cache_key] = (_now() + ttl, data, grounding)
-    return data, grounding
+    kept = _cached(cache_key)
+    if kept is not None:
+        return kept
+    with _miss_lock(name):  # concurrent misses wait for this read instead of each paying the bucket's timeout
+        kept = _cached(cache_key)
+        if kept is not None:
+            return kept
+        try:
+            pin: Optional[str] = pinned_sha256(entry)
+        except (OSError, ValueError):
+            pin = None
+        try:
+            if pin is None:
+                raise _Fallback(f"no sha256 pinned for {entry.key}")
+            data, grounding = _read_bucket(entry, pin, e, client)
+            ttl = CACHE_TTL_S
+        except Exception as exc:  # noqa: BLE001 - whatever the bucket does, the bundled copy answers
+            reason = str(exc) if isinstance(exc, _Fallback) else f"object storage read failed ({type(exc).__name__})"
+            log.warning("clinical: %s read from the bundled copy: %s", name, reason)
+            data, grounding = _read_local(entry, pin, reason)
+            ttl = FALLBACK_TTL_S
+        with _cache_lock:
+            _cache[cache_key] = (_now() + ttl, data, grounding)
+        return data, grounding

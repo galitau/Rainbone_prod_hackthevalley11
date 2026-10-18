@@ -13,6 +13,8 @@ import io
 import json
 import os
 import sys
+import threading
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -342,6 +344,34 @@ class FallbackTests(StoreTestCase):
         client = mock.Mock()
         client.get_object.return_value = {"Body": io.BytesIO(b'{"files": {}}')}
         self.assertEqual(self.read(client).reason, f"{cs.INDEX_KEY} has no usable entry for hfvalid-risk")
+
+    def test_one_short_attempt_per_object(self):
+        client = cs.make_client(cs.s3_settings(S3_ENV))
+        self.assertEqual(client.meta.config.retries["total_max_attempts"], 1)
+        self.assertLessEqual(client.meta.config.connect_timeout, 1)
+        self.assertLessEqual(client.meta.config.read_timeout, 1.5)
+
+    def test_concurrent_misses_share_one_read(self):
+        def slow_failure(**kwargs):
+            time.sleep(0.3)
+            raise EndpointConnectionError(endpoint_url=ENDPOINT)
+
+        client = mock.Mock()
+        client.get_object.side_effect = slow_failure
+        results = []
+
+        def read():
+            results.append(cs.get_clinical_json("hfvalid-risk", S3_ENV, client=client)[1])
+
+        with self.assertLogs("rainbowbone.clinical", "WARNING") as logs:
+            threads = [threading.Thread(target=read) for _ in range(5)]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join()
+        self.assertEqual(client.get_object.call_count, 1)
+        self.assertEqual(len(logs.output), 1)
+        self.assertEqual({g.reason for g in results}, {"object storage unreachable (EndpointConnectionError)"})
 
     def test_bundled_copy_missing_too_is_unavailable(self):
         entry = cs.CATALOGUE["hfvalid-risk"]

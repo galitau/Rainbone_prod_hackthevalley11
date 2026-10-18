@@ -18,11 +18,12 @@ decimals), uses a fact as the wrong quantity (the age as a percent, a rank as a
 risk), states a rank the wrong way round, spells a quantity out, predicts a
 time, calls ARF0 a chance or likelihood, diagnoses or advises. A rejected or
 failed provider falls through to the next, and finally to a deterministic
-template built only from the facts. An answer is kept per case, facts and
-chain (a Gemini answer for 1 h, a Groq or template answer for 60 s), so a
-reload does not spend another model call. Each answer the chain produces is
-logged once in Tiger Cloud (services.ai_log); a kept answer is not logged again
-and keeps the `logged` id of its row.
+template built only from the facts. An answer is kept per case, grounding
+store, facts and chain (a Gemini answer for 1 h, a Groq or template answer for
+60 s), so a reload does not spend another model call. Each answer the chain
+produces is logged once in Tiger Cloud (services.ai_log); a kept answer is not
+logged again and keeps the `logged` id of its row, and one whose row was not
+written is kept for at most 60 s.
 
 The chain order, providers, timeouts and fallback reasons are the ones
 POST /api/explain uses (AI_CHAIN, AI_OFFLINE, GEMINI_*, GROQ_*).
@@ -498,8 +499,9 @@ def _with_note(text: str) -> str:
 
 
 # ----------------------------------------------------------------------------- chain
-# Answers by (case_id, facts, chain). The facts of a case only change with the data file or fe, so a reload reuses the
-# answer instead of spending the provider quota POST /api/explain also needs. Bounded, since fe comes from the client.
+# Answers by (case_id, grounding store, facts, chain). The facts of a case only change with the data file or fe, so a
+# reload reuses the answer instead of spending the provider quota POST /api/explain also needs. Bounded, since fe comes
+# from the client.
 _answers = AnswerCache()
 
 # Sent after SYSTEM_PROMPT. check() refuses a number word that is not a fact, and "one" is not one: Gemini's fallback
@@ -542,9 +544,11 @@ async def analyse(request: RiskRequest, env: Optional[Mapping[str, str]] = None,
                                          grounding)
         return answer.model_copy(update={"grounding": grounding, "logged": logged})
 
-    answer = await _answers.get_or_compute((request.case_id, facts_json(facts), chain_signature(order, tiers)),
-                                           produce, lambda answer: answer_ttl(answer.provider))
-    # A kept answer says where this request's facts were read from (the same bytes, or it would not be kept).
+    # Kept per store too, so the ai_analyses row an answer points to records where its facts came from.
+    key = (request.case_id, grounding and grounding.store, facts_json(facts), chain_signature(order, tiers))
+    answer = await _answers.get_or_compute(
+        key, produce, lambda answer: ai_log.kept_for(answer_ttl(answer.provider), answer.logged, e))
+    # A kept answer shows this request's reason for a fallback (the store is the same, or it would not be kept).
     return answer if answer.grounding == grounding else answer.model_copy(update={"grounding": grounding})
 
 

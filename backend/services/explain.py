@@ -25,11 +25,13 @@ whose call failed is skipped for 60 s, or for 300 s after HTTP 429, by this
 route and /api/risk-analysis alike (services.llm_providers). The template is
 deterministic, needs no network and passes check() for every valid request.
 
-Answers are kept in memory per facts and chain: a Gemini answer for 1 h, a Groq
-or template answer for 60 s (so Gemini is asked again), and concurrent equal
-requests share one chain run. Reloading the page spends no model call. Each
-answer the chain produces is logged once in Tiger Cloud (services.ai_log); a
-kept answer is not logged again and keeps the `logged` id of its row.
+Answers are kept in memory per case_id, grounding store, facts and chain: a
+Gemini answer for 1 h, a Groq or template answer for 60 s (so Gemini is asked
+again), and concurrent equal requests share one chain run. Reloading the page
+spends no model call. Each answer the chain produces is logged once in Tiger
+Cloud (services.ai_log); a kept answer is not logged again and keeps the
+`logged` id of its row. An answer whose row was not written is kept for at most
+60 s, so a later one is logged.
 
 Keys come from the process environment, or from backend/.env when present
 (process environment wins). They are never logged or returned.
@@ -401,7 +403,7 @@ async def explain(request: ExplainRequest, env: Optional[Mapping[str, str]] = No
     """Word `request` with the first provider whose text passes check(); the template always does.
 
     With a case_id the numbers are read from its femur model (`grounding`) instead of the request. An answer
-    is kept per facts and chain (see the module docstring), so an equal request reuses it."""
+    is kept per case_id, store, facts and chain (see the module docstring), so an equal request reuses it."""
     started = time.perf_counter()
     e = os.environ if env is None else env
     order = chain_order(e)
@@ -416,9 +418,11 @@ async def explain(request: ExplainRequest, env: Optional[Mapping[str, str]] = No
         logged = await ai_log.log_answer(e, "explain", case_id, answer, facts_json(facts), started, grounding)
         return answer.model_copy(update={"grounding": grounding, "logged": logged})
 
-    answer = await _answers.get_or_compute((facts_json(facts), chain_signature(order, tiers)), produce,
-                                           lambda answer: answer_ttl(answer.provider))
-    # A kept answer says where this request's numbers came from (equal numbers, or it would not be kept).
+    # Kept per case and store too, so the ai_analyses row an answer points to records where its facts came from.
+    key = (case_id, grounding and grounding.store, facts_json(facts), chain_signature(order, tiers))
+    answer = await _answers.get_or_compute(
+        key, produce, lambda answer: ai_log.kept_for(answer_ttl(answer.provider), answer.logged, e))
+    # A kept answer shows this request's reason for a fallback (the store is the same, or it would not be kept).
     return answer if answer.grounding == grounding else answer.model_copy(update={"grounding": grounding})
 
 

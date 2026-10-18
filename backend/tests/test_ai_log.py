@@ -4,10 +4,13 @@ Run from backend/:  python -m unittest tests.test_ai_log -v
 """
 from __future__ import annotations
 
+import asyncio
 import hashlib
+import json
 import logging
 import os
 import re
+import time
 import unittest
 from datetime import datetime, timezone
 from unittest import mock
@@ -38,9 +41,15 @@ class AiLogTestCase(unittest.TestCase):
         self.addCleanup(env.stop)
         os.environ[history.DATABASE_URL_ENV] = ""  # empty also overrides a DATABASE_URL in backend/.env
         self.connector = FakeConnector()
-        connect = mock.patch.object(history, "_connect", self.connector)
-        connect.start()
-        self.addCleanup(connect.stop)
+        for module in (history, ai_log):  # ai_log writes through its own short-timeout connection
+            connect = mock.patch.object(module, "_connect", self.connector)
+            connect.start()
+            self.addCleanup(connect.stop)
+        ai_log.reset_skip()
+        self.addCleanup(ai_log.reset_skip)
+
+    def inserts(self):
+        return [params for sql, params in self.connector.conn.executed if sql.startswith("INSERT INTO ai_analyses")]
 
 
 class RecordTests(AiLogTestCase):
@@ -51,7 +60,8 @@ class RecordTests(AiLogTestCase):
 
     def test_one_row_with_hashes_and_no_text(self):
         logged = ai_log.record_answer({"DATABASE_URL": FAKE_URL}, **ANSWER)
-        [(sql, params)] = self.connector.conn.executed
+        [(timeout_sql, _), (sql, params)] = self.connector.conn.executed
+        self.assertEqual(timeout_sql, "SET LOCAL statement_timeout = 1500")
         self.assertTrue(sql.startswith("INSERT INTO ai_analyses ("))
         self.assertEqual(set(params), set(ai_log.COLUMNS) - {"time"})
         self.assertEqual(logged.model_dump(), {"id": str(params["id"]), "store": "tiger"})
@@ -76,6 +86,52 @@ class RecordTests(AiLogTestCase):
         self.connector.conn = FakeConnection(error=psycopg.errors.UndefinedTable("ai_analyses"))
         with self.assertLogs("rainbowbone.ai_log", "WARNING"):
             self.assertIsNone(ai_log.record_answer({"DATABASE_URL": FAKE_URL}, **ANSWER))
+
+    def test_a_rejected_fragment_is_not_stored(self):
+        fallbacks = [{"provider": "gemini", "reason": "gemini-3.8-flash: rejected: blocked wording: 'will'"},
+                     {"provider": "gemini", "reason": "stub-model: rejected: number not in input: 3"},
+                     {"provider": "groq", "reason": "llama: rejected: over 600 characters"},
+                     {"provider": "groq", "reason": "HTTP 429"}]
+        ai_log.record_answer({"DATABASE_URL": FAKE_URL}, **{**ANSWER, "fallbacks": fallbacks})
+        [row] = self.inserts()
+        self.assertEqual([f["reason"] for f in row["fallbacks"].obj],
+                         ["gemini-3.8-flash: rejected: blocked wording", "stub-model: rejected: number not in input",
+                          "llama: rejected: over 600 characters", "HTTP 429"])
+
+    def test_after_a_failure_the_log_is_skipped_for_a_while(self):
+        self.connector.error = psycopg.OperationalError("connection refused")
+        with self.assertLogs("rainbowbone.ai_log", "WARNING"):
+            self.assertIsNone(ai_log.record_answer({"DATABASE_URL": FAKE_URL}, **ANSWER))
+        self.connector.error = None
+        self.assertIsNone(ai_log.record_answer({"DATABASE_URL": FAKE_URL}, **ANSWER))
+        self.assertEqual(len(self.connector.urls), 1)  # the second answer did not try the database
+        ai_log.reset_skip()
+        self.assertIsNotNone(ai_log.record_answer({"DATABASE_URL": FAKE_URL}, **ANSWER))
+
+    def test_a_hanging_database_costs_an_answer_at_most_log_wait_s(self):
+        def hang(url):
+            time.sleep(3.5)
+            raise psycopg.OperationalError("connection timeout expired")
+
+        answer = ex.ExplainResponse(text=TEXT, provider="template", model=None, fallbacks=[])
+
+        async def answer_logged():  # timed inside the loop: asyncio.run also waits for the worker thread to end
+            started = time.perf_counter()
+            logged = await ai_log.log_answer({"DATABASE_URL": FAKE_URL}, "explain", None, answer, FACTS, started, None)
+            return logged, time.perf_counter() - started
+
+        with mock.patch.object(ai_log, "_connect", hang), self.assertLogs("rainbowbone.ai_log", "WARNING"):
+            logged, elapsed = asyncio.run(answer_logged())
+        self.assertIsNone(logged)
+        self.assertLess(elapsed, 3.0)
+        self.assertIsNone(ai_log.record_answer({"DATABASE_URL": FAKE_URL}, **ANSWER))  # skipped, not hanging again
+
+    def test_an_answer_that_missed_its_row_is_kept_briefly(self):
+        logged = ai_log.Logged(id=str(uuid4()))
+        self.assertEqual(ai_log.kept_for(3600.0, logged, {"DATABASE_URL": FAKE_URL}), 3600.0)
+        self.assertEqual(ai_log.kept_for(3600.0, None, {}), 3600.0)
+        self.assertEqual(ai_log.kept_for(3600.0, None, {"DATABASE_URL": FAKE_URL}), ai_log.MISSED_LOG_TTL_S)
+        self.assertEqual(ai_log.kept_for(30.0, None, {"DATABASE_URL": FAKE_URL}), 30.0)
 
 
 ROW = {"time": datetime(2026, 10, 18, 8, 0, tzinfo=timezone.utc), "id": uuid4(), "endpoint": "risk-analysis",
@@ -133,9 +189,6 @@ class AnswerLoggingTests(AiLogTestCase):
         quiet.disabled = True
         self.addCleanup(setattr, quiet, "disabled", False)
 
-    def inserts(self):
-        return [params for sql, params in self.connector.conn.executed if sql.startswith("INSERT INTO ai_analyses")]
-
     def test_explain_logs_one_row_per_produced_answer(self):
         first = self.client.post("/api/explain", json=SIM).json()
         self.assertEqual(set(first["logged"]), {"id", "store"})
@@ -153,6 +206,38 @@ class AnswerLoggingTests(AiLogTestCase):
                          ("Pat001", "local-backup"))
         self.assertEqual(by_case["grounding"]["store"], "local-backup")
         self.assertNotEqual(by_case["logged"]["id"], first["logged"]["id"])
+
+    def test_equal_numbers_by_case_id_get_their_own_row(self):
+        """The case's numbers sent as numbers, then by case_id: two rows, each recording its own source."""
+        metrics = json.loads(clinical_store.CATALOGUE["pat001-femur-manifest"].local.read_bytes())["metrics"]
+        sent = {"load_newtons": metrics["load_newtons"], "max_von_mises_stress_mpa": metrics["max_nodal_von_mises_mpa"],
+                "average_youngs_modulus_gpa": metrics["youngs_modulus_mpa"] / 1000,
+                "bone_volume_cm3": metrics["volume_cm3"],
+                "fracture_risk_index_percent": metrics["max_nodal_von_mises_mpa"] / ex.ASSUMED_STRENGTH_MPA * 100}
+        by_numbers = self.client.post("/api/explain", json=sent).json()
+        by_case = self.client.post("/api/explain", json={"case_id": "Pat001"}).json()
+        self.assertEqual(by_case["text"], by_numbers["text"])  # the same facts
+        first, second = self.inserts()
+        self.assertEqual((first["case_id"], first["grounding_store"]), (None, None))
+        self.assertEqual((second["case_id"], second["grounding_store"]), ("Pat001", by_case["grounding"]["store"]))
+        self.assertEqual(by_case["logged"]["id"], str(second["id"]))
+        self.assertEqual(first["facts_sha256"], second["facts_sha256"])
+
+    def test_an_answer_that_missed_its_row_is_produced_and_logged_again(self):
+        """Even an answer otherwise kept for an hour (as Gemini's is) is kept only a minute without its row."""
+        hour = mock.patch.object(rk, "answer_ttl", return_value=3600.0)
+        hour.start()
+        self.addCleanup(hour.stop)
+        self.connector.error = psycopg.OperationalError("relation ai_analyses does not exist")
+        with self.assertLogs("rainbowbone.ai_log", "WARNING"):
+            self.assertIsNone(self.client.post("/api/risk-analysis", json={"case_id": "Pat001"}).json()["logged"])
+        self.connector.error = None
+        ai_log.reset_skip()
+        self.assertIsNone(self.client.post("/api/risk-analysis", json={"case_id": "Pat001"}).json()["logged"])  # kept
+        with mock.patch("services.llm_providers._now", return_value=time.monotonic() + ai_log.MISSED_LOG_TTL_S + 1):
+            again = self.client.post("/api/risk-analysis", json={"case_id": "Pat001"}).json()
+        [row] = self.inserts()
+        self.assertEqual(again["logged"]["id"], str(row["id"]))
 
     def test_risk_analysis_logs_one_row_per_produced_answer(self):
         first = self.client.post("/api/risk-analysis", json={"case_id": "Pat001"}).json()
