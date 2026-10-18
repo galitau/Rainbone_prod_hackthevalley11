@@ -43,6 +43,71 @@ a research prototype built at Hack the Valley 11, **not a medical device**: it g
 forecast and no diagnosis, material properties and loads are assumptions, and no output
 is a clinical measurement.
 
+## Run locally
+
+Front end (Node.js and npm). The app lives in `frontend/`. The same commands work in PowerShell:
+
+```bash
+cd frontend
+npm ci
+npm run dev
+```
+
+From the repository root, `npm run setup` (once) and then `npm run dev` do the same thing.
+After pulling the commit that moved the app into `frontend/`, run `npm ci` inside `frontend/`
+once. The old `node_modules/` and `.next/` at the root can be deleted.
+
+Open <http://localhost:3000>. The page calls the API at `NEXT_PUBLIC_API_BASE_URL`
+(default `http://127.0.0.1:8000`). By default the API allows `http://localhost:3000`,
+`https://rainbone.health` and `https://www.rainbone.health` (set `CORS_ALLOW_ORIGINS` to
+change the list), so use `localhost`, not `127.0.0.1`, or the browser blocks the API calls.
+
+Back end, in a second terminal from the repository root (tested with Python 3.12).
+macOS and Linux:
+
+```bash
+cd backend
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+uvicorn main:app --reload
+```
+
+Windows PowerShell:
+
+```powershell
+cd backend
+py -m venv .venv
+.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+uvicorn main:app --reload
+```
+
+The API listens on `http://127.0.0.1:8000`, where the dashboard sends its calls.
+Run it from a full checkout: it imports the solver from `scripts/bone_fea/`.
+
+No keys are needed to start. Without them, both AI endpoints answer with the offline
+template from the bundled copies of the facts, nothing is saved, `/api/history` and
+`/api/ai-log` answer 503, and `/bones` and `/lesion-progression` have nothing to load.
+To turn those on, copy `backend/.env.example` to `backend/.env`
+(`Copy-Item backend\.env.example backend\.env` in PowerShell) and fill in what you need.
+Never commit `.env` files. The variables, by name:
+
+| Variables | Used for |
+|---|---|
+| `GEMINI_API_KEY`, `GEMINI_API_KEYS`, `GEMINI_MODEL`, `GROQ_API_KEY`, `GROQ_MODEL`, `AI_CHAIN`, `AI_OFFLINE`, `AI_ANSWER_STORE` | The AI provider chain and the saved Gemini answers |
+| `DATABASE_URL` | Tiger Cloud (TimescaleDB): simulation history and the AI audit log |
+| `VULTR_S3_ENDPOINT`, `VULTR_S3_ACCESS_KEY`, `VULTR_S3_SECRET_KEY`, `VULTR_S3_BUCKET` | Vultr Object Storage: `clinical/` grounding and `/api/bones` |
+| `VULTR_ENDPOINT_URL`, `VULTR_BUCKET_PATH`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | The lesion-progression objects (each falls back to its `VULTR_S3_*` counterpart) |
+| `CORS_ALLOW_ORIGINS`, `CORS_ALLOW_ORIGIN_REGEX` | Browser origins allowed to call the API |
+| `FSLDIR` | Optional FSL bone segmentation |
+| `NEXT_PUBLIC_API_BASE_URL`, `API_PROXY_TARGET`, `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | Front end (`frontend/.env.example`): where the browser sends API calls, where Vercel forwards `/api/*` and `/health`, and the optional Google sign-in client |
+
+With `DATABASE_URL` set, apply the schema once with `python -m services.history migrate`
+from `backend/` (it runs every file in `backend/migrations/` in order).
+[`backend/README.md`](backend/README.md) covers every variable, the tests and the
+optional FSL bone segmentation.
+
 ## Architecture
 
 ```mermaid
@@ -407,71 +472,6 @@ Request and response fields, the checker rules and the tests are in
 | `backend/migrations/` | TimescaleDB schema: `001_simulation_runs.sql` (hypertable and hourly continuous aggregate), `002_ai_analyses.sql` (AI audit log) |
 | `scripts/bone_fea/` | Offline pipeline that builds `frontend/public/models/` from HFValid with 3D Slicer, TetGen and SfePy. Details in [`scripts/bone_fea/README.md`](scripts/bone_fea/README.md) |
 | `scripts/vultr_pipeline/` | CTPelvic1K to TotalSegmentator to meshes in Vultr Object Storage (`pipeline.py`), and the `clinical/` upload (`publish_clinical.py`). Details in [`scripts/vultr_pipeline/README.md`](scripts/vultr_pipeline/README.md) |
-
-## Run locally
-
-Front end (Node.js and npm). The app lives in `frontend/`. The same commands work in PowerShell:
-
-```bash
-cd frontend
-npm ci
-npm run dev
-```
-
-From the repository root, `npm run setup` (once) and then `npm run dev` do the same thing.
-After pulling the commit that moved the app into `frontend/`, run `npm ci` inside `frontend/`
-once. The old `node_modules/` and `.next/` at the root can be deleted.
-
-Open <http://localhost:3000>. The page calls the API at `NEXT_PUBLIC_API_BASE_URL`
-(default `http://127.0.0.1:8000`). By default the API allows `http://localhost:3000`,
-`https://rainbone.health` and `https://www.rainbone.health` (set `CORS_ALLOW_ORIGINS` to
-change the list), so use `localhost`, not `127.0.0.1`, or the browser blocks the API calls.
-
-Back end, in a second terminal from the repository root (tested with Python 3.12).
-macOS and Linux:
-
-```bash
-cd backend
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install -r requirements.txt
-uvicorn main:app --reload
-```
-
-Windows PowerShell:
-
-```powershell
-cd backend
-py -m venv .venv
-.venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt
-uvicorn main:app --reload
-```
-
-The API listens on `http://127.0.0.1:8000`, where the dashboard sends its calls.
-Run it from a full checkout: it imports the solver from `scripts/bone_fea/`.
-
-No keys are needed to start. Without them, both AI endpoints answer with the offline
-template from the bundled copies of the facts, nothing is saved, `/api/history` and
-`/api/ai-log` answer 503, and `/bones` and `/lesion-progression` have nothing to load.
-To turn those on, copy `backend/.env.example` to `backend/.env`
-(`Copy-Item backend\.env.example backend\.env` in PowerShell) and fill in what you need.
-Never commit `.env` files. The variables, by name:
-
-| Variables | Used for |
-|---|---|
-| `GEMINI_API_KEY`, `GEMINI_API_KEYS`, `GEMINI_MODEL`, `GROQ_API_KEY`, `GROQ_MODEL`, `AI_CHAIN`, `AI_OFFLINE`, `AI_ANSWER_STORE` | The AI provider chain and the saved Gemini answers |
-| `DATABASE_URL` | Tiger Cloud (TimescaleDB): simulation history and the AI audit log |
-| `VULTR_S3_ENDPOINT`, `VULTR_S3_ACCESS_KEY`, `VULTR_S3_SECRET_KEY`, `VULTR_S3_BUCKET` | Vultr Object Storage: `clinical/` grounding and `/api/bones` |
-| `VULTR_ENDPOINT_URL`, `VULTR_BUCKET_PATH`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | The lesion-progression objects (each falls back to its `VULTR_S3_*` counterpart) |
-| `CORS_ALLOW_ORIGINS`, `CORS_ALLOW_ORIGIN_REGEX` | Browser origins allowed to call the API |
-| `FSLDIR` | Optional FSL bone segmentation |
-| `NEXT_PUBLIC_API_BASE_URL`, `API_PROXY_TARGET`, `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | Front end (`frontend/.env.example`): where the browser sends API calls, where Vercel forwards `/api/*` and `/health`, and the optional Google sign-in client |
-
-With `DATABASE_URL` set, apply the schema once with `python -m services.history migrate`
-from `backend/` (it runs every file in `backend/migrations/` in order).
-[`backend/README.md`](backend/README.md) covers every variable, the tests and the
-optional FSL bone segmentation.
 
 ## Deploy
 
