@@ -5,6 +5,7 @@ import { Box, Download, Maximize2, RotateCcw } from "lucide-react";
 import type vtkPolyData from "@kitware/vtk.js/Common/DataModel/PolyData";
 import { BONE, DATA_RAMP, VIEWPORT_BACKGROUND } from "@/lib/spectrum";
 import { parseTetMesh, sliceTets, type TetMesh } from "@/lib/vtu-cut";
+import { BonePrintExport } from "@/components/bone-print-export";
 
 type Field = "stress" | "displacement" | "anatomy";
 type ModelInfo = {
@@ -260,7 +261,7 @@ export function BoneViewer() {
   const fields: { value: Field; label: string }[] = [{ value: "anatomy", label: "Anatomy" }, { value: "stress", label: "Stress" }, { value: "displacement", label: "Displacement" }];
 
   return (
-    <section ref={sectionRef} aria-label="Interactive bone finite element visualization" className="overflow-hidden rounded-2xl border border-line bg-surface shadow-card [&:fullscreen]:flex [&:fullscreen]:flex-col [&:fullscreen]:rounded-none">
+    <section ref={sectionRef} aria-label="Interactive bone finite element visualization" className="overflow-hidden rounded-2xl border border-line bg-surface shadow-card [&:fullscreen]:flex [&:fullscreen]:flex-col [&:fullscreen]:overflow-y-auto [&:fullscreen]:rounded-none">
       <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
         <div className="min-w-0">
           <h2 className="flex items-center gap-2 text-[15px] font-semibold text-ink"><Box size={17} className="text-link" aria-hidden /> Femur · finite element analysis</h2>
@@ -298,6 +299,7 @@ export function BoneViewer() {
         {model && <a className="flex items-center gap-1.5 text-[12.5px] font-medium text-link hover:underline" href={`${MODEL_PATH}/bone-fea.vtu`} download><Download size={15} aria-hidden /> FEA mesh</a>}
       </div>
       {error && status === "ready" && <p role="status" className="mx-5 mb-3 rounded-lg border border-caution/25 bg-caution/[0.07] px-3 py-2 text-[12px] text-caution">{error}</p>}
+      {model && <BonePrintExport />}
       {model && <details className="group border-t border-line px-5 py-3.5 text-[12px] text-body">
         <summary className="cursor-pointer font-medium text-ink marker:text-muted">Model, load &amp; provenance</summary>
         <div className="mt-3 space-y-2 leading-5 text-muted">

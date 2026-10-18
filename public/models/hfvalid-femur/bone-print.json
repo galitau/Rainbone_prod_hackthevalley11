@@ -1,0 +1,29 @@
+{
+  "triangles": 143016,
+  "dimensions_mm": [
+    84.08807373046875,
+    64.42929077148438,
+    397.01300048828125
+  ],
+  "volume_mm3": 409018.9505519015,
+  "connected_components": 1,
+  "boundary_edges": 0,
+  "nonmanifold_edges": 0,
+  "file": "bone-print.stl",
+  "download_name": "HFValid-Pat001-right-femur-mm.stl",
+  "units": "mm",
+  "scale": 1,
+  "state": "Intact, undeformed bone",
+  "source": "slicer-surface.vtp",
+  "source_sha256": "5f342bf906efa73d3bb0acafc1cf4f5ea4ccfaa53776cca75e9d27ed5412454b",
+  "sha256": "3339d82f727563ae1bb90c3730965317af3b8d04ed8aaca55c7b037c33619ea2",
+  "bytes": 7150884,
+  "translation_mm": [
+    -95.0153636932373,
+    12.129846572875977,
+    428.8161315917969
+  ],
+  "source_url": "https://amsacta.unibo.it/id/eprint/8431/",
+  "license": "CC BY 4.0",
+  "attribution": "Aldieri, La Mattina, Szyszko, Baruffaldi, Viceconti (2025). HFValid collection. University of Bologna. DOI:10.6092/unibo/amsacta/8431"
+}
