@@ -17,8 +17,8 @@ const BASELINE_LESION_VOLUME_CM3 = 8.4;
 const FOLLOWUP_LESION_VOLUME_CM3 = 4.2;
 
 export function generateProgressionTimeline(baselinePt: Point3, followupPt: Point3): ProgressionFrame[] {
-  if (![...baselinePt, ...followupPt].every(Number.isFinite)) {
-    throw new Error("Baseline and follow-up coordinates must contain finite numbers.");
+  if (![baselinePt, followupPt].every(point => Array.isArray(point) && point.length === 3 && point.every(Number.isFinite))) {
+    throw new Error("Baseline and follow-up coordinates must each contain three finite numbers.");
   }
 
   return Array.from({ length: FRAME_COUNT }, (_, frameIndex) => {

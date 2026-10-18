@@ -13,6 +13,7 @@ import {
   type RiskAnalysisState,
 } from "@/lib/api";
 import { FEMUR_EXPLAIN_REQUEST, FEMUR_MODEL, FEMUR_RISK_FE } from "@/lib/model";
+import { readPreferences } from "@/lib/preferences";
 
 const SAMPLE: RunInput = { name: "sample_bone.nii.gz", kind: "sample" };
 const HEALTH_POLL_MS = 15_000;
@@ -88,7 +89,9 @@ export default function Home() {
     void refreshHealth();
     void explainFemur();
     void analyseRisk();
-    void runSample();
+    // Preferences can turn the automatic sample run off; "Run the sample" still runs it.
+    if (readPreferences().autoRunSample) void runSample();
+    else setRun({ status: "idle", input: SAMPLE });
     void fetchHistory().then((next) => mounted.current && setHistory(next));
     const timer = window.setInterval(() => void refreshHealth(), HEALTH_POLL_MS);
     return () => {
