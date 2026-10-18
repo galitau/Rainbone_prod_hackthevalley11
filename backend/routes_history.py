@@ -46,14 +46,15 @@ class HourlyStress(BaseModel):
 class HistoryResponse(BaseModel):
     series: list[StressPoint] = Field(description="Latest runs, oldest first.")
     runs: list[SimulationRun] = Field(description="The same runs as stored rows, oldest first.")
-    hourly: list[HourlyStress] = Field(description="Latest hourly buckets of the continuous aggregate, oldest first.")
+    hourly: list[HourlyStress] = Field(description="Latest all-input hourly buckets, oldest first; unaffected by source_filename.")
 
 
 @router.get("/api/history", response_model=HistoryResponse)
 def history(
     limit: Annotated[int, Query(ge=1, le=500, description="Number of runs and of hourly buckets.")] = 10,
+    source_filename: Annotated[Optional[str], Query(min_length=1, max_length=1024, description="Exact source filename; filters runs before the limit. Hourly counts remain all-input.")] = None,
 ) -> HistoryResponse:
     try:
-        return HistoryResponse(**fetch_history(limit))
+        return HistoryResponse(**fetch_history(limit, source_filename))
     except HistoryUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc

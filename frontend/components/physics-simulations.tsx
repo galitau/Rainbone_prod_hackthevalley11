@@ -95,7 +95,6 @@ export function PhysicsSimulations() {
             </div>
             <div className="mt-5 border-t border-line pt-4"><div className="flex items-center justify-between text-xs"><span className="text-muted">Damaged volume</span><span className={damaged ? "text-caution" : "text-ink"}>{frame.damaged_volume_percent.toFixed(2)}%</span></div><div className="mt-2 h-1.5 overflow-hidden rounded-full bg-line"><div className="h-full bg-spectrum-amber transition-[width]" style={{ width: `${frame.damaged_volume_percent}%` }} /></div><p className="mt-2 text-[10px] leading-4 text-muted">Volume with more than 5% stiffness loss. This is a model damage measure, not a fracture-risk probability.</p></div>
           </section>
-          <BoneReconstructionExport frameIndex={frameIndex} frame={frame} firstBreak={firstBreak} onSelectFrame={scrub} onPause={() => setPlaying(false)} />
           <section className="space-y-4 rounded-2xl border border-line bg-surface shadow-card p-5">
             <h3 className="text-sm font-medium">View controls</h3>
             <label className="block text-xs text-muted">Color field<select aria-label="Press color field" value={field} onChange={event => setField(event.target.value as PressField)} className={`${inputStyle} mt-2`}><option value="failure_index">Failure proximity · strain / limit</option><option value="stress_mpa">Von Mises stress · MPa</option><option value="damage">Material damage</option><option value="displacement_mm">Displacement</option><option value="anatomy">Bone surface</option></select></label>
@@ -106,6 +105,9 @@ export function PhysicsSimulations() {
           </section>
           <div className="rounded-2xl border border-line bg-surface shadow-card p-5"><p className="flex items-center gap-2 text-xs text-link"><ArrowDownToLine size={15} /> Head loading · distal fixation</p><p className="mt-2 text-[11px] leading-5 text-muted">A prescribed downward head displacement represents the press fixture. The distal 15 mm is fixed. The frame and hydraulic cylinder are schematic.</p></div>
         </aside>
+      </div>
+      <div className="mt-5">
+        <BoneReconstructionExport frameIndex={frameIndex} frame={frame} firstBreak={firstBreak} onSelectFrame={scrub} onPause={() => setPlaying(false)} />
       </div>
       <section aria-label="Force displacement response" className="mt-5 rounded-2xl border border-line bg-surface shadow-card p-5">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2"><div><h3 className="text-sm font-medium">Force–stroke response</h3><p className="mt-1 text-[11px] text-muted">Reaction force from each solved step. Stiffness loss changes the response as damage develops.</p></div><span className="font-mono text-[10px] text-link">ACTUAL SOLVER OUTPUT</span></div>

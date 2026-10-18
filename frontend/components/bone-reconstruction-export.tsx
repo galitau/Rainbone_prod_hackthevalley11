@@ -42,25 +42,27 @@ export function BoneReconstructionExport({ frameIndex, frame, firstBreak, onSele
       <p className="rounded-lg bg-sunken p-3 text-[11px] leading-5 text-muted">No missing region at step {frameIndex + 1}. Move to a step after the visible break.</p>
       <button disabled className={`${buttonStyle} cursor-not-allowed opacity-40`}><Download size={14} />Download missing region STL</button>
       {firstBreak >= 0 && <button onClick={() => onSelectFrame(firstBreak)} className="text-xs font-medium text-link hover:underline">Go to first break</button>}
-    </> : error ? <div role="alert" className="text-xs text-caution"><p>{error}</p><button onClick={() => setAttempt(value => value + 1)} className="mt-2 underline">Retry print files</button></div> : !model ? <p role="status" className="text-xs text-muted">Loading print files…</p> : !matching || !report ? <p role="alert" className="text-xs text-caution">Matching print files are unavailable for this simulation step.</p> : <>
-      <div className="rounded-lg bg-sunken px-3 py-2.5">
-        <p className="text-xs font-medium text-ink">Step {report.step} · {missing.length} {missing.length === 1 ? "insert" : "insert pieces"}</p>
-        <p className="mt-1 font-mono text-[10px] text-muted">{report.print_insert_volume_mm3.toFixed(1)} mm³ · 1:1 scale · mm</p>
-        {missing.length === 1 && <p className="mt-1 text-[10px] text-muted">{missing[0].dimensions_mm.map(value => value.toFixed(1)).join(" × ")} mm</p>}
-        <p className="mt-1 text-[10px] text-caution">Print repair: +{(100 * report.repair_added_volume_mm3 / report.raw_removed_volume_mm3).toFixed(2)}% insert volume · details below</p>
-      </div>
-      <button aria-expanded={preview} onClick={() => { onPause(); setPreview(value => !value); }} className="w-full rounded-lg border border-line px-3 py-2 text-xs font-medium text-link hover:bg-sunken">{preview ? "Hide missing-region preview" : "Preview missing region"}</button>
+    </> : error ? <div role="alert" className="text-xs text-caution"><p>{error}</p><button onClick={() => setAttempt(value => value + 1)} className="mt-2 underline">Retry print files</button></div> : !model ? <p role="status" className="text-xs text-muted">Loading print files…</p> : !matching || !report ? <p role="alert" className="text-xs text-caution">Matching print files are unavailable for this simulation step.</p> : <div className={`grid items-start gap-5 ${preview ? "lg:grid-cols-[minmax(0,1fr)_320px]" : ""}`}>
       {preview && <ReconstructionPreview key={report.frame_index} parts={report.parts} />}
-      {missing.map((part, index) => <a key={part.file} href={`${RECONSTRUCTION_PATH}/${part.file}`} download={`HFValid-Pat001-${part.file}`} className={buttonStyle}><Download size={14} />{missing.length === 1 ? "Download missing region STL" : `Download insert ${index + 1} STL`}</a>)}
-      <a href={`${RECONSTRUCTION_PATH}/${report.bundle_file}`} download className="flex items-center justify-center gap-2 text-xs font-medium text-link hover:underline"><Download size={13} />Download matching bone + insert ZIP</a>
-      <p className="text-[10px] leading-4 text-muted">Print the matching set at the same scale. Original geometry, without the viewer’s ×10 deformation. No fit clearance is applied; check printer tolerances and thin features.</p>
-      <details className="border-t border-line pt-3 text-[10px] leading-5 text-muted">
-        <summary className="cursor-pointer font-medium text-body">Print preparation &amp; mesh report</summary>
-        <p className="mt-2">The simulated missing region is {report.raw_removed_volume_mm3.toFixed(1)} mm³. Repairing pinched edges and vertices and absorbing loose fragments smaller than 5 mm³ adds {report.repair_added_volume_mm3.toFixed(1)} mm³ ({(100 * report.repair_added_volume_mm3 / report.raw_removed_volume_mm3).toFixed(2)}%) to the insert and removes the same volume from the matching bone pieces. No vertices are moved or smoothed.</p>
-        <p className="mt-2">Closed surfaces checked after STL export. Import the matching STLs together as parts of one object to inspect assembly in your slicer, then arrange them for printing. Any separate pieces are included in the ZIP.</p>
-        <p className="mt-2">This models material hidden by the simulation; it is not an implant or a reconstruction of measured tissue loss.</p>
-        <a href={`${RECONSTRUCTION_PATH}/${report.report_file}`} download className="mt-2 inline-block text-link hover:underline">Download reconstruction report</a>
-      </details>
-    </>}
+      <div className="min-w-0 space-y-3">
+        <div className="rounded-lg bg-sunken px-3 py-2.5">
+          <p className="text-xs font-medium text-ink">Step {report.step} · {missing.length} {missing.length === 1 ? "insert" : "insert pieces"}</p>
+          <p className="mt-1 font-mono text-[10px] text-muted">{report.print_insert_volume_mm3.toFixed(1)} mm³ · 1:1 scale · mm</p>
+          {missing.length === 1 && <p className="mt-1 text-[10px] text-muted">{missing[0].dimensions_mm.map(value => value.toFixed(1)).join(" × ")} mm</p>}
+          <p className="mt-1 text-[10px] text-caution">Print repair: +{(100 * report.repair_added_volume_mm3 / report.raw_removed_volume_mm3).toFixed(2)}% insert volume · details below</p>
+        </div>
+        <button aria-expanded={preview} onClick={() => { onPause(); setPreview(value => !value); }} className="w-full rounded-lg border border-line px-3 py-2 text-xs font-medium text-link hover:bg-sunken">{preview ? "Hide missing-region preview" : "Preview missing region"}</button>
+        {missing.map((part, index) => <a key={part.file} href={`${RECONSTRUCTION_PATH}/${part.file}`} download={`HFValid-Pat001-${part.file}`} className={buttonStyle}><Download size={14} />{missing.length === 1 ? "Download missing region STL" : `Download insert ${index + 1} STL`}</a>)}
+        <a href={`${RECONSTRUCTION_PATH}/${report.bundle_file}`} download className="flex items-center justify-center gap-2 text-xs font-medium text-link hover:underline"><Download size={13} />Download matching bone + insert ZIP</a>
+        <p className="text-[10px] leading-4 text-muted">Print the matching set at the same scale. Original geometry, without the viewer’s ×10 deformation. No fit clearance is applied; check printer tolerances and thin features.</p>
+        <details className="border-t border-line pt-3 text-[10px] leading-5 text-muted">
+          <summary className="cursor-pointer font-medium text-body">Print preparation &amp; mesh report</summary>
+          <p className="mt-2">The simulated missing region is {report.raw_removed_volume_mm3.toFixed(1)} mm³. Repairing pinched edges and vertices and absorbing loose fragments smaller than 5 mm³ adds {report.repair_added_volume_mm3.toFixed(1)} mm³ ({(100 * report.repair_added_volume_mm3 / report.raw_removed_volume_mm3).toFixed(2)}%) to the insert and removes the same volume from the matching bone pieces. No vertices are moved or smoothed.</p>
+          <p className="mt-2">Closed surfaces checked after STL export. Import the matching STLs together as parts of one object to inspect assembly in your slicer, then arrange them for printing. Any separate pieces are included in the ZIP.</p>
+          <p className="mt-2">This models material hidden by the simulation; it is not an implant or a reconstruction of measured tissue loss.</p>
+          <a href={`${RECONSTRUCTION_PATH}/${report.report_file}`} download className="mt-2 inline-block text-link hover:underline">Download reconstruction report</a>
+        </details>
+      </div>
+    </div>}
   </section>;
 }

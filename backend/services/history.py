@@ -58,6 +58,10 @@ INSERT_SQL = (
     "%(solver)s, %(solver_versions)s, %(solve_ms)s)"
 )
 RUNS_SQL = f"SELECT {', '.join(RUN_COLUMNS)} FROM simulation_runs ORDER BY time DESC LIMIT %s"
+FILTERED_RUNS_SQL = (
+    f"SELECT {', '.join(RUN_COLUMNS)} FROM simulation_runs "
+    "WHERE source_filename = %s ORDER BY time DESC LIMIT %s"
+)
 HOURLY_SQL = (
     "SELECT bucket, runs, avg_max_von_mises_stress_mpa, max_max_von_mises_stress_mpa "
     "FROM simulation_runs_hourly ORDER BY bucket DESC LIMIT %s"
@@ -155,15 +159,18 @@ def series_label(time: datetime) -> str:
     return time.astimezone(timezone.utc).strftime("%b %d %H:%M:%S UTC")
 
 
-def query_history(conn, limit: int) -> dict[str, list[dict[str, Any]]]:
+def query_history(conn, limit: int, source_filename: Optional[str] = None) -> dict[str, list[dict[str, Any]]]:
     """The latest `limit` runs and hourly buckets, each oldest first."""
-    runs = list(reversed(conn.execute(RUNS_SQL, (limit,)).fetchall()))
+    # Filter before limiting so other inputs cannot crowd this input out of history.
+    sql, params = ((RUNS_SQL, (limit,)) if source_filename is None else
+                   (FILTERED_RUNS_SQL, (source_filename, limit)))
+    runs = list(reversed(conn.execute(sql, params).fetchall()))
     hourly = list(reversed(conn.execute(HOURLY_SQL, (limit,)).fetchall()))
     series = [{"label": series_label(run["time"]), "value": run["max_von_mises_stress_mpa"]} for run in runs]
     return {"series": series, "runs": runs, "hourly": hourly}
 
 
-def fetch_history(limit: int, *, connect: Optional[Connect] = None) -> dict[str, list[dict[str, Any]]]:
+def fetch_history(limit: int, source_filename: Optional[str] = None, *, connect: Optional[Connect] = None) -> dict[str, list[dict[str, Any]]]:
     """Read history for GET /api/history. Raises HistoryUnavailable with a message fit for the client."""
     url = database_url()
     if url is None:
@@ -179,7 +186,7 @@ def fetch_history(limit: int, *, connect: Optional[Connect] = None) -> dict[str,
         ) from exc
     try:
         with (connect or _connect)(url) as conn:
-            return query_history(conn, limit)
+            return query_history(conn, limit, source_filename)
     except psycopg.errors.UndefinedTable as exc:
         raise HistoryUnavailable(
             "Simulation history tables do not exist: run `python -m services.history migrate` from backend/."

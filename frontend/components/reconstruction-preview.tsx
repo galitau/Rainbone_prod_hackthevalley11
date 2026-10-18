@@ -90,12 +90,12 @@ export function ReconstructionPreview({ parts }: { parts: ReconstructionPart[] }
     return () => { disposed = true; abort.abort(); controls.current = null; cleanup?.(); };
   }, [parts, attempt]);
 
-  return <div className="overflow-hidden rounded-xl border border-line">
+  return <div className="min-w-0 overflow-hidden rounded-xl border border-line">
     <div className="flex items-center justify-between gap-2 bg-sunken px-3 py-2">
       <label className="flex items-center gap-2 text-[11px] text-body"><input type="checkbox" checked={assembly} disabled={status !== "ready"} onChange={event => { setAssembly(event.target.checked); controls.current?.showAssembly(event.target.checked); }} className="accent-primary" />Show in femur</label>
       <button aria-label="Reset reconstruction view" disabled={status !== "ready"} onClick={() => controls.current?.reset()} className="rounded-md p-1.5 text-muted hover:text-ink disabled:opacity-40"><RotateCcw size={14} /></button>
     </div>
-    <div className="relative h-72 bg-viewport">
+    <div className="relative h-80 bg-viewport lg:h-[440px]">
       <div ref={container} role="img" aria-label={assembly ? "Printable missing region in cyan fitted into the remaining femur" : "Rotatable printable missing region in cyan"} className="absolute inset-0 touch-none" />
       {status === "loading" && <p role="status" className="absolute inset-0 flex items-center justify-center text-xs text-viewport-ink">Loading printable parts…</p>}
       {status === "error" && <div role="alert" className="absolute inset-0 flex flex-col items-center justify-center gap-2 p-4 text-center text-xs text-viewport-ink"><p>{error}</p><button onClick={() => setAttempt(value => value + 1)} className="underline">Retry preview</button></div>}
