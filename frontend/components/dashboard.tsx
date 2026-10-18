@@ -82,7 +82,7 @@ export function Dashboard(props: DashboardProps) {
       <div className="flex min-h-screen">
         <aside className="sticky top-0 hidden h-screen w-[256px] shrink-0 flex-col bg-nav lg:flex">
           <div className="spectrum-line h-[3px]" aria-hidden />
-          <div className="px-5 pb-2 pt-6"><RainboneLogo /></div>
+          <div className="px-5 pb-2 pt-6"><Link href="/" aria-label="Rainbone home" className="inline-block rounded-lg"><RainboneLogo /></Link></div>
           <nav aria-label="Workspace" className="mt-8 space-y-1 px-3">
             <p className="px-3 pb-2 text-[11px] font-medium uppercase tracking-[0.08em] text-nav-muted">Analysis</p>
             <NavItem active={view === "overview"} href="/dashboard" icon={<LayoutDashboard size={17} />} label="Patient overview" />
@@ -107,7 +107,7 @@ export function Dashboard(props: DashboardProps) {
           <header className="sticky top-0 z-10 border-b border-line bg-surface/90 backdrop-blur">
             <div className="flex h-16 items-center justify-between gap-4 px-5 md:px-8">
               <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-1.5 text-[13px] text-muted">
-                <span className="lg:hidden"><RainboneMarkSmall /></span>
+                <Link href="/" aria-label="Rainbone home" className="rounded lg:hidden"><RainboneMarkSmall /></Link>
                 <span className="hidden sm:inline">{isWorkspaceView(view) ? "Workspace" : "Patients"}</span>
                 <ChevronRight size={14} className="hidden shrink-0 sm:block" aria-hidden />
                 {!isWorkspaceView(view) && (
