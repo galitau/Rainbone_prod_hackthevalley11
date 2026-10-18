@@ -59,21 +59,27 @@ class CommittedTableTests(unittest.TestCase):
 
     def test_pat001(self):
         self.assertEqual(self.subjects['Pat001'], {
-            'age': 78, 'height_cm': 150, 'weight_kg': 55, 'side': 'R', 'arf0_percent': 47.1,
-            'msf_newtons': 1339, 'fractured_within_followup': False, 'days_ct_to_fracture': None})
+            'age': 78, 'height_cm': 150, 'weight_kg': 55, 'side': 'R', 'arf0_percent': 47.10747422,
+            'msf_newtons': 1338.861427, 'fractured_within_followup': False, 'days_ct_to_fracture': None})
 
     def test_cohort_summary_matches_subjects(self):
         cohort = self.table['cohort']
         self.assertEqual(cohort['arf0_percent']['median'], 44.3)
         arf0 = [s['arf0_percent'] for s in self.subjects.values()]
         msf = [s['msf_newtons'] for s in self.subjects.values()]
-        self.assertEqual(cohort['arf0_percent']['min'], min(arf0))
-        self.assertEqual(cohort['arf0_percent']['max'], max(arf0))
-        self.assertEqual(cohort['msf_newtons']['min'], min(msf))
-        self.assertEqual(cohort['msf_newtons']['max'], max(msf))
-        self.assertAlmostEqual(cohort['msf_newtons']['median'], statistics.median(msf), delta=1)
+        self.assertEqual(cohort['arf0_percent']['min'], round(min(arf0), 1))
+        self.assertEqual(cohort['arf0_percent']['max'], round(max(arf0), 1))
+        self.assertEqual(cohort['arf0_percent']['median'], round(statistics.median(arf0), 1))
+        self.assertEqual(cohort['msf_newtons']['min'], round(min(msf)))
+        self.assertEqual(cohort['msf_newtons']['max'], round(max(msf)))
+        self.assertEqual(cohort['msf_newtons']['median'], round(statistics.median(msf)))
         fractured_arf0 = sorted(s['arf0_percent'] for s in self.subjects.values() if s['fractured_within_followup'])
-        self.assertEqual((fractured_arf0[0], fractured_arf0[-1]), (53.7, 73.2))
+        self.assertEqual((round(fractured_arf0[0], 1), round(fractured_arf0[-1], 1)), (53.7, 73.2))
+
+    def test_subjects_keep_the_published_precision(self):
+        # Ranks and factors of risk are computed from these values, so they are not rounded here.
+        self.assertEqual(self.subjects['Pat002']['arf0_percent'], 41.5735094)
+        self.assertEqual(self.subjects['Pat002']['msf_newtons'], 1298.837108)
 
     def test_fall_force(self):
         self.assertEqual(self.table['fall_force'], {
@@ -101,8 +107,10 @@ class ParserTests(unittest.TestCase):
         self.assertAlmostEqual(subjects['Pat002']['arf0_percent'], 41.5735094)
         self.assertIsNone(subjects['Pat002']['days_ct_to_fracture'])
         table = build_table(subjects)
-        self.assertEqual(table['subjects']['Pat002']['arf0_percent'], 41.6)
-        self.assertEqual(table['subjects']['Pat002']['msf_newtons'], 1299)
+        self.assertEqual(table['subjects']['Pat002']['arf0_percent'], 41.5735094)
+        self.assertEqual(table['subjects']['Pat002']['msf_newtons'], 1298.837108)
+        self.assertEqual(table['cohort']['arf0_percent']['max'], 47.1)
+        self.assertEqual(table['cohort']['msf_newtons']['max'], 1339)
         self.assertNotIn('coeff', render(table))
 
     def test_corrected_days_spelling_is_accepted(self):

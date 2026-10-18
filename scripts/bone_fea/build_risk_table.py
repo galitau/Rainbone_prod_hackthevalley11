@@ -10,10 +10,12 @@ Run from the repository root:
     python scripts/bone_fea/build_risk_table.py --csv HFValid_Metadata.csv --output public/models/hfvalid-risk.json
 
 Keeps age, height, weight, modelled side, fracture follow-up, ARF0 and MSF for
-each subject and drops every scanner and calibration column. ARF0 is written to
-0.1 % and MSF to 1 N, the precision the dashboard shows. Cohort quartiles use the
-inclusive (linear interpolation) method on the published values, then the same
-rounding. The output is deterministic: same CSV in, same bytes out.
+each subject and drops every scanner and calibration column. ARF0 and MSF keep
+the CSV's published precision, so ranks and factors of risk computed from the
+table match the published values; the API rounds them for display. Cohort
+quartiles use the inclusive (linear interpolation) method on the published
+values, rounded to 0.1 % and 1 N. The output is deterministic: same CSV in, same
+bytes out.
 """
 import argparse
 import csv
@@ -27,7 +29,7 @@ SOURCE = {
     'doi': '10.6092/unibo/amsacta/8431',
     'license': 'CC BY 4.0',
     'url': 'https://amsacta.unibo.it/id/eprint/8431/',
-    # Quoted from the dataset README.
+    # Quoted from the dataset README; follow_up joins its inclusion-criteria and metadata bullets, typo included.
     'arf0_definition': (
         'The FE model was also coupled with a multiscale falling model to estimate the Absolute '
         'Risk of Fracture at time 0 (ARF0), as reported in [Bhattacharya2019].'),
@@ -37,10 +39,10 @@ SOURCE = {
         'calculated; the minimum critical load over the 28 orientations is referred to as the '
         'Minimum Sidefall Strength (MSF) [Altai2019].'),
     'follow_up': (
-        'Inclusion criteria: resident in the Emilia Romagna region (required to follow-up '
-        'occurrence of fractures); alive for at least 5 years after the CT scan, or fractured '
-        'within 5 years. Fracture status 1 = fractured, with the time interval (in days) between '
-        'the CT scan and the fracture.'),
+        'Resident in the Emilia Romagna region (required to follow-up occurrence of fractures). '
+        'Alive for at least 5 years after the CT scan, or fractured within 5 years. '
+        'Subject\u2019s fracture status (0: Non-ractured; 1: Fractured). '
+        'Time interval (in days) between the CT scan and the fracture (only for fractured subjects).'),
 }
 
 # Peak trochanter impact force of a sideways fall: 2.90 kN for a 5th-percentile
@@ -126,10 +128,7 @@ def build_table(subjects):
             'arf0_percent': _summary(arf0, 1),
             'msf_newtons': _summary(msf, 0),
         },
-        'subjects': {
-            case_id: dict(s, arf0_percent=round(s['arf0_percent'], 1), msf_newtons=round(s['msf_newtons']))
-            for case_id, s in subjects.items()
-        },
+        'subjects': {case_id: dict(s) for case_id, s in subjects.items()},
     }
 
 
