@@ -28,7 +28,8 @@ export const FEMUR_MODEL = {
   supportDepthMm: metrics.support_depth_mm, // 15
 };
 
-// The same illustrative index the API reports, computed from the stress the 3D colours show.
+// Illustrative index from the stress the 3D colours show (nodal-averaged peak / assumed strength). The API computes its
+// index the same way from the 99.5th percentile of element stress, so the two are not the same number.
 export const FEMUR_INDEX_PERCENT = (FEMUR_MODEL.shownStressMpa / ASSUMED_STRENGTH_MPA) * 100; // 10.55
 
 // The femur's numbers in the shape POST /api/explain accepts (the fields of a /api/simulate response).
