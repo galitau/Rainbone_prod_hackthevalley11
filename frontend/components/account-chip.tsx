@@ -63,7 +63,7 @@ export function AccountChip() {
   // Without Google sign-in configured, this is the demo badge it always was.
   const interactive = GOOGLE_CLIENT_ID !== "";
   const name = identity ? identity.name : "Dr. Rowan";
-  const detail = identity ? "Signed in with Google" : "Radiology · demo";
+  const detail = identity ? "Signed in with Google" : "Care team · demo";
   const face = identity ? <Avatar key={identity.picture} identity={identity} /> : <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-[11px] font-semibold text-white">DR</div>;
   const label = (
     <>
@@ -105,7 +105,7 @@ export function AccountChip() {
         <div id={menuId} className="absolute right-0 top-full z-20 mt-2 w-[min(20rem,calc(100vw-2.5rem))] rounded-xl border border-line bg-surface p-1.5 shadow-raised">
           <div className="border-b border-line px-3 pb-2.5 pt-2">
             <p className="truncate text-[13px] font-medium text-ink">{name}</p>
-            <p className="truncate text-[12px] text-muted">{identity ? identity.email || "Signed in with Google" : "Demo account · Radiology"}</p>
+            <p className="truncate text-[12px] text-muted">{identity ? identity.email || "Signed in with Google" : "Demo account · Care team"}</p>
           </div>
           <div className="pt-1.5">
             {identity ? (

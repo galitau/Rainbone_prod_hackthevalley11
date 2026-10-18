@@ -12,6 +12,9 @@
 Built for PointClickCare's *Catch It Early* challenge at Hack the Valley 11: catch bone weakness
 early, so prevention can start before the fall.
 
+**Who it's for:** the care team in nursing homes and senior living: nurses, CNAs, wellness
+directors, doctors and admin staff.
+
 Rainbone combines CT-derived 3D models, physics simulations and AI to explore how bone
 vulnerability can be made visible and understandable early enough to support prevention.
 
@@ -39,7 +42,9 @@ See [The AI layer](#the-ai-layer) and
 
 ## What it does
 
-Rainbone is for care teams in senior living. The problem it targets is the fracture
+Rainbone is for the care team in nursing homes and senior living: nurses, CNAs, wellness
+directors, doctors and admin staff. Researchers and radiologists can use it too, but the care
+team is who it is designed for. The problem it targets is the fracture
 from a fall: by the time a resident falls and breaks a bone, it is already an emergency.
 Rainbone aims to turn a hip CT a resident already has into a fall-fracture check; today
 the fall numbers come from the HFValid authors' published results, not from an uploaded
