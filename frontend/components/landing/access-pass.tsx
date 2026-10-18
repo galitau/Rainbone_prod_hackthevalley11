@@ -2,24 +2,31 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState, type MouseEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react";
 import { RainboneMark } from "@/components/brand";
+import { GoogleSignIn } from "@/components/landing/google-sign-in";
 import { STRESS_PROFILE_P95, rampColor } from "@/components/landing/stress-profile";
+import { GOOGLE_CLIENT_ID, clearIdentity } from "@/lib/google-identity";
 
 const FOCUS_DARK = "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-white";
+
+// Google sign-in is offered only when a client ID was built in.
+const GOOGLE = GOOGLE_CLIENT_ID !== "";
 
 // SEAT matches the demo clinician the dashboard header shows next.
 const PASS_ROWS: [string, string][] = [
   ["SEAT", "Dr. Rowan · demo clinician"],
-  ["ACCOUNT", "None"],
-  ["STORED", "Nothing about you"],
+  ["ACCOUNT", GOOGLE ? "None, or your Google account" : "None"],
+  ["STORED", GOOGLE ? "Nothing on Rainbone's server" : "Nothing about you"],
   ["CASE", "HFValid Pat001 · right femur"],
   ["USE", "Research only · not a medical device"],
   ["EVENT", "Hack the Valley 11"],
 ];
 
 /**
- * Demo access, not a login: there is no account, so the pass has no fields and sends nothing.
+ * Demo access needs no account: the pass has no fields and sends nothing. When a Google client ID is set,
+ * the pass also offers Google's sign-in button: it keeps a name, email and photo in this browser, and Google's
+ * script sets its own g_state cookie as soon as the button is initialised.
  * Entering plays a short scan across the card and then opens the dashboard (never held longer than 280 ms).
  */
 export function AccessPass({ maxMpa }: { maxMpa: number }) {
@@ -40,17 +47,23 @@ export function AccessPass({ maxMpa }: { maxMpa: number }) {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [router]);
 
+  const open = useCallback(() => {
+    if (busy.current) return;
+    busy.current = true;
+    setPhase("opening");
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) router.push("/dashboard");
+    else window.setTimeout(() => router.push("/dashboard"), 280);
+  }, [router]);
+
   const enter = (event: MouseEvent<HTMLAnchorElement>) => {
+    clearIdentity(); // the demo seat is Dr. Rowan, even after a Google sign-in on this browser
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
       setPhase("opening");
       return; // the Link navigates on its own
     }
     event.preventDefault();
-    if (busy.current) return;
-    busy.current = true;
-    setPhase("opening");
-    window.setTimeout(() => router.push("/dashboard"), 280);
+    open();
   };
 
   return (
@@ -72,7 +85,7 @@ export function AccessPass({ maxMpa }: { maxMpa: number }) {
           <p className="mt-5 font-mono text-[11px] uppercase tracking-[0.14em] text-nav-muted">Reading room · guest access</p>
           <h1 id="pass-title" className="mt-2 font-serif text-[34px] font-semibold leading-[1.05] tracking-[-0.015em] text-white sm:text-[40px]">Your pass is ready.</h1>
           <p id="pass-note" className="mt-3 text-[15px] leading-relaxed text-viewport-ink">
-            Demo access: no account, no email, no password. The pass asks for nothing and stores nothing.
+            Demo access: no account, no email, no password. {GOOGLE ? "The demo seat" : "The pass"} asks for nothing and stores nothing.
           </p>
 
           <dl className="mt-5 grid grid-cols-[auto_1fr] gap-x-5 gap-y-1.5 font-mono text-[12px]">
@@ -107,14 +120,32 @@ export function AccessPass({ maxMpa }: { maxMpa: number }) {
             autoFocus
             aria-describedby="pass-title pass-note"
             onClick={enter}
-            className={`mt-5 inline-flex h-[52px] w-full items-center justify-center gap-3 rounded-xl bg-white text-[15px] font-semibold text-ink transition hover:bg-white/90 ${FOCUS_DARK}`}
+            className={`mt-5 inline-flex h-[52px] w-full items-center justify-center gap-3 rounded-xl bg-white px-4 text-center text-[15px] font-semibold text-ink transition hover:bg-white/90 ${FOCUS_DARK}`}
           >
-            Enter as guest
+            Continue as Dr. Rowan (demo)
             <kbd aria-hidden className="rounded-md border border-line px-1.5 font-mono text-[12px] font-normal text-muted">↵</kbd>
           </Link>
           <p role="status" aria-live="polite" className={phase === "opening" ? "mt-2 text-center font-mono text-[11px] text-nav-muted" : "sr-only"}>
             {phase === "opening" ? "Opening the lab…" : ""}
           </p>
+
+          {GOOGLE && (
+            <>
+              <div className="mt-4 flex items-center gap-3 font-mono text-[11px] uppercase tracking-[0.14em] text-nav-muted">
+                <span aria-hidden className="h-px flex-1 bg-viewport-line" />
+                or use your own name
+                <span aria-hidden className="h-px flex-1 bg-viewport-line" />
+              </div>
+              <div className="mt-4">
+                <GoogleSignIn onSignedIn={open} />
+              </div>
+              <p className="mt-3 text-[12px] leading-relaxed text-nav-muted">
+                Google sign-in keeps your name, email and photo in this browser, only to show you in the dashboard header;
+                they are never sent to Rainbone&apos;s server. Google&apos;s button sets its own g_state cookie when this page
+                loads. Sign out from the header menu.
+              </p>
+            </>
+          )}
 
           <p className="mt-4 text-[12px] leading-relaxed text-nav-muted">
             Run history keeps each simulation&apos;s numbers and file name. No account, email or IP is stored with them.

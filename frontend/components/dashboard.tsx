@@ -4,7 +4,6 @@ import { useEffect, useMemo, useRef } from "react";
 import {
   Activity,
   Bell,
-  ChevronDown,
   ChevronRight,
   CircleHelp,
   Database,
@@ -19,6 +18,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
+import { AccountChip } from "@/components/account-chip";
 import { RainboneLogo } from "@/components/brand";
 import { ClinicalMetrics } from "@/components/clinical-metrics";
 import { StressChart } from "@/components/stress-chart";
@@ -126,11 +126,7 @@ export function Dashboard(props: DashboardProps) {
                 {health && <ApiStatus health={health} />}
                 <IconButton label="Help"><CircleHelp size={18} /></IconButton>
                 <IconButton label="Notifications"><Bell size={18} /></IconButton>
-                <div className="ml-2 hidden items-center gap-3 border-l border-line pl-4 sm:flex" title="Demo account">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-[11px] font-semibold text-white">DR</div>
-                  <div className="hidden text-left xl:block"><p className="text-[13px] font-medium leading-4 text-ink">Dr. Rowan</p><p className="text-[11px] text-muted">Radiology · demo</p></div>
-                  <ChevronDown size={14} className="text-muted" aria-hidden />
-                </div>
+                <AccountChip />
               </div>
             </div>
             <nav aria-label="Mobile workspace navigation" className="flex gap-1 overflow-x-auto border-t border-line px-4 py-2 scrollbar-hide [mask-image:linear-gradient(to_right,transparent,#000_20px,#000_calc(100%-20px),transparent)] lg:hidden">
