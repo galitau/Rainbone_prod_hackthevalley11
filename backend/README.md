@@ -73,10 +73,15 @@ finite-element solve with SfePy. It uses the same `tetrahedralize` and
    displacements or stresses are non-finite, or if the relative force-balance
    or free-node residual error exceeds 1e-6.
 
-The solve runs in FastAPI's threadpool, so the server keeps answering other
-requests while it runs. Unreadable volumes, volumes without bone, and bone
-spanning fewer than 4 voxels along Z return 422. A wrong file extension or an
-empty upload returns 400.
+The solve runs in a worker thread, so the server keeps answering other
+requests while it runs. Solves run one at a time; a second upload waits for
+the first. SfePy's own progress output is turned off. A wrong file extension
+or an empty upload returns 400, and an upload over 512 MiB returns 413.
+Unreadable volumes, volumes over 512 × 512 × 512 voxels or over 1,024 MiB
+of header and voxel data, volumes without bone, and bone spanning fewer than
+4 voxels along Z return 422. The header is read first and only the bytes it
+declares are decompressed, so a small gzip file cannot make the server
+allocate a large buffer. Crop a larger scan to the bone of interest first.
 
 ## Response fields
 
@@ -380,7 +385,8 @@ in its own transaction. Every file is idempotent, so re-running is safe.
   information: `solver` (the function that produced the values,
   `services.fea_solver.simulate_fea`), `solver_versions` (installed versions of
   nibabel, numpy, scipy and sfepy) and `solve_ms` (wall
-  time of that call in the API process).
+  time of that call in the API process, including any wait for an earlier
+  solve).
 - `simulation_runs_hourly`, a real-time continuous aggregate: per UTC hour, the
   number of runs and the average and maximum of `max_von_mises_stress_mpa`. A
   refresh policy materializes buckets between 30 days and 1 hour old, hourly;

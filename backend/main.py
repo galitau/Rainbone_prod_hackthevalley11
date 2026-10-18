@@ -1,17 +1,22 @@
 from __future__ import annotations
 
 import time
+from functools import partial
 from typing import Annotated
 
+import anyio
+import anyio.to_thread
 from fastapi import BackgroundTasks, FastAPI, File, HTTPException, UploadFile
-from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from routes_explain import router as explain_router
 from routes_history import router as history_router
-from services.fea_solver import FEASolverError, simulate_fea
+from services.fea_solver import MAX_UPLOAD_BYTES, FEASolverError, simulate_fea
 from services.history import save_simulation_run
+
+# One solve at a time: a full CT can hold several GB while it is segmented.
+SOLVE_LIMITER = anyio.CapacityLimiter(1)
 
 app = FastAPI(
     title="RainbowBone FEA Engine",
@@ -60,13 +65,16 @@ async def simulate(file: Annotated[UploadFile, File(description="NIfTI .nii or .
     if not file.filename or not file.filename.lower().endswith((".nii", ".nii.gz")):
         raise HTTPException(status_code=400, detail="Upload a .nii or .nii.gz NIfTI file.")
 
-    payload = await file.read()
+    payload = await file.read(MAX_UPLOAD_BYTES + 1)
     if not payload:
         raise HTTPException(status_code=400, detail="The uploaded NIfTI file is empty.")
+    if len(payload) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail=f"Upload a NIfTI file of at most {MAX_UPLOAD_BYTES // 2**20} MiB.")
 
     started = time.perf_counter()
     try:
-        result = await run_in_threadpool(simulate_fea, payload, filename=file.filename)
+        result = await anyio.to_thread.run_sync(partial(simulate_fea, payload, filename=file.filename),
+                                                limiter=SOLVE_LIMITER)
     except FEASolverError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 

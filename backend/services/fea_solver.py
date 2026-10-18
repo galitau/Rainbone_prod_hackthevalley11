@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-import gzip
 import importlib.util
 import logging
+import math
 import struct
 import time
+import zlib
 from pathlib import Path
 from typing import Any
 
@@ -12,6 +13,7 @@ import nibabel as nib
 import numpy as np
 import scipy.ndimage as ndi
 from pydantic import BaseModel, Field
+from sfepy.base.base import output as sfepy_output
 
 from services.fsl_segmentation import fsl_bone_mask
 
@@ -27,7 +29,14 @@ def _load_bone_fea_solver():
 
 
 bone_fea = _load_bone_fea_solver()
+# SfePy prints about 30 progress lines per solve; the API logs its own summary.
+sfepy_output.set_output(quiet=True)
 logger = logging.getLogger(__name__)
+
+# Upload limits. A 512 x 512 x 512 volume is a large CT; crop larger scans to the bone first.
+MAX_UPLOAD_BYTES = 512 * 2**20
+MAX_RAW_BYTES = 1024 * 2**20
+MAX_VOXELS = 512**3
 
 LOAD_NEWTONS = 800.0
 POISSON_RATIO = 0.3
@@ -55,11 +64,46 @@ class FEAResult(BaseModel):
     source_filename: str
 
 
+def _gunzip_prefix(payload: bytes, size: int) -> bytes:
+    """The first `size` decompressed bytes of a gzip file (members in order), or fewer if it is shorter."""
+    parts: list[bytes] = []
+    try:
+        while payload and size > 0:
+            stream = zlib.decompressobj(16 + zlib.MAX_WBITS)
+            part = stream.decompress(payload, size)
+            parts.append(part)
+            size -= len(part)
+            if not stream.eof:  # `size` reached, or the file is cut short
+                break
+            payload = stream.unused_data
+    except zlib.error as exc:
+        raise FEASolverError("Unable to read the uploaded NIfTI volume.") from exc
+    return b"".join(parts)
+
+
 def _load_nifti(payload: bytes) -> tuple[np.ndarray, np.ndarray]:
     # nibabel 5 cannot nib.load() a BytesIO; parse the (decompressed) bytes.
+    # The header is read first, and only the bytes it declares are decompressed,
+    # so a small gzip file cannot make the server allocate a large buffer.
+    gzipped = payload[:2] == b"\x1f\x8b"
+    head = _gunzip_prefix(payload, 540) if gzipped else payload[:540]
     try:
-        raw = gzip.decompress(payload) if payload[:2] == b"\x1f\x8b" else payload
-        nifti2 = raw[:4] in (struct.pack("<i", 540), struct.pack(">i", 540))
+        nifti2 = head[:4] in (struct.pack("<i", 540), struct.pack(">i", 540))
+        header_class = nib.Nifti2Header if nifti2 else nib.Nifti1Header
+        header = header_class(head[:header_class.template_dtype.itemsize], check=False)
+        voxels = math.prod(int(size) for size in header.get_data_shape())
+        # A single-file NIfTI keeps its voxels after the header and the 4-byte extension flag.
+        offset = max(int(header.get_data_offset()), header_class.template_dtype.itemsize + 4)
+        size = offset + voxels * header.get_data_dtype().itemsize
+    except Exception as exc:
+        raise FEASolverError("Unable to read the uploaded NIfTI volume.") from exc
+    if voxels > MAX_VOXELS:
+        raise FEASolverError(f"The NIfTI volume has {voxels:,} voxels; the limit is {MAX_VOXELS:,} (512 x 512 x 512).")
+    if size > MAX_RAW_BYTES:
+        raise FEASolverError(f"The NIfTI file declares {size:,} bytes; the limit is "
+                             f"{MAX_RAW_BYTES // 2**20:,} MiB decompressed.")
+    raw = _gunzip_prefix(payload, size) if gzipped else payload[:size]
+    try:
         image = (nib.Nifti2Image if nifti2 else nib.Nifti1Image).from_bytes(raw)
         volume = np.asarray(image.get_fdata(dtype=np.float32))
         spacing_mm = np.asarray(image.header.get_zooms()[:3], dtype=float)

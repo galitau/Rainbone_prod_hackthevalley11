@@ -11,8 +11,11 @@ import os
 import struct
 import sys
 import tempfile
+import threading
 import time
 import unittest
+import zlib
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest import mock
 
@@ -24,7 +27,9 @@ sys.path.insert(0, str(BACKEND))
 
 from fastapi.testclient import TestClient  # noqa: E402
 
+import main  # noqa: E402
 from main import SimulationResponse, app  # noqa: E402
+from services import fea_solver  # noqa: E402
 from services.fea_solver import (MAX_FE_VOXELS, _load_nifti, analyze_bone_volume,  # noqa: E402
                                  bone_weighted_percentile)
 
@@ -148,6 +153,66 @@ class SimulateEndpointTests(unittest.TestCase):
         response, _ = self.post(bytes(raw), "nan-spacing.nii")
         self.assertEqual(response.status_code, 422)
         self.assertIn("voxel size", response.json()["detail"])
+
+    def test_size_limits(self):
+        hu = np.full((32, 32, 32), -1000)
+        raw = nifti_bytes(hu, compress=False)
+        with mock.patch.object(main, "MAX_UPLOAD_BYTES", len(raw) - 1):
+            response, _ = self.post(raw, "big.nii")
+        self.assertEqual(response.status_code, 413)
+        with mock.patch.object(fea_solver, "MAX_RAW_BYTES", len(raw) - 1):
+            response, _ = self.post(gzip.compress(raw), "big.nii.gz")
+        self.assertEqual(response.status_code, 422)
+        self.assertIn("decompressed", response.json()["detail"])
+        # A 1.4 KB file whose header declares 1024^3 voxels is refused before any voxel is read.
+        header = bytearray(nifti_bytes(np.zeros((2, 2, 2)), compress=False)[:352])
+        struct.pack_into("<4h", header, 40, 3, 1024, 1024, 1024)  # dim[0..3]
+        response, _ = self.post(gzip.compress(bytes(header) + bytes(1024)), "huge.nii.gz")
+        self.assertEqual(response.status_code, 422)
+        self.assertIn("1,073,741,824 voxels", response.json()["detail"])
+        # A 130 KB gzip that declares one voxel and holds 128 MiB of zeros: only the declared bytes are inflated.
+        one_voxel = nifti_bytes(np.zeros((1, 1, 1)), compress=False)
+        stream = zlib.compressobj(9, zlib.DEFLATED, 16 + zlib.MAX_WBITS)
+        bomb = stream.compress(one_voxel) + b"".join(stream.compress(bytes(2**20)) for _ in range(128)) + stream.flush()
+        self.assertLess(len(bomb), 200_000)
+        with mock.patch.object(nib.Nifti1Image, "from_bytes", wraps=nib.Nifti1Image.from_bytes) as from_bytes:
+            response, _ = self.post(bomb, "bomb.nii.gz")
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(len(from_bytes.call_args.args[0]), len(one_voxel))
+
+    def test_gzip_members_are_read_and_truncated_gzip_is_refused(self):
+        hu = np.full((8, 8, 8), -1000)
+        hu[2:6, 2:6, 1:7] = 700
+        raw = nifti_bytes(hu, compress=False)
+        volume, _ = _load_nifti(gzip.compress(raw[:200]) + gzip.compress(raw[200:]))
+        np.testing.assert_array_equal(volume, hu)
+        response, _ = self.post(gzip.compress(raw)[:-20], "cut.nii.gz")
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(response.json()["detail"], "Unable to read the uploaded NIfTI volume.")
+
+    def test_solves_run_one_at_a_time(self):
+        running, peak = [0], [0]
+        lock = threading.Lock()
+
+        def slow_solve(payload, filename):
+            with lock:
+                running[0] += 1
+                peak[0] = max(peak[0], running[0])
+            time.sleep(0.2)
+            with lock:
+                running[0] -= 1
+            return {"max_von_mises_stress_mpa": 1.0, "average_youngs_modulus_gpa": 20.0, "bone_volume_cm3": 1.0,
+                    "fracture_risk_index_percent": 0.67, "load_newtons": 800.0, "mesh_vertices": 8,
+                    "mesh_faces": 12, "source_filename": filename}
+
+        with mock.patch.object(main, "simulate_fea", slow_solve), TestClient(app) as client:
+            def post():
+                return client.post("/api/simulate", files={"file": ("a.nii.gz", b"x", "application/gzip")}).status_code
+
+            with ThreadPoolExecutor(3) as pool:
+                codes = list(pool.map(lambda _: post(), range(3)))
+        self.assertEqual(codes, [200, 200, 200])
+        self.assertEqual(peak[0], 1)
 
     def test_disconnected_volume_uses_largest_component(self):
         hu = np.full((16, 16, 20), -1000)
