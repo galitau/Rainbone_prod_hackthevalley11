@@ -40,7 +40,7 @@ flowchart LR
   web -->|"same-origin /api/* and /health"| api
   user -.->|"name, email, photo stay in the browser"| gis
   user -->|"pelvic meshes through signed links"| vos
-  api -->|"facts or evidence only, never scans"| llm
+  api -->|"facts, evidence and Ask questions, never scans"| llm
   api -->|"clinical/ facts, link signing"| vos
   api -->|"simulation runs, AI audit rows"| tiger
   maint -->|"download, segment, mesh, solve"| data
@@ -114,8 +114,9 @@ offline femur model share one SfePy solver.
    clipped to 0–100 %. The ratio is illustrative and is not a fracture probability.
 
 The static HFValid femur on the dashboard was solved offline with one uniform modulus (10 GPa,
-ν 0.3) and the same 800 N load (`scripts/bone_fea/README.md`). Its stress ratio is 10.55 %, shown
-as 11 %.
+ν 0.3) and the same 800 N load (`scripts/bone_fea/README.md`). Its stress ratio uses the peak of
+the nodal-averaged von Mises stress, 15.83 MPa, over the same assumed 150 MPa: 10.55 %, shown as
+11 %.
 
 ### Storage
 
@@ -125,7 +126,7 @@ A private Vultr Object Storage bucket, reached with boto3 and the `VULTR_S3_*` k
 |---|---|---|
 | `ctpelvic1k/` (masks, VTP meshes, `manifest.json`) | `scripts/vultr_pipeline/pipeline.py` | `routes_bones.py` signs links; the browser downloads |
 | `clinical/` (`index.json`, `hfvalid/hfvalid-risk.json`, `hfvalid/pat001-femur-manifest.json`) | `scripts/vultr_pipeline/publish_clinical.py` | `services/clinical_store.py` for the AI layer |
-| Lesion-progression prefix (`VULTR_BUCKET_PATH`) | `backend/scripts/materialize_progression.py` | `services/storage.py`, `services/progression_mesh.py` |
+| Lesion-progression prefix (`VULTR_BUCKET_PATH`): source volumes, lesion coordinates, cached frames | Cached frames: `backend/scripts/materialize_progression.py` | `services/storage.py`, `services/progression_mesh.py` |
 
 `clinical_store.get_clinical_json()` accepts a `clinical/` object only when its `index.json` entry's
 sha256 equals the pin committed next to the bundled copy and the object's bytes hash to that pin.
@@ -159,7 +160,8 @@ and logging.
 
 The provider chain is `gemini-3.8-flash` → `gemini-3.5-flash-lite` → the Gemini answer saved earlier
 for the same facts and prompts → Groq `openai/gpt-oss-120b` → a deterministic template.
-`AI_CHAIN` reorders it and `AI_OFFLINE=1` leaves only the template. No model computes a number and
+`AI_CHAIN` reorders or shortens it (the template is always last) and `AI_OFFLINE=1` leaves only
+the template. No model computes a number and
 no model receives a scan or a file name; the risk card also keeps our own FE numbers out of the model
 input. ARF0 in the risk card is the HFValid authors' published model estimate for subject Pat001,
 not a figure Rainbone computes.
@@ -207,12 +209,12 @@ flowchart LR
   browser -.->|"optional sign-in script"| gis
 ```
 
-The browser downloads only the CTPelvic1K meshes from somewhere other than the site's origin. The
-API needs the whole repository on its host, because it imports the solver from `scripts/bone_fea/`
+Apart from Google's optional sign-in script and profile photo, the CTPelvic1K meshes are the only
+thing the browser downloads from outside the site's origin. The API needs the whole repository on its host, because it imports the solver from `scripts/bone_fea/`
 and reads the bundled pinned copies from `frontend/public/models/`.
 
-Production follows `main` through a deploy job that lives outside this repository (there is no CI
-workflow here):
+Production is deployed from `main` by a deploy job kept outside this repository (there is no CI
+workflow here). For a new commit it does the following:
 
 ```mermaid
 flowchart LR
@@ -404,15 +406,20 @@ sequenceDiagram
     Note over A: render the exact statements, citations, page links and disclaimer
     A->>T: INSERT INTO ai_analyses with hashes and tools_used, at most 2.5 s, not for a saved selection
   end
-  A-->>B: answer, provider, model, served, sources, grounding, logged, tools_used, trace
+  A-->>B: answer, provider, model, served, sources, grounding, logged, tools_used, trace, usage, workflow_usage
 ```
 
 The five tools are `get_patient_facts`, `compare_with_cohort`, `get_fea_result`, `get_page_guide`
 and `get_dataset_info`. Their arguments are enums (`case_id` can only be `Pat001`), so no call can
-select an arbitrary case, file, URL or SQL. Besides the question, the writer sees only the executed
-tools' outputs, and the model never writes prose: the server renders statements from a fixed catalogue. Each request is
-independent; prior turns and uploaded scans are not sent. The trace arrives with the completed
-response and lists only stages that ran.
+select an arbitrary case, file, URL or SQL. Besides the question and the page, the writer sees only
+the executed tools' outputs and the statement IDs they allow, and the model never writes prose: the
+server renders statements from a fixed catalogue. Each request is independent; prior turns and
+uploaded scans are not sent. The trace arrives with the completed response and lists only stages
+that ran. `usage` holds the accepted writer's provider-reported tokens; `workflow_usage` adds up the
+tokens providers reported for the triage and writer generations this request started, rejected
+selections included, and is marked incomplete when a report is missing or an attempt failed. A
+cached or joined request reports no new work. Neither is written to the audit log, and neither is a
+billing total.
 
 ### 5. Offline data pipelines
 
@@ -534,8 +541,8 @@ All state below is in memory and belongs to one API process.
 | Ask admission | 8 per minute per transport peer; 4 active requests; 4 pending generations; 4 evidence workers | `routes_ask.py`, `services/ask.py` |
 | Ask budget | 25 s for evidence, triage and writers; triage at most 6 s; at most 4 tool calls; 1 to 3 statements; 120 words; 500-character question | `services/ask.py`, `ask_triage.py`, `ask_tools.py` |
 | AI answer caches | 256 entries each for explain and risk, 128 for Ask; Gemini 1 h, Groq and template 60 s, saved answers at most 60 s, unlogged answers at most 60 s | `llm_providers.py`, `ask.py`, `ai_log.py` |
-| 429 memory | a model is skipped 300 s after HTTP 429 and 60 s after any other failure, by every AI route | `llm_providers.py` |
-| Gemini keys | HTTP 400, 401 or 403 moves to the next key in `GEMINI_API_KEYS` and skips that key for 60 s; a 429 is never retried with another key | `llm_providers.py` |
+| 429 memory | a model is skipped 300 s after HTTP 429 and 60 s after a timeout, connection error or other HTTP error (a rejected text starts no cooldown), by every AI route | `llm_providers.py` |
+| Gemini keys | HTTP 400, 401 or 403 moves to the next configured key (`GEMINI_API_KEY`, then `GEMINI_API_KEYS`) and skips that key for 60 s; a 429 is never retried with another key | `llm_providers.py` |
 | Provider timeouts | Gemini 10 s per key, Groq 8 s, connect at most 3 s | `llm_providers.py` |
 | Saved Gemini answers | JSON file, at most 500 entries, written by atomic rename | `llm_providers.py` |
 | `clinical/` reads | kept 10 min, 60 s after a fallback; 1 s connect, 1.5 s read, one attempt; 4 MiB cap; concurrent misses share one read | `clinical_store.py` |
@@ -617,7 +624,9 @@ clinical validation, and accepted text still needs human review.
 - **Research prototype, not a medical device.** The FEA is illustrative: assumed, uncalibrated
   material properties and a standing load, not a fall. The 11 % (10.55 %) stress ratio is peak stress
   over an assumed 150 MPa strength and is not a fracture probability.
-- **One reference case.** The AI cards and Ask cover HFValid subject Pat001 only. ARF0 and MSF are
+- **One reference case.** The dashboard's AI cards and Ask describe HFValid subject Pat001 only
+  (`/api/risk-analysis` accepts any subject ID in the HFValid table, but only Pat001 has a femur
+  model, and `/api/explain` and `/api/ask` accept no other case ID). ARF0 and MSF are
   the HFValid authors' published results; importing a CT runs our standing-load solve and produces
   neither. The cohort is 101 women, 4 with a recorded fracture during follow-up.
 - **Process-local state.** Caches, cooldowns, admission slots and rate limits belong to one API

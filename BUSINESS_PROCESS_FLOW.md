@@ -2,7 +2,8 @@
 
 This document describes how Rainbone is meant to be used by a care team in senior living,
 and the data and operations process that keeps the live app at <https://rainbone.health>
-running. The system itself is described in [README.md](README.md#architecture).
+running. The system itself is described in [ARCHITECTURE.md](ARCHITECTURE.md) and
+[README.md](README.md#architecture).
 
 Rainbone is a research prototype built at Hack the Valley 11, **not a medical device**. It
 gives no diagnosis, no forecast and no advice. The fracture-risk figure it shows (ARF0) is
@@ -56,7 +57,7 @@ flowchart TB
 
   subgraph APP["Rainbone app"]
     a1["2 · Patient overview: HFValid Pat001<br/>femur FEA solved offline (vtk.js)"]
-    a3["ARF0, MSF and fall-load ratio<br/>from the published table"]
+    a3["Published ARF0 and MSF;<br/>ranks and fall-load ratio<br/>computed in code"]
     a2["Import scan: 800 N standing-load<br/>SfePy solve · no ARF0, no MSF"]
   end
 
@@ -111,7 +112,7 @@ flowchart TB
 | 5 | AI layer, then care team | The dashboard requests `POST /api/explain` and `POST /api/risk-analysis`. Under each card a provenance line says where the facts were read from ("Facts read from Vultr Object Storage · sha256 verified", or the bundled backup copy with the reason) and "Logged in Tiger Cloud" when the audit row is confirmed. The card label names the model, a saved Gemini answer, the Groq backup or "Offline summary (no AI)". | `frontend/components/grounding-line.tsx`, `frontend/lib/ai-label.ts` |
 | 6 | Care team, AI layer | Ask Rainbone (header button, `/` key, or **Ask a follow-up** on either card) answers from approved, cited source statements. See the sub-process below. | `frontend/components/ask-rainbone.tsx`, `backend/services/ask.py` |
 | 7 | Care team, clinician, resident | The conversation and any action happen outside Rainbone, under the facility's existing fall-prevention protocols. Rainbone has no connection to a care record system and stores no care decision. | — |
-| Import | Care team, Rainbone app | **Import scan** posts a `.nii` or `.nii.gz` (at most 512 MiB) to `POST /api/simulate`. The API keeps voxels at or above 150 HU, maps HU to stiffness, solves an 800 N compression with SfePy and returns peak stress, mean stiffness, bone volume and the stress ratio. The file is processed in memory and not saved; the file name and results are saved to `simulation_runs` in Tiger Cloud. | `backend/main.py`, `backend/services/fea_solver.py`, `backend/services/history.py` |
+| Import | Care team, Rainbone app | **Import scan** posts a `.nii` or `.nii.gz` (at most 512 MiB) to `POST /api/simulate`. The API keeps the largest connected region at or above 150 HU, maps HU to stiffness, solves an 800 N compression with SfePy and returns the 99.5th-percentile stress, mean stiffness, bone volume and the stress ratio. The file itself is not saved; the file name and results are saved to `simulation_runs` in Tiger Cloud when the database is reachable. | `backend/main.py`, `backend/services/fea_solver.py`, `backend/services/history.py` |
 
 ### Decision points
 
@@ -119,7 +120,7 @@ flowchart TB
 |---|---|---|
 | Published reference data for this CT? | Today only HFValid Pat001 has it: the published ARF0, MSF and follow-up. | Import the CT for the standing-load solve only. No ARF0, no MSF, no AI card for the import. |
 | Facts verified? | The `clinical/` copy in Vultr Object Storage matches the sha256 listed in `clinical/index.json` and pinned in the repository. | The bundled copy is used if it matches its pin, and the card says why. If it does not match either, evidence is unavailable and no AI text is generated (HTTP 503). |
-| Gemini answer passes the checker? | `gemini-3.8-flash`, then `gemini-3.5-flash-lite`. The checker accepts only numbers that are facts and rejects blocked wording such as advice, diagnosis, statements about the future, or "chance" and "probability" for ARF0. | Fallback in order: the Gemini answer saved earlier for exactly the same facts (if it still passes the checker), Groq `openai/gpt-oss-120b`, then a deterministic template that needs no network. |
+| Gemini answer passes the checker? | `gemini-3.8-flash`, then `gemini-3.5-flash-lite`. The checker accepts only numbers that are facts and rejects blocked wording such as advice, diagnosis, statements about the future, or "chance" and "probability" for ARF0. | Fallback in order: the Gemini answer saved earlier for exactly the same facts and prompts (if it still passes the checker), Groq `openai/gpt-oss-120b`, then a deterministic template that needs no network. |
 | Follow-up question? | Ask Rainbone. | Go to the discussion with the clinician. |
 
 ### Ask Rainbone sub-process
@@ -127,7 +128,7 @@ flowchart TB
 ```mermaid
 flowchart TB
   q(("Question<br/>up to 500 characters"))
-  adm{"Within limits?<br/>8 per minute per client,<br/>4 active requests"}
+  adm{"Within limits?<br/>8 per minute per<br/>connecting address,<br/>4 active requests"}
   busy["HTTP 429<br/>with Retry-After"]
   ev{"Evidence verified?<br/>risk table and<br/>femur manifest"}
   no503["HTTP 503<br/>before any model call"]
@@ -243,12 +244,12 @@ flowchart TB
 
 | Step | What happens | Control |
 |---|---|---|
-| 1 · Licence | HFValid and CTPelvic1K are CC BY 4.0; TotalSegmentator is Apache-2.0. The README's data table, the femur manifest, the CTPelvic1K manifest and `clinical/index.json` carry the licence, the source and a note of what was changed. | Attribution travels with the data and is shown in the app (`/bones`, `/datasets`, the AI card sources). |
-| 2a · Femur model | `scripts/bone_fea` imports Pat001 into 3D Slicer, meshes it with TetGen, solves it with SfePy and writes `frontend/public/models/`; `build_risk_table.py` extracts the ARF0 and MSF table from the dataset's published metadata. | Each output has a sha256 pin committed next to it. |
+| 1 · Licence | HFValid and CTPelvic1K are CC BY 4.0; TotalSegmentator is Apache-2.0. The README's data section and the CTPelvic1K manifest carry the licence, the source and a note of what was changed; the femur manifest and `clinical/index.json` carry the licence and the source. | Attribution travels with the data and is shown in the app (`/bones`, `/datasets`, the AI card sources). |
+| 2a · Femur model | `scripts/bone_fea` imports Pat001 into 3D Slicer, meshes it with TetGen, solves it with SfePy and writes `frontend/public/models/`; `build_risk_table.py` extracts the ARF0 and MSF table from the dataset's published metadata. | The femur manifest records the sha256 of each output file, and the two files the AI layer reads (the femur manifest and the risk table) each have a `.sha256` pin committed next to them. |
 | 2b · Imaging library | `pipeline.py` reads file sizes and checksums from the Zenodo API, runs TotalSegmentator, writes meshes and a manifest, and uploads them under `ctpelvic1k/` as private objects with their sha256; the manifest goes last. | The API hands out 15-minute pre-signed links, and the browser checks each mesh's sha256 before drawing it. |
 | 2c · AI facts | `publish_clinical.py` uploads the risk table and the femur manifest under `clinical/` with `clinical/index.json`. | A file that does not match its pin in the repository is refused; every object is read back and hashed. The API repeats both checks whenever it reads from the bucket. |
-| 3 · Change | Code, models and pins reach `main` through reviewed pull requests. | Backend and front-end test suites live in `backend/tests/` and `frontend/tests/`. |
-| 4 · Deploy | A deploy job outside this repository follows `main`: Vercel deploys the front end, and the backend tests run on the new commit before the API host checks it out and restarts the service. If they fail, the API stays on the previous commit. Details in [ARCHITECTURE.md](ARCHITECTURE.md). | The browser only talks to `rainbone.health`, which forwards `/api/*` and `/health` to `api.rainbone.health`. |
+| 3 · Change | Code, models and pins reach `main` through pull requests. | Backend and front-end test suites live in `backend/tests/` and `frontend/tests/`. |
+| 4 · Deploy | Production is deployed from `main` by a deploy job kept outside this repository: Vercel deploys the front end, and the backend tests run on the new commit before the API host checks it out and restarts the service. If they fail, the API stays on the previous commit. Details in [ARCHITECTURE.md](ARCHITECTURE.md#deployment-view). | The browser reaches the API only through `rainbone.health`, which forwards `/api/*` and `/health` to `api.rainbone.health`. |
 | 5 · Monitor | `GET /health` shows the engine status in the app; `GET /api/ai-log` shows the latest AI answers with provider, model, latency, grounding store, fallbacks and tools, without their text. | A run of `local-backup` grounding or of fallbacks to Groq or the template is the signal to check the bucket, the provider quotas or the database. |
 
 ## Value
@@ -261,8 +262,9 @@ flowchart TB
   simulation, and whether the facts came from the verified bucket copy or the backup.
 - **Residents and families** may get a clearer conversation, because the explanation is written
   for a non-specialist and keeps to what the data shows.
-- **Whoever audits the system** gets a row per AI answer in Tiger Cloud and a public, text-free
-  AI log, so the provider, model, fallbacks and grounding of an answer can be traced.
+- **Whoever audits the system** gets a row in Tiger Cloud for each newly generated AI answer and
+  a public, text-free AI log, so the provider, model, fallbacks and grounding of an answer can be
+  traced.
 
 ### What changes
 
@@ -276,8 +278,9 @@ flowchart TB
 
 - It gives no diagnosis, no forecast and no treatment or prevention advice.
 - It does not compute ARF0 or MSF from an imported CT; imports get the standing-load solve only.
-- Its own simulation is illustrative: one uniform, uncalibrated stiffness, a clamped distal end
-  and 800 N on the femoral head. The stress ratio is not a fracture probability.
+- Its own simulations are illustrative. The Pat001 femur uses one uniform, uncalibrated
+  stiffness, a clamped distal end and 800 N on the femoral head; an imported CT gets an assumed
+  HU-to-stiffness mapping and the same 800 N. The stress ratio is not a fracture probability.
 - It has not been validated for clinical use, and the cohort is small (101 women, 4 recorded
   fractures).
 - It has no server accounts and no link to a care record system. Simulation history and the AI
@@ -285,28 +288,26 @@ flowchart TB
   with patient details.
 - Lesion progression (`/lesion-progression`) is an illustrative visualization, not measured
   progression.
+- It records no falls, fractures or other outcomes of residents.
 
-## Proposed pilot measures
+## What the audit log records
 
-These are **proposed** measures for a future pilot with a care home. None has been measured,
-and no targets have been set; a pilot would set them before it starts, with the site's own
-approvals.
+Each newly generated AI answer adds one `ai_analyses` row in Tiger Cloud, readable through
+`GET /api/ai-log` (`backend/migrations/002_ai_analyses.sql`, `003_ai_tools.sql`). A cached or
+saved answer adds no row, and a row is written only when the database is reachable.
 
-| Measure | How it could be measured | Already recorded? |
-|---|---|---|
-| Staff understanding of ARF0 | Teach-back after a review: can the staff member say that ARF0 is the study authors' published model estimate, and where Pat001 stands among 101 women? | No, needs a short questionnaire |
-| Staff understanding of the stress ratio | Teach-back: can they say that the 11 % stress ratio is not a fracture probability? | No, needs a short questionnaire |
-| Time to review one resident | Time from opening `/dashboard` to the end of step 5 in an observed session. | No |
-| Answers served by a live model | Share of `ai_analyses` rows per provider (Gemini, Groq, template). | Yes, `provider` and `model` |
-| Grounding from the verified bucket | Share of rows with `grounding_store = vultr-object-storage` rather than `local-backup`. | Yes, `grounding_store` |
-| Checker rejections | Share of rows whose `fallbacks` include a rejected answer. | Yes, `fallbacks` |
-| Answer latency | Median and 95th percentile of `latency_ms` per endpoint. | Yes, `latency_ms` |
-| Evidence used by Ask Rainbone | Mix of `tools_used`, for example research tools against the site-help guide. | Yes, `tools_used` |
-| Engine availability | Share of `GET /health` checks answered, from an external monitor. | No, the app checks but does not record it |
-| Out-of-scope questions | Share of Ask Rainbone answers that are the fixed "only Rainbone's data and pages" statement. | No, statement IDs are not stored in Tiger |
+| Question an operator can answer | Column |
+|---|---|
+| Which endpoint and case produced the answer? | `endpoint`, `case_id` |
+| Was it written by Gemini, Groq or the template, and which model? | `provider`, `model` |
+| Were the facts read from the verified bucket copy or the bundled backup? | `grounding_store` |
+| Which providers were skipped or rejected first, and why (without the rejected text)? | `fallbacks` |
+| How long did the answer take? | `latency_ms` |
+| Which evidence tools did Ask Rainbone run? | `tools_used` |
+| Which facts and which text were they, without storing either? | `facts_sha256`, `text_sha256` |
 
-Outcome measures such as falls or fractures are out of scope for Rainbone. Any study of them
-would need its own design and approvals.
+The question text, the answer text, the facts, the selected statement IDs and token counts are not
+stored.
 
 ## Responsibilities
 
