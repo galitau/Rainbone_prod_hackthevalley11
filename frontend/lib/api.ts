@@ -83,26 +83,69 @@ export async function checkHealth(): Promise<boolean> {
   }
 }
 
-export type HistoryRun = { time: string; max_von_mises_stress_mpa: number; source_filename: string };
+export type HistoryRun = {
+  time: string;
+  max_von_mises_stress_mpa: number;
+  source_filename: string;
+  // Optional for compatibility with older API deployments; never manufacture evidence.
+  run_id?: string;
+  load_newtons?: number;
+  solve_ms?: number | null;
+  solver?: string;
+};
+
+export type HistoryHour = { bucket: string; runs: number };
 
 // "unavailable": the API has no saved history (no database configured answers 503, an older API 404).
 export type HistoryState =
   | { status: "loading" }
-  | { status: "ready"; runs: HistoryRun[] }
+  | { status: "ready"; runs: HistoryRun[]; hourly?: HistoryHour[] }
   | { status: "unavailable"; reason: string };
 
 // GET /api/history: saved /api/simulate results, oldest first. Never throws.
-export async function fetchHistory(limit = 12): Promise<HistoryState> {
+export async function fetchHistory(limit = 12, sourceFilename?: string, timeoutMs = SHORT_TIMEOUT_MS): Promise<HistoryState> {
+  const query = new URLSearchParams({ limit: String(limit) });
+  if (sourceFilename !== undefined) query.set("source_filename", sourceFilename);
   let response: Response;
   try {
-    response = await fetch(apiUrl(`/api/history?limit=${limit}`), { cache: "no-store", signal: timeout(SHORT_TIMEOUT_MS) });
+    response = await fetch(apiUrl(`/api/history?${query}`), { cache: "no-store", signal: timeout(timeoutMs) });
   } catch {
     return { status: "unavailable", reason: "API unreachable" };
   }
   if (!response.ok) return { status: "unavailable", reason: `HTTP ${response.status}` };
   try {
-    const body = (await response.json()) as { runs?: HistoryRun[] };
-    if (Array.isArray(body.runs)) return { status: "ready", runs: body.runs };
+    const body: unknown = await response.json();
+    if (typeof body !== "object" || body === null || !("runs" in body) || !Array.isArray(body.runs))
+      return { status: "unavailable", reason: "no runs in the answer" };
+    const runs: HistoryRun[] = [];
+    for (const row of body.runs) {
+      if (typeof row !== "object" || row === null ||
+          typeof row.time !== "string" || !Number.isFinite(Date.parse(row.time)) ||
+          typeof row.source_filename !== "string" ||
+          typeof row.max_von_mises_stress_mpa !== "number" ||
+          !Number.isFinite(row.max_von_mises_stress_mpa) || row.max_von_mises_stress_mpa < 0)
+        return { status: "unavailable", reason: "invalid saved run in the answer" };
+      runs.push({
+        time: row.time,
+        source_filename: row.source_filename,
+        max_von_mises_stress_mpa: row.max_von_mises_stress_mpa,
+        run_id: typeof row.run_id === "string" && row.run_id ? row.run_id : undefined,
+        load_newtons: typeof row.load_newtons === "number" && Number.isFinite(row.load_newtons) ? row.load_newtons : undefined,
+        solve_ms: typeof row.solve_ms === "number" && Number.isFinite(row.solve_ms) && row.solve_ms >= 0 ? row.solve_ms : undefined,
+        solver: typeof row.solver === "string" && row.solver ? row.solver : undefined,
+      });
+    }
+    // Hourly counts describe engine activity, not patient change. Older APIs may omit them.
+    const hourly: HistoryHour[] | undefined = "hourly" in body && Array.isArray(body.hourly)
+      ? body.hourly.flatMap((hour: unknown) => {
+          if (typeof hour !== "object" || hour === null ||
+              !("bucket" in hour) || typeof hour.bucket !== "string" || !Number.isFinite(Date.parse(hour.bucket)) ||
+              !("runs" in hour) || typeof hour.runs !== "number" || !Number.isSafeInteger(hour.runs) || hour.runs < 0)
+            return [];
+          return [{ bucket: hour.bucket, runs: hour.runs }];
+        })
+      : undefined;
+    return { status: "ready", runs, ...(hourly === undefined ? {} : { hourly }) };
   } catch {
     // fall through
   }
