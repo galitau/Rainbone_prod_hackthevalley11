@@ -415,8 +415,17 @@ def cooldown_reason(provider) -> Optional[str]:
     return every_key() if every_key is not None else None
 
 
+def notify_observer(callback, *args) -> None:
+    """Optional instrumentation must never discard a valid provider result."""
+    if callback is not None:
+        try:
+            callback(*args)
+        except Exception:
+            pass
+
+
 async def attempt(provider, system: str, user: str,
-                  check: Callable[[str], Optional[str]]) -> tuple[Optional[str], Optional[str], bool]:
+                  check: Callable[[str], Optional[str]], *, on_usage=None, on_failure=None) -> tuple[Optional[str], Optional[str], bool]:
     """(text, reason, try_next_model). text is set when the provider's text passes check().
 
     try_next_model is true after an HTTP error status or a cooldown skip: the provider's next model (Gemini's
@@ -432,6 +441,8 @@ async def attempt(provider, system: str, user: str,
     try:
         text = await asyncio.wait_for(provider.generate(system, user), timeout=limit)
     except Exception as exc:  # also an adapter bug: it must not break the chain; messages are not forwarded
+        notify_observer(on_failure, "request_timeout" if isinstance(exc, asyncio.TimeoutError) or
+                        (isinstance(exc, ProviderError) and "timed out" in exc.reason) else "failed_attempt")
         try_next, status = False, None
         if isinstance(exc, ProviderError):
             reason, status = exc.reason, exc.status
@@ -444,6 +455,7 @@ async def attempt(provider, system: str, user: str,
             reason = f"unexpected {type(exc).__name__}"
         start_cooldown(provider, status)
         return None, reason, try_next
+    notify_observer(on_usage, provider.name, provider.model, usage_of(text))
     reason = check(text)
     return (None, f"rejected: {reason}", False) if reason else (text, None, False)
 
@@ -670,7 +682,7 @@ class ModelAnswer:
 
 async def ask_models(models: list, system: str, user: str, check: Callable[[str], Optional[str]],
                      fell_through: Callable[[Optional[str], str], None], *, kind: str,
-                     facts: str) -> Optional[ModelAnswer]:
+                     facts: str, on_usage=None, on_failure=None) -> Optional[ModelAnswer]:
     """One provider's step in a route's chain, or None to move on to the next provider.
 
     Its models are asked in turn with attempt(). Each failure is passed to fell_through(model, reason), with
@@ -683,7 +695,7 @@ async def ask_models(models: list, system: str, user: str, check: Callable[[str]
         fell_through(None, f"{models[0].key_name} not set")
     else:
         for provider in models:
-            text, reason, try_next = await attempt(provider, system, user, check)
+            text, reason, try_next = await attempt(provider, system, user, check, on_usage=on_usage, on_failure=on_failure)
             if text is not None:
                 save_answer(store, kind, facts, system, user, provider.model, text)
                 return ModelAnswer(text=str(text), model=provider.model, usage=usage_of(text))

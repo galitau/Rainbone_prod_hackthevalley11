@@ -1,10 +1,15 @@
 const test = require('node:test'), assert = require('node:assert/strict');
 const fs = require('node:fs'), path = require('node:path'), vm = require('node:vm'), ts = require('typescript');
 const payload = () => ({answer:'A checked statement [HFValid-Pat001].',provider:'gemini',model:'test-model',served:'cached',saved_at:null,sources:[{id:'HFValid-Pat001',label:'HFValid',kind:'published',url:'https://doi.org/10.6092/unibo/amsacta/8431'}],steps:['Read verified facts'],grounding:null,logged:null});
+function loadUsage() {
+  const exports = {};
+  vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(__dirname,'../lib/ask-usage.ts'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText,{exports});
+  return exports;
+}
 function load(fetch) {
   const code = ts.transpileModule(fs.readFileSync(path.join(__dirname,'../lib/ask-rainbone.ts'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;
   const exports = {};
-  vm.runInNewContext(code,{exports,fetch,require:() => ({apiUrl:path => `https://example.test${path}`})});
+  vm.runInNewContext(code,{exports,fetch,require:name => name === '@/lib/ask-usage' ? loadUsage() : ({apiUrl:path => `https://example.test${path}`})});
   return exports;
 }
 test('links allow exact known routes and citation, reject executable and lookalike URLs', () => {
@@ -43,7 +48,7 @@ test('429 honors retry delay; unavailable facts and network errors are not answe
 });
 test('actual drawer handler wraps visible endpoints and preserves middle Tab navigation', () => {
   const jsx=(type,props)=>({type,props});let calls=0;const document={body:{},activeElement:null};
-  const imports={react:{useEffect(){},useRef:current=>({current}),useState:value=>[calls++===0?true:value,()=>{}]},'react/jsx-runtime':{jsx,jsxs:jsx,Fragment:'fragment'},'react-dom':{createPortal:node=>node},'next/navigation':{usePathname:()=>'/dashboard'},'lucide-react':{},'@/lib/ai-label':{},'@/lib/preferences':{useReducedMotion:()=>false},'@/lib/ask-rainbone':{},'@/components/grounding-line':{}};
+  const imports={react:{useEffect(){},useRef:current=>({current}),useState:value=>[calls++===0?true:value,()=>{}]},'react/jsx-runtime':{jsx,jsxs:jsx,Fragment:'fragment'},'react-dom':{createPortal:node=>node},'next/navigation':{usePathname:()=>'/dashboard'},'lucide-react':{},'@/lib/ai-label':{},'@/lib/preferences':{useReducedMotion:()=>false},'@/lib/ask-rainbone':{},'@/components/grounding-line':{},'@/components/ask-usage-line':{}};
   const code=ts.transpileModule(fs.readFileSync(path.join(__dirname,'../components/ask-rainbone.tsx'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,target:ts.ScriptTarget.ES2020}}).outputText;
   const exports={};vm.runInNewContext(code,{exports,require:name=>imports[name],document,getComputedStyle:()=>({visibility:'visible'})});
   const dialog=exports.AskRainbone().props.children[1];
@@ -77,7 +82,7 @@ function traceHarness(reduced = false) {
     react: {useEffect: effect => effects.push(effect), useState: initial => {const index = cursor++; if (!(index in state)) state[index] = initial; return [state[index], value => {state[index] = value;}];}},
     'react/jsx-runtime': {jsx, jsxs: jsx}, 'react-dom': {}, 'next/navigation': {}, 'lucide-react': {},
     '@/lib/preferences': {useReducedMotion: () => reduced}, '@/lib/ai-label': {aiAnswerLabel: answer => `${answer.provider} · ${answer.served}`},
-    '@/lib/ask-rainbone': {}, '@/components/grounding-line': {},
+    '@/lib/ask-rainbone': {}, '@/components/grounding-line': {}, '@/components/ask-usage-line': {},
   };
   const code = ts.transpileModule(fs.readFileSync(path.join(__dirname, '../components/ask-rainbone.tsx'), 'utf8'), {compilerOptions: {module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2020}}).outputText;
   const exports = {};
@@ -147,4 +152,28 @@ test('fallback summary requires explicit Gemini 429 evidence and does not claim 
   assert.doesNotMatch(content(cached), /Gemini 429 → Groq/);
   assert.match(content(cached), /reused; no new writer call/);
   assert.equal(nodes(cached).find(node=>node.type==='details').props.open, undefined);
+});
+test('optional usage cannot break an answer and preserves original and current scopes', () => {
+  const lib=load(), answer=payload();
+  const writer={prompt_tokens:10,output_tokens:5,total_tokens:15,provider:'gemini',model:'test-model',source:'live',served:'saved'};
+  const workflow={scope:'current_request',reuse:'none',calls:[{stage:'triage',provider:'gemini',model:'triage',usage:{prompt_tokens:2,output_tokens:1,total_tokens:3}}],reported_totals:{prompt_tokens:2,output_tokens:1,total_tokens:3},complete:true,incomplete_reasons:[]};
+  const parsed=lib.parseAskAnswer({...answer,served:'saved',usage:writer,workflow_usage:workflow});
+  assert.equal(parsed.usage.total_tokens,15); assert.equal(parsed.workflow_usage.reported_totals.total_tokens,3);
+  for(const malformed of [null,{}, {total_tokens:-1}, Infinity]) {
+    const fallback=lib.parseAskAnswer({...answer,usage:malformed,workflow_usage:malformed});
+    assert.equal(fallback.answer,answer.answer); assert.equal(fallback.usage,undefined); assert.equal(fallback.workflow_usage,undefined);
+  }
+});
+
+test('malformed optional usage discriminator objects cannot break valid answers', () => {
+ const api=load();
+ for (const invalid of [{toString:null},{},[],false,7,null]) {
+  const answer=payload();
+  const result=api.parseAskAnswer({...answer,
+   workflow_usage:{scope:'current_request',reuse:invalid,calls:[],reported_totals:{prompt_tokens:0,output_tokens:0,total_tokens:0},complete:true,incomplete_reasons:[]},
+   usage:{prompt_tokens:1,output_tokens:1,total_tokens:2,provider:'gemini',model:'test-model',source:'live',served:invalid}});
+  assert.equal(result.answer,answer.answer);
+  assert.equal(result.workflow_usage,undefined);
+  assert.equal(result.usage,undefined);
+ }
 });
