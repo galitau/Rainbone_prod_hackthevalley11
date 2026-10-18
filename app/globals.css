@@ -21,7 +21,7 @@
 .theme-stage {
   color-scheme: dark;
   --canvas: 8 13 20;
-  --panel: 17 26 38;
+  --panel: 13 20 29; /* #0D141D, main's dark panel */
   --line: 32 45 58;
   --ink: 231 238 245;
   --muted: 125 145 164; /* 5.8:1 on the viewer background */

@@ -1,10 +1,13 @@
 fastapi
 uvicorn
 nibabel
-scikit-image
 scikit-learn
-trimesh
 sfepy
 numpy
 scipy
 pydantic
+python-multipart
+httpx2
+httpx
+python-dotenv
+psycopg[binary]
