@@ -461,12 +461,13 @@ export default function ResearchPaperPage() {
         <aside id="significance" className="rb-box rb-anchor" aria-labelledby="significance-title">
           <h2 id="significance-title">Significance for care teams</h2>
           <p>
-            By the time a resident falls and breaks a bone, it is already an emergency. Rainbone lets a care team see, before a fall, where a
-            femur carries load and where that femur&apos;s published fall results sit among 101 women in a research cohort, explained in plain
-            words by AI agents. Every number the AI shows is computed by code and checked against the data before display, so the care team
-            gets clear, trustworthy explanations rather than guesses. The prototype runs today on a published research femur (HFValid) with
-            standard modelling assumptions; bringing it to residents is the next step, with consent, research-ethics review and a
-            PHIPA-compliant agreement in place first. Research prototype, not a medical device.
+            By the time a resident falls and breaks a bone, it is already an emergency. Rainbone gives the whole care team (nurses, CNAs,
+            wellness directors and doctors) an earlier, clearer picture of bone health: a 3D view of where a femur carries load, where its
+            published fall results sit among 101 women, and a plain-words explanation from AI agents that anyone on the team can read and
+            share. Every number is computed by code and checked before it is shown, so the team can trust what it brings to a clinician, a
+            resident or a family, and it can 3D-print the simulated break as a hands-on teaching model. The prototype runs on a published
+            research femur today; bringing it to residents comes next, with consent and PHIPA-compliant agreements in place first. Research
+            prototype, not a medical device.
           </p>
         </aside>
 
