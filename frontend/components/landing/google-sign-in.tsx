@@ -51,7 +51,8 @@ export function GoogleSignIn({ onSignedIn }: { onSignedIn: () => void }) {
 
   return (
     <div>
-      <div ref={box} className="flex min-h-[44px] w-full items-center justify-center" />
+      {/* Google draws its button in an iframe. With a dark color-scheme on the page the browser paints that iframe opaque white, so this box keeps the light scheme the iframe uses. */}
+      <div ref={box} className="flex min-h-[44px] w-full items-center justify-center [color-scheme:light]" />
       {problem && <p role="alert" className="mt-2 text-center font-mono text-[11px] text-spectrum-amber">{problem}</p>}
     </div>
   );
