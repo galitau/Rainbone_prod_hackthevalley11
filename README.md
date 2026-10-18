@@ -175,4 +175,4 @@ optional FSL bone segmentation.
 ## Team
 
 Built at Hack the Valley 11 by Galit Tauber, Camila Rojas, Jisara Wuttikreekiat and
-Marco Ayuste.
+Marco Anthony Ayuste.
