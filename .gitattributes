@@ -1,0 +1,9 @@
+# Model and scan files are data: never convert their line endings, or their bytes stop matching
+# the sha256 values recorded in each model manifest.
+*.vtp -text
+*.vtu -text
+*.vtk -text
+*.nrrd binary
+*.nii binary
+*.nii.gz binary
+*.stl binary
