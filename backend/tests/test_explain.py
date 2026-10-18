@@ -26,10 +26,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from routes_explain import router  # noqa: E402
 from services import explain as ex  # noqa: E402
+from services import llm_providers  # noqa: E402
 from services import settings  # noqa: E402
 from services.explain import (ChainConfigError, ExplainRequest, build_facts, check, explain,  # noqa: E402
                               template_text)
-from services.llm_providers import OUTPUT_SCHEMA, GeminiProvider, GroqProvider  # noqa: E402
+from services.llm_providers import OUTPUT_SCHEMA, AnswerCache, GeminiProvider, GroqProvider  # noqa: E402
 
 # Fake key shapes only; they never leave the process.
 KEYS = {"GEMINI_API_KEY": "fake-gemini-key-0000000000", "GROQ_API_KEY": "fake-groq-key-0000000000"}
@@ -103,6 +104,22 @@ def reasons(result):
     return [(f.provider, f.reason) for f in result.fallbacks]
 
 
+class Clock:
+    """Stands in for llm_providers._now (answer lifetimes and cooldowns) without touching the event loop's clock."""
+
+    def __init__(self, start=1000.0):
+        self.now = start
+
+    def __call__(self):
+        return self.now
+
+    def patch(self, test):
+        patcher = umock.patch.object(llm_providers, "_now", self)
+        patcher.start()
+        test.addCleanup(patcher.stop)
+        return self
+
+
 class ExplainTestCase(unittest.TestCase):
     def setUp(self):
         ex.reset_cooldowns()
@@ -142,7 +159,7 @@ class ChainOrderTests(ExplainTestCase):
         sent = json.loads(body["contents"][0]["parts"][0]["text"])
         self.assertEqual(sent, {"load_newtons": 800.0, "max_von_mises_stress_mpa": 41.98,
                                 "average_youngs_modulus_gpa": 17.25, "bone_volume_cm3": 408.09,
-                                "illustrative_index_percent": 27.99})
+                                "stress_to_strength_percent": 27.99})
         self.assertNotIn(SIM["source_filename"], request.content.decode())
         self.assertNotIn(str(SIM["mesh_faces"]), request.content.decode())
 
@@ -238,6 +255,7 @@ class FallThroughTests(ExplainTestCase):
     def test_failed_model_is_skipped_during_cooldown(self):
         first = Mock(gemini=httpx.ReadTimeout("slow"), groq=groq_reply(GOOD))
         self.assertEqual(run(SIM, KEYS, first).provider, "groq")
+        ex._answers.clear()  # the Groq answer is kept for 60 s; this checks the chain behind it
         second = Mock(gemini=gemini_reply(GOOD), lite=gemini_reply(GOOD))
         result = run(SIM, KEYS, second)
         self.assertEqual(second.calls, [LITE])
@@ -246,6 +264,7 @@ class FallThroughTests(ExplainTestCase):
 
     def test_rejected_text_does_not_start_a_cooldown(self):
         run(SIM, KEYS, Mock(gemini=gemini_reply("About 61 MPa."), groq=groq_reply(GOOD)))
+        ex._answers.clear()
         mock = Mock(gemini=gemini_reply(GOOD))
         self.assertEqual(run(SIM, KEYS, mock).model, PRIMARY)
 
@@ -360,6 +379,63 @@ class CheckerTests(unittest.TestCase):
     def test_length_limit(self):
         self.assertEqual(check("a" * (ex.MAX_CHARS + 1), self.facts), f"over {ex.MAX_CHARS} characters")
 
+    def test_a_lone_number_word_passes_when_its_value_is_a_fact(self):
+        # 17.25 GPa rounds to 17; 0 and 1 are not facts here, so "zero" and "one" stay refused.
+        for text in ["The stiffness was about seventeen GPa.", "Stiffness: Seventeen GPa, stress 41.98 MPa."]:
+            with self.subTest(text=text):
+                self.assertIsNone(check(text, self.facts))
+        for text, word in [("The stress starts at zero.", "zero"), ("It is one of the stiffer models.", "one"),
+                           ("Seventeen-fold stiffer.", "Seventeen"), ("Seventeenfold.", "Seventeenfold"), ("Seventeen hundred newtons.", "Seventeen"),
+                           ("Forty-two MPa.", "Forty")]:
+            with self.subTest(text=text):
+                self.assertEqual(check(text, self.facts), f"spelled-out quantity: {word!r}")
+        zero = build_facts(ExplainRequest(**{**SIM, "fracture_risk_index_percent": 0.0}))
+        self.assertIsNone(check("A stress-to-strength ratio of zero percent.", zero))
+
+    def test_a_number_word_without_its_unit_is_refused_even_when_a_fact(self):
+        # The dashboard's femur: 10.0 GPa makes 10 a fact, but "ten" may not count, compare or multiply anything.
+        femur = build_facts(ExplainRequest(**{**SIM, "max_von_mises_stress_mpa": 15.83, "average_youngs_modulus_gpa": 10.0,
+                                              "fracture_risk_index_percent": 10.55}))
+        for text in ["The stress reached 15.83 MPa, ten times below what bone can take.",
+                     "The load is like ten bags of sugar."]:
+            with self.subTest(text=text):
+                self.assertEqual(check(text, femur), "spelled-out quantity: 'ten'")
+        self.assertIsNone(check("Its stiffness of ten GPa is uniform.", femur))
+
+    def test_a_number_with_a_unit_must_be_that_units_fact(self):
+        femur = build_facts(ExplainRequest(**{**SIM, "max_von_mises_stress_mpa": 15.83, "average_youngs_modulus_gpa": 10.0,
+                                              "fracture_risk_index_percent": 10.55}))
+        for text, token in [("That stress is ten percent of the assumed strength.", "10"),
+                            ("That stress is 10% of the assumed strength.", "10")]:
+            with self.subTest(text=text):
+                self.assertEqual(check(text, femur), f"not the stress_to_strength_percent in the input: {token}")
+        self.assertEqual(check("The stress reached 408 MPa.", femur), "not the max_von_mises_stress_mpa in the input: 408")
+        self.assertEqual(check("The stiffness was 800 GPa.", femur), "not the average_youngs_modulus_gpa in the input: 800")
+        for text in ["That stress is 10.55% of the assumed strength.", "That stress is about 11 percent of it.",
+                     "Stress 15.8 MPa, stiffness 10 GPa, 800 newtons on 408 cm3."]:
+            with self.subTest(text=text):
+                self.assertIsNone(check(text, femur))
+
+    def test_json_field_names_read_aloud_are_refused(self):
+        # A live gemini-3.5-flash-lite answer for the dashboard's femur, which the answer cache then kept for 1 h.
+        femur = build_facts(ExplainRequest(load_newtons=800.0, max_von_mises_stress_mpa=15.83, average_youngs_modulus_gpa=10.0,
+                                           bone_volume_cm3=408.09, fracture_risk_index_percent=10.55))
+        live = ("The material has an average youngs modulus gpa of 10.0 and reaches a max von mises stress mpa of "
+                "15.83. The stress to strength percent is 10.55")
+        self.assertEqual(check(live, femur), "field name: 'average youngs modulus gpa'")
+        self.assertEqual(check("The stress_to_strength_percent is 10.55.", femur),
+                         "field name: 'stress_to_strength_percent'")
+        self.assertIsNone(check(ex.template_text(femur), femur))
+
+    def test_prompt_names_the_ratio_and_asks_for_digits(self):
+        self.assertIn("stress_to_strength_percent", ex.SYSTEM_PROMPT)
+        self.assertIn("stress-to-strength ratio", ex.SYSTEM_PROMPT)
+        self.assertIn("written as digits", ex.SYSTEM_PROMPT)
+        # The old wording put "illustrative index" and a 0 to 100 scale in the model's mouth; 0 and 100 are not facts.
+        for gone in ("illustrative_index", "0 to 100"):
+            self.assertNotIn(gone, ex.SYSTEM_PROMPT)
+        self.assertEqual(check("An index from 0 to 100.", self.facts), "number not in input: 0")
+
 
 class TemplateTests(ExplainTestCase):
     def test_template_is_deterministic_offline_and_plain(self):
@@ -367,8 +443,8 @@ class TemplateTests(ExplainTestCase):
         b = run(SIM, {"AI_OFFLINE": "1"})
         self.assertEqual(a, b)
         self.assertTrue(a.text.startswith("A bone carries load the way a bridge does"))
-        for part in ["408 cm³ of bone", "800 newtons", "reached 42 MPa", "17.2 GPa", "index of 28% is illustrative",
-                     ex.NOTE]:
+        for part in ["408 cm³ of bone", "800 newtons", "reached 42 MPa", "17.2 GPa",
+                     "28% of the strength assumed for bone material: an illustrative stress-to-strength ratio", ex.NOTE]:
             self.assertIn(part, a.text)
 
     def test_template_passes_the_checker_for_varied_inputs(self):
@@ -390,6 +466,167 @@ class TemplateTests(ExplainTestCase):
     def test_note_follows_a_full_stop(self):
         mock = Mock(gemini=gemini_reply("A bone carries 800 newtons"))
         self.assertEqual(run(SIM, KEYS, mock).text, f"A bone carries 800 newtons. {ex.NOTE}")
+
+
+class AnswerCacheTests(ExplainTestCase):
+    def setUp(self):
+        super().setUp()
+        self.clock = Clock().patch(self)
+
+    def test_a_gemini_answer_is_kept_for_an_hour(self):
+        mock = Mock(gemini=gemini_reply(GOOD))
+        answers = [run(SIM, KEYS, mock) for _ in range(4)]
+        self.assertEqual(mock.calls, [PRIMARY])
+        self.assertEqual({(a.provider, a.text) for a in answers}, {("gemini", f"{GOOD} {ex.NOTE}")})
+        self.clock.now += llm_providers.GEMINI_ANSWER_TTL_S - 1
+        run(SIM, KEYS, mock)
+        self.assertEqual(mock.calls, [PRIMARY])
+        self.clock.now += 2
+        run(SIM, KEYS, mock)
+        self.assertEqual(mock.calls, [PRIMARY, PRIMARY])
+
+    def test_groq_and_template_answers_are_kept_for_a_minute(self):
+        self.assertEqual((llm_providers.GEMINI_ANSWER_TTL_S, llm_providers.OTHER_ANSWER_TTL_S), (3600.0, 60.0))
+        for env, mock, provider in [({"GROQ_API_KEY": KEYS["GROQ_API_KEY"]}, Mock(groq=groq_reply(GOOD)), "groq"),
+                                    ({**KEYS, "AI_OFFLINE": "1"}, Mock(), "template")]:
+            with self.subTest(provider=provider):
+                ex.reset_cooldowns()
+                first = run(SIM, env, mock)
+                self.assertEqual(first.provider, provider)
+                calls = len(mock.requests)
+                self.clock.now += llm_providers.OTHER_ANSWER_TTL_S - 1
+                self.assertIs(run(SIM, env, mock), first)
+                self.clock.now += 2
+                self.assertIsNot(run(SIM, env, mock), first)
+                self.assertEqual(len(mock.requests), 2 * calls)
+
+    def test_gemini_is_asked_again_once_a_groq_answer_expires(self):
+        first = run(SIM, KEYS, Mock(gemini=httpx.Response(503), groq=groq_reply(GOOD)))
+        self.assertEqual(first.provider, "groq")
+        self.clock.now += llm_providers.FAILURE_COOLDOWN_S + 1  # past the Groq answer's 60 s and Gemini's cooldown
+        later = Mock(gemini=gemini_reply(GOOD))
+        self.assertEqual((run(SIM, KEYS, later).provider, later.calls), ("gemini", [PRIMARY]))
+
+    def test_other_facts_or_another_chain_are_asked_separately(self):
+        mock = Mock(gemini=gemini_reply(GOOD), groq=groq_reply(GOOD))
+        run(SIM, KEYS, mock)
+        run({**SIM, "max_von_mises_stress_mpa": 42.0}, KEYS, mock)
+        run(SIM, {**KEYS, "AI_CHAIN": "groq"}, mock)
+        self.assertEqual(run(SIM, {}, mock).provider, "template")  # no keys: a different chain
+        self.assertEqual(mock.calls, [PRIMARY, PRIMARY, GROQ_HOST])
+
+    def test_concurrent_equal_requests_share_one_call(self):
+        async def slow(request):
+            await asyncio.sleep(0.2)
+            return gemini_reply(GOOD)
+
+        mock = Mock(gemini=slow)
+        transport = mock.transport()
+
+        async def burst():
+            return await asyncio.gather(*(explain(ExplainRequest(**SIM), KEYS, transport=transport) for _ in range(4)))
+
+        answers = asyncio.run(burst())
+        self.assertEqual(mock.calls, [PRIMARY])
+        self.assertEqual({a.provider for a in answers}, {"gemini"})
+
+    def test_cache_is_bounded_and_drops_the_least_recently_used(self):
+        cache = AnswerCache(max_entries=2)
+        cache.put("a", 1, 60)
+        cache.put("b", 2, 60)
+        self.assertEqual(cache.get("a"), 1)  # "b" is now the least recently used
+        cache.put("c", 3, 60)
+        self.assertEqual((cache.get("a"), cache.get("b"), cache.get("c"), len(cache)), (1, None, 3, 2))
+
+    def test_failed_computation_is_not_kept(self):
+        cache = AnswerCache()
+
+        async def boom():
+            raise RuntimeError("bug")
+
+        async def fine():
+            return "ok"
+
+        with self.assertRaises(RuntimeError):
+            asyncio.run(cache.get_or_compute("k", boom, lambda _: 60))
+        self.assertEqual(asyncio.run(cache.get_or_compute("k", fine, lambda _: 60)), "ok")
+        self.assertEqual(cache.get("k"), "ok")
+
+    def test_a_cancelled_caller_leaves_the_call_running_for_the_others(self):
+        async def slow(request):
+            await asyncio.sleep(0.2)
+            return gemini_reply(GOOD)
+
+        mock = Mock(gemini=slow)
+        transport = mock.transport()
+
+        async def scenario():
+            first = asyncio.ensure_future(explain(ExplainRequest(**SIM), KEYS, transport=transport))
+            second = asyncio.ensure_future(explain(ExplainRequest(**SIM), KEYS, transport=transport))
+            await asyncio.sleep(0.05)
+            first.cancel()
+            return await second
+
+        self.assertEqual(asyncio.run(scenario()).provider, "gemini")
+        self.assertEqual(mock.calls, [PRIMARY])
+        self.assertEqual(run(SIM, KEYS, Mock()).provider, "gemini")  # kept, no further call
+
+
+class RateLimitTests(ExplainTestCase):
+    def setUp(self):
+        super().setUp()
+        self.clock = Clock().patch(self)
+
+    def ask(self, mock, env=KEYS):
+        ex._answers.clear()  # each call runs the chain, so these tests see the cooldowns alone
+        return run(SIM, env, mock)
+
+    def test_http_429_skips_the_primary_for_five_minutes_and_gemini_still_answers(self):
+        self.assertEqual(llm_providers.RATE_LIMIT_COOLDOWN_S, 300.0)
+        first = Mock(gemini=httpx.Response(429), lite=gemini_reply(GOOD))
+        self.assertEqual((self.ask(first).model, first.calls), (LITE, [PRIMARY, LITE]))
+        skipped = ("gemini", f"{PRIMARY}: skipped: HTTP 429 less than 300 s ago")
+        for elapsed in (61, 299):
+            with self.subTest(elapsed=elapsed):
+                self.clock.now = 1000.0 + elapsed
+                mock = Mock(gemini=gemini_reply(GOOD), lite=gemini_reply(GOOD))
+                result = self.ask(mock)
+                self.assertEqual((result.provider, result.model, mock.calls), ("gemini", LITE, [LITE]))
+                self.assertEqual(reasons(result), [skipped])
+        self.clock.now = 1000.0 + 301
+        mock = Mock(gemini=gemini_reply(GOOD))
+        self.assertEqual((self.ask(mock).model, mock.calls), (PRIMARY, [PRIMARY]))
+
+    def test_other_http_errors_cool_down_for_a_minute(self):
+        self.ask(Mock(gemini=httpx.Response(503), lite=gemini_reply(GOOD)))
+        self.clock.now += 59
+        mock = Mock(gemini=gemini_reply(GOOD), lite=gemini_reply(GOOD))
+        self.assertEqual(reasons(self.ask(mock)), [("gemini", f"{PRIMARY}: skipped: failed less than 60 s ago")])
+        self.clock.now += 2
+        mock = Mock(gemini=gemini_reply(GOOD))
+        self.assertEqual((self.ask(mock).model, mock.calls), (PRIMARY, [PRIMARY]))
+
+    def test_both_gemini_models_rate_limited_goes_to_groq_without_calling_them(self):
+        self.ask(Mock(gemini=httpx.Response(429), groq=groq_reply(GOOD)))
+        mock = Mock(groq=groq_reply(GOOD))
+        result = self.ask(mock)
+        self.assertEqual((result.provider, mock.calls), ("groq", [GROQ_HOST]))
+        self.assertEqual(reasons(result), [("gemini", f"{PRIMARY}: skipped: HTTP 429 less than 300 s ago"),
+                                           ("gemini", f"{LITE}: skipped: HTTP 429 less than 300 s ago")])
+
+    def test_a_429_on_one_route_is_remembered_by_the_other(self):
+        from services import risk as rk
+
+        logging.getLogger("rainbowbone.risk").disabled = True
+        self.addCleanup(setattr, logging.getLogger("rainbowbone.risk"), "disabled", False)
+        self.ask(Mock(gemini=httpx.Response(429), lite=gemini_reply(GOOD)))
+        good_risk = ("A sideways fall would load this femur 2.17 to 3.18 times its strength in the study authors' "
+                     "model.")
+        mock = Mock(gemini=gemini_reply(good_risk), lite=gemini_reply(good_risk))
+        result = asyncio.run(rk.analyse(rk.RiskRequest(case_id="Pat001"), KEYS, data=rk.load_dataset(),
+                                        transport=mock.transport()))
+        rk._answers.clear()
+        self.assertEqual((result.provider, result.model, mock.calls), ("gemini", LITE, [LITE]))
 
 
 class RouteTests(ExplainTestCase):

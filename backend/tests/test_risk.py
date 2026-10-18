@@ -23,10 +23,11 @@ from fastapi.testclient import TestClient
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from routes_risk import router  # noqa: E402
+from services import llm_providers  # noqa: E402
 from services import risk as rk  # noqa: E402
 from services.risk import FeInput, RiskRequest, analyse, build_facts, check, template_text  # noqa: E402
 from services.settings import runtime_env  # noqa: E402
-from tests.test_explain import GROQ_HOST, KEYS, LITE, PRIMARY, Mock, gemini_reply, groq_reply  # noqa: E402
+from tests.test_explain import GROQ_HOST, KEYS, LITE, PRIMARY, Clock, Mock, gemini_reply, groq_reply  # noqa: E402
 
 DATA = json.loads(rk.DATA_PATH.read_text(encoding="utf-8"))
 FE = {"peak_stress_mpa": 15.83, "load_newtons": 800, "stress_index_percent": 10.553333}
@@ -112,6 +113,19 @@ class CheckerTests(unittest.TestCase):
                      "It would load it 2.17 to 3.18\u00d7 its strength."]:
             with self.subTest(text=text):
                 self.assertIsNone(check(text, self.facts))
+
+    def test_names_spelled_out_as_the_prompt_asks_pass(self):
+        # The prompt asks for "MSF (minimum sidefall strength)" and "ARF0 (absolute risk of fracture at time 0)" on
+        # first use: the 0 of "time 0" is a name, not a number, and the ARF0 value is still checked through it.
+        for text in ["Its MSF (minimum sidefall strength) is 1,339 N; 75 of the 101 women had a stronger femur.",
+                     "Its ARF0 (absolute risk of fracture at time 0) is 47.1%, higher than 56 of the 101 women.",
+                     "The study median ARF0 (absolute risk of fracture at time 0) of 44.3% is lower."]:
+            with self.subTest(text=text):
+                self.assertIsNone(check(text, self.facts))
+        self.assertEqual(check("Its ARF0 (absolute risk of fracture at time 0) is 44.3%.", self.facts),
+                         "not this femur's ARF0: 44.3%")
+        self.assertIn("'MSF (minimum sidefall strength)'", rk.SYSTEM_PROMPT)
+        self.assertIn("'ARF0 (absolute risk of fracture at time 0)'", rk.SYSTEM_PROMPT)
 
     def test_invented_numbers_fail(self):
         for text, token in [("An ARF0 of 52%.", "52"), ("A fall of 4.26 kN.", "4.26"), ("Of the other 100 women.", "100"),
@@ -218,10 +232,37 @@ class CheckerTests(unittest.TestCase):
                 self.assertEqual(check(text, self.facts), f"wrong direction: {phrase!r}")
 
     def test_spelled_out_quantities_fail(self):
-        for text, word in [("Higher than four women.", "four"), ("Twice its strength.", "Twice"),
-                           ("About three quarters of the women.", "three")]:
+        for text, word in [("Higher than five women.", "five"), ("Twice its strength.", "Twice"),
+                           ("About three quarters of the women.", "three"), ("She is one of the 101 women.", "one"),
+                           ("Higher than fifty-six of the 101 women.", "fifty"), ("Over one hundred women.", "one")]:
             with self.subTest(text=text):
                 self.assertEqual(check(text, self.facts), f"spelled-out quantity: {word!r}")
+
+    def test_a_number_word_passes_only_as_a_count_of_women_that_is_a_fact(self):
+        # cohort_fractured is 4: "four" passes where it counts women, and is a spelled-out quantity anywhere else.
+        for text in ["Four of the 101 women had a hip fracture.", "The four women who fractured had 53.7% to 73.2%.",
+                     "Four women fractured during the follow-up."]:
+            with self.subTest(text=text):
+                self.assertIsNone(check(text, self.facts))
+        for text, word in [("Its ARF0 is four percent.", "four"), ("It may break within four years.", "four"),
+                           ("Only three women in the study broke a hip.", "three")]:
+            with self.subTest(text=text):
+                self.assertEqual(check(text, self.facts), f"spelled-out quantity: {word!r}")
+
+    def test_a_rounded_fact_does_not_let_a_number_word_through(self):
+        # round(2.17) = 2 and round(3.18) = 3 are facts; as words they would invent falls, places, counts and multiples.
+        for text, word in [("This woman had fallen three times before her CT scan.", "three"),
+                           ("Only three in the study broke a hip.", "three"),
+                           ("Her femur would crack in two places in a sideways fall.", "two"),
+                           ("This femur is two times as likely to break as an average femur.", "two"),
+                           ("A sideways fall makes this femur three times more likely to break than the median woman.",
+                            "three")]:
+            with self.subTest(text=text):
+                self.assertEqual(check(text, self.facts), f"spelled-out quantity: {word!r}")
+        for text, hit in [("A sideways fall makes this femur 3 times more likely to break.", "more likely"),
+                          ("Its ARF0 is a validated estimate.", "validat")]:
+            with self.subTest(text=text):
+                self.assertEqual(check(text, self.facts), f"blocked wording: {hit!r}")
 
     def test_length_and_empty(self):
         self.assertEqual(check(" ", self.facts), "empty text")
@@ -237,7 +278,8 @@ class ChainTests(RiskTestCase):
         self.assertEqual(result.case_id, "Pat001")
         self.assertEqual(result.source.model_dump(), {k: DATA["source"][k] for k in ("citation", "doi", "license")})
         body = json.loads(mock.requests[0].content)
-        self.assertEqual(body["systemInstruction"], {"parts": [{"text": rk.SYSTEM_PROMPT}]})
+        self.assertEqual(body["systemInstruction"], {"parts": [{"text": f"{rk.SYSTEM_PROMPT} {rk.DIGITS_RULE}"}]})
+        self.assertIn("digits", rk.DIGITS_RULE)
         sent = json.loads(body["contents"][0]["parts"][0]["text"])
         self.assertEqual(sent, result.facts.model_dump(exclude={"fe"}))
         self.assertEqual(result.facts.fe.model_dump(), {"peak_stress_mpa": 15.83, "load_newtons": 800.0,
@@ -245,19 +287,36 @@ class ChainTests(RiskTestCase):
         for absent in ("Pat001", "15.83", "10.55"):
             self.assertNotIn(absent, mock.requests[0].content.decode())
 
-    def test_an_ai_answer_is_kept_and_a_template_is_not(self):
-        offline = Mock()
-        first = run({"case_id": "Pat001", "fe": FE}, {}, offline)
+    def test_a_gemini_answer_is_kept_for_an_hour_and_a_template_for_a_minute(self):
+        clock = Clock().patch(self)
+        first = run({"case_id": "Pat001", "fe": FE}, {}, Mock())
         self.assertEqual(first.provider, "template")
+        self.assertIs(run({"case_id": "Pat001", "fe": FE}, {}, Mock()), first)
         mock = Mock(gemini=gemini_reply(GOOD), groq=groq_reply(GOOD))
-        answers = [run({"case_id": "Pat001", "fe": FE}, KEYS, mock) for _ in range(3)]
-        self.assertEqual(mock.calls, [PRIMARY])  # the template answer did not stop the upgrade; repeats are kept
+        answers = [run({"case_id": "Pat001", "fe": FE}, KEYS, mock) for _ in range(4)]
+        self.assertEqual(mock.calls, [PRIMARY])  # keys set: another chain, so the template did not stop Gemini
         self.assertEqual({(a.provider, a.text) for a in answers}, {("gemini", f"{GOOD} {rk.NOTE}")})
         run({"case_id": "Pat001"}, KEYS, mock)
         self.assertEqual(mock.calls, [PRIMARY] * 2)  # other facts (no fe) ask again
-        rk.reset_cooldowns()
+        clock.now += llm_providers.OTHER_ANSWER_TTL_S + 1
+        self.assertIsNot(run({"case_id": "Pat001", "fe": FE}, {}, Mock()), first)  # the template expired
+        self.assertEqual(mock.calls, [PRIMARY] * 2)
+        clock.now += llm_providers.GEMINI_ANSWER_TTL_S
         run({"case_id": "Pat001", "fe": FE}, KEYS, mock)
         self.assertEqual(mock.calls, [PRIMARY] * 3)
+        rk.reset_cooldowns()
+        run({"case_id": "Pat001", "fe": FE}, KEYS, mock)
+        self.assertEqual(mock.calls, [PRIMARY] * 4)
+
+    def test_a_429_sends_the_next_requests_straight_to_the_fallback_gemini_model(self):
+        Clock().patch(self)
+        first = run({"case_id": "Pat001"}, KEYS, Mock(gemini=httpx.Response(429), lite=gemini_reply(GOOD)))
+        self.assertEqual((first.provider, first.model), ("gemini", LITE))
+        rk._answers.clear()
+        mock = Mock(gemini=gemini_reply(GOOD), lite=gemini_reply(GOOD))
+        result = run({"case_id": "Pat001"}, KEYS, mock)
+        self.assertEqual((result.provider, result.model, mock.calls), ("gemini", LITE, [LITE]))
+        self.assertEqual(reasons(result), [("gemini", f"{PRIMARY}: skipped: HTTP 429 less than 300 s ago")])
 
     def test_rejected_gemini_text_falls_through_to_groq(self):
         for text, reason in [("An ARF0 of 52%.", "number not in input: 52"),
@@ -311,11 +370,11 @@ class ChainTests(RiskTestCase):
 class TemplateTests(unittest.TestCase):
     def test_template_words_the_facts(self):
         text = template_text(build_facts(DATA, "Pat001", FeInput(**FE)))
-        self.assertEqual(text, "A sideways fall would load this femur 2.17 to 3.18 times its strength (MSF, 1,339 N) "
-                               "in the study authors' model. Such a fall would exceed the MSF of every femur in the "
-                               "study; 75 of the 101 women had a stronger femur. Its published fracture risk (ARF0) is "
-                               "47.1%, higher than 56 of the 101 women. No hip fracture was recorded for this woman "
-                               "during the study's follow-up.")
+        self.assertEqual(text, "A sideways fall would load this femur 2.17 to 3.18 times its minimum sidefall strength "
+                               "(MSF, 1,339 N) in the study authors' model. Such a fall would exceed the MSF of every "
+                               "femur in the study; 75 of the 101 women had a stronger femur. Its published absolute "
+                               "risk of fracture at time 0 (ARF0) is 47.1%, higher than 56 of the 101 women. No hip "
+                               "fracture was recorded for this woman during the study's follow-up.")
         self.assertIn("hip fracture 1,529 days after this CT scan", template_text(build_facts(DATA, "Pat004")))
 
     def test_template_says_every_femur_only_when_it_is_true(self):

@@ -60,6 +60,103 @@ def femur_ct_from_labelmap() -> tuple[np.ndarray, tuple[float, float, float]]:
     return np.where(labels > 0, 700, -1000), spacing
 
 
+def fake_result(filename: str, stress: float = 1.0) -> dict:
+    return {"max_von_mises_stress_mpa": stress, "average_youngs_modulus_gpa": 20.0, "bone_volume_cm3": 1.0,
+            "fracture_risk_index_percent": 0.67, "load_newtons": 800.0, "mesh_vertices": 8, "mesh_faces": 12,
+            "source_filename": filename}
+
+
+class SimulateCacheTests(unittest.TestCase):
+    """Results kept by sha256 of the upload: read before the solve queue, history saved for real solves only."""
+
+    def setUp(self):
+        main._simulate_results.clear()
+        self.addCleanup(main._simulate_results.clear)
+        self.solved: list[bytes] = []
+        self.lock = threading.Lock()
+        self.release = threading.Event()
+        self.release.set()
+        self.started = threading.Event()
+        for target, attribute, value in ((main, "simulate_fea", self.solve), (main, "save_simulation_run", mock.Mock())):
+            patcher = mock.patch.object(target, attribute, value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        self.saved = main.save_simulation_run
+
+    def solve(self, payload, filename):
+        with self.lock:
+            self.solved.append(payload)
+        self.started.set()
+        self.release.wait(5)
+        if payload == b"bad":
+            raise fea_solver.FEASolverError("Unable to read the uploaded NIfTI volume.")
+        return fake_result(filename, stress=float(len(payload)))
+
+    @staticmethod
+    def post(client, payload: bytes, filename: str = "scan.nii.gz"):
+        return client.post("/api/simulate", files={"file": (filename, payload, "application/gzip")})
+
+    def test_same_bytes_are_solved_once_and_saved_once(self):
+        with TestClient(app) as client:
+            first = self.post(client, b"abc", "first.nii.gz")
+            second = self.post(client, b"abc", "second.nii")
+        self.assertEqual((first.status_code, second.status_code), (200, 200))
+        self.assertEqual(self.solved, [b"abc"])
+        self.assertEqual(second.json(), {**first.json(), "source_filename": "second.nii"})
+        self.assertEqual((first.headers[main.REUSED_HEADER], second.headers[main.REUSED_HEADER]), ("0", "1"))
+        self.assertEqual(set(second.json()), set(SimulationResponse.model_fields))
+        # History records the solve that ran, under its own name, and nothing for the repeat.
+        self.assertEqual(self.saved.call_count, 1)
+        self.assertEqual(self.saved.call_args.args[0]["source_filename"], "first.nii.gz")
+
+    def test_a_kept_result_answers_while_another_solve_holds_the_queue(self):
+        with TestClient(app) as client:
+            self.assertEqual(self.post(client, b"kept").status_code, 200)
+            self.started.clear()
+            self.release.clear()
+            with ThreadPoolExecutor(1) as pool:
+                slow = pool.submit(self.post, client, b"slow upload")
+                self.assertTrue(self.started.wait(5))  # the slow solve now holds SOLVE_LIMITER
+                began = time.perf_counter()
+                hit = self.post(client, b"kept", "again.nii.gz")
+                seconds = time.perf_counter() - began
+                still_solving = not slow.done()
+                self.release.set()
+                self.assertEqual(slow.result().status_code, 200)
+        self.assertTrue(still_solving)
+        self.assertEqual(hit.status_code, 200)
+        self.assertEqual(hit.json()["source_filename"], "again.nii.gz")
+        self.assertLess(seconds, 1.0)
+        self.assertEqual(self.solved, [b"kept", b"slow upload"])
+
+    def test_identical_uploads_queued_behind_a_solve_reuse_it(self):
+        self.release.clear()
+        with TestClient(app) as client, ThreadPoolExecutor(3) as pool:
+            posts = [pool.submit(self.post, client, b"same") for _ in range(3)]
+            self.assertTrue(self.started.wait(5))
+            time.sleep(0.2)  # let the other two reach the queue
+            self.release.set()
+            codes = [p.result().status_code for p in posts]
+        self.assertEqual(codes, [200, 200, 200])
+        self.assertEqual(self.solved, [b"same"])
+        self.assertEqual(self.saved.call_count, 1)
+
+    def test_failed_solves_are_not_kept(self):
+        with TestClient(app) as client:
+            codes = [self.post(client, b"bad").status_code for _ in range(2)]
+        self.assertEqual(codes, [422, 422])
+        self.assertEqual(self.solved, [b"bad", b"bad"])
+        self.assertEqual(self.saved.call_count, 0)
+
+    def test_the_cache_is_bounded(self):
+        with mock.patch.object(main, "SIMULATE_CACHE_MAX", 2), TestClient(app) as client:
+            for payload in (b"a", b"b", b"a", b"c", b"b", b"a"):
+                self.assertEqual(self.post(client, payload).status_code, 200)
+        # "a" was used after "b", so "b" left first when "c" came; then "a" left when "b" came back.
+        self.assertEqual(self.solved, [b"a", b"b", b"c", b"b", b"a"])
+        self.assertEqual(len(main._simulate_results), 2)
+
+
 class SimulateEndpointTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -77,6 +174,9 @@ class SimulateEndpointTests(unittest.TestCase):
     def tearDownClass(cls):
         os.chdir(cls.previous_cwd)
         cls.workdir.cleanup()
+
+    def setUp(self):
+        main._simulate_results.clear()  # each test solves for real
 
     def post(self, payload: bytes, filename: str = "scan.nii.gz"):
         started = time.perf_counter()
@@ -121,6 +221,12 @@ class SimulateEndpointTests(unittest.TestCase):
         self.assertEqual(body["source_filename"], "sample_bone.nii.gz")
         self.assertLess(seconds, TIME_LIMIT_S)
         self.assertEqual(os.listdir("."), [], "the API must not write SfePy output files")
+        # The same bytes again: the kept result, at once, under the new name.
+        with mock.patch.object(main, "simulate_fea", side_effect=AssertionError("solved twice")):
+            again, seconds = self.post(SAMPLE.read_bytes(), "renamed.nii.gz")
+        self.assertEqual(again.status_code, 200, again.text)
+        self.assertEqual(again.json(), {**body, "source_filename": "renamed.nii.gz"})
+        self.assertLess(seconds, 1.0)
 
     def test_sample_solve_balances_the_applied_load(self):
         volume, spacing_mm = _load_nifti(SAMPLE.read_bytes())
@@ -206,11 +312,11 @@ class SimulateEndpointTests(unittest.TestCase):
                     "mesh_faces": 12, "source_filename": filename}
 
         with mock.patch.object(main, "simulate_fea", slow_solve), TestClient(app) as client:
-            def post():
-                return client.post("/api/simulate", files={"file": ("a.nii.gz", b"x", "application/gzip")}).status_code
+            def post(i):  # different bytes, so no request reuses another's result
+                return client.post("/api/simulate", files={"file": ("a.nii.gz", b"x%d" % i, "application/gzip")}).status_code
 
             with ThreadPoolExecutor(3) as pool:
-                codes = list(pool.map(lambda _: post(), range(3)))
+                codes = list(pool.map(post, range(3)))
         self.assertEqual(codes, [200, 200, 200])
         self.assertEqual(peak[0], 1)
 

@@ -31,6 +31,9 @@ export type SimulationResult = {
   mesh_vertices?: number;
   mesh_faces?: number;
   source_filename?: string;
+  // Not in the JSON body: set from the X-Simulate-Reused header, true when the API had already solved these exact bytes
+  // and returned that result instead of solving again.
+  reused?: boolean;
 };
 
 export type SimulationOutcome =
@@ -63,6 +66,7 @@ export async function runSimulation(file: File): Promise<SimulationOutcome> {
   try {
     const result = (await response.json()) as SimulationResult;
     if (typeof result.max_von_mises_stress_mpa === "number" && typeof result.fracture_risk_index_percent === "number") {
+      result.reused = response.headers.get("X-Simulate-Reused") === "1";
       return { ok: true, result, ms: performance.now() - started };
     }
   } catch {
@@ -71,8 +75,8 @@ export async function runSimulation(file: File): Promise<SimulationOutcome> {
   return { ok: false, reachedApi: true, message: "The API answered without simulation results." };
 }
 
-// GET /health: true only when the API answers {"status": "ok"}. Never throws.
-export async function checkHealth(): Promise<boolean> {
+// One GET /health: true only when the API answers {"status": "ok"}. Never throws.
+async function healthOnce(): Promise<boolean> {
   try {
     const response = await fetch(apiUrl("/health"), { cache: "no-store", signal: timeout(SHORT_TIMEOUT_MS) });
     if (!response.ok) return false;
@@ -81,6 +85,16 @@ export async function checkHealth(): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+// Wait before the second /health try, so one dropped request during a busy solve does not show the API as offline.
+const HEALTH_RETRY_DELAY_MS = 1_500;
+
+// GET /health: false only after 2 consecutive failed tries, HEALTH_RETRY_DELAY_MS apart. Never throws.
+export async function checkHealth(): Promise<boolean> {
+  if (await healthOnce()) return true;
+  await new Promise((resolve) => setTimeout(resolve, HEALTH_RETRY_DELAY_MS));
+  return healthOnce();
 }
 
 export type HistoryRun = {

@@ -16,9 +16,25 @@ const plexMono = IBM_Plex_Mono({
   variable: "--font-ibm-plex-mono",
 });
 
+const description =
+  "For senior-living care teams: a prototype of a fall-fracture check from a hip CT, shown on one published HFValid femur with the study authors' fall-risk results. Research prototype built at Hack the Valley 11, not a medical device.";
+
 export const metadata: Metadata = {
-  title: "Rainbone | Clinical Biomechanics",
-  description: "Patient-specific bone mechanics and finite element analysis for clinical review.",
+  metadataBase: new URL("https://rainbone.health"),
+  title: "Rainbone | Fall-fracture check prototype for care teams",
+  description,
+  openGraph: {
+    type: "website",
+    url: "https://rainbone.health",
+    siteName: "Rainbone",
+    title: "Rainbone: a hip CT fall-fracture check, prototyped on a published femur",
+    description,
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Rainbone: a hip CT fall-fracture check, prototyped on a published femur",
+    description,
+  },
 };
 
 export default function RootLayout({

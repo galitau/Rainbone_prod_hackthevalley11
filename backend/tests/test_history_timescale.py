@@ -101,6 +101,8 @@ class TimescaleHistoryTests(unittest.TestCase):
             return conn.execute(sql, params).fetchall()
 
     def post_scan(self):
+        main._simulate_results.clear()  # a real solve each time: a reused result saves no row
+        self.addCleanup(main._simulate_results.clear)
         with mock.patch.object(main, "simulate_fea", return_value=dict(RESULT)):
             return self.client.post("/api/simulate", files={"file": ("test.nii.gz", b"stub", "application/gzip")})
 

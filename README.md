@@ -1,9 +1,23 @@
 # Rainbone
 
+Rainbone is for care teams in senior living. The problem it targets is the hip fracture
+from a fall: by the time a resident falls and breaks a hip, it is already an emergency.
+Rainbone aims to turn a hip CT a resident already has into a fall-fracture check; today
+the fall numbers come from the HFValid authors' published results, not from an uploaded
+scan. It runs on one woman's femur CT from the published
+HFValid study (case Pat001, age 78 at the scan): it shows the femur in 3D under an 800 N
+standing load, then sets the study authors' own fall results beside it. Their absolute
+risk of fracture at time 0 (ARF0), from a finite-element model coupled with a fall
+model, is 47.1 % for her, higher than 56 of the 101 women (study median 44.3 %; the 4
+who fractured had 53.7–73.2 %). Her minimum sideways-fall strength is 1,339 N, weaker
+than 75 of the 101, and a sideways fall hits the hip with 2.90–4.26 kN (van den
+Kroonenberg 1995), or 2.17–3.18 times that strength. An AI card words these numbers in
+plain language, and a checker rejects any answer containing a number it was not given.
+
 Rainbone (RainbowBone) shows how a real bone carries load. It runs a finite-element
 analysis (FEA) on a complete femur segmented from CT, colours the bone by von Mises
-stress in a 3D viewer you can rotate and cut open, reports an illustrative fracture
-risk index (peak stress against an assumed 150 MPa bone strength), and explains the
+stress in a 3D viewer you can rotate and cut open, reports a standing-load stress
+ratio (peak stress against an assumed 150 MPa bone strength), and explains the
 numbers in plain language. A FastAPI back end runs the same kind of solve on an
 uploaded CT volume, with each voxel's stiffness taken from its Hounsfield units. It is
 a research prototype built at Hack the Valley 11, **not a medical device**: material
@@ -77,7 +91,8 @@ The dashboard (`/dashboard`; `/` is the landing page and `/enter` the guest pass
    posts it to `POST /api/simulate`.
 4. The API keeps voxels at or above 150 HU, maps HU to stiffness, meshes the bone into
    tetrahedra, solves an 800 N compression with SfePy, and returns peak stress, mean
-   stiffness, bone volume and the fracture risk index for the metrics panel.
+   stiffness, bone volume and the standing-load stress ratio (peak stress / assumed
+   150 MPa); the page's "All numbers and method" panel shows the first three.
 5. After answering, the API saves the run to TimescaleDB (Tiger Cloud) when
    `DATABASE_URL` is set; `GET /api/history` reads the runs back.
 

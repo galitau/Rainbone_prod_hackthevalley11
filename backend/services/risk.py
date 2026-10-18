@@ -15,31 +15,31 @@ decimals), uses a fact as the wrong quantity (the age as a percent, a rank as a
 risk), states a rank the wrong way round, spells a quantity out, predicts a
 time, calls ARF0 a chance or likelihood, diagnoses or advises. A rejected or
 failed provider falls through to the next, and finally to a deterministic
-template built only from the facts. An AI answer is kept per case, facts and
-chain, so a reload does not spend another model call.
+template built only from the facts. An answer is kept per case, facts and
+chain (a Gemini answer for 1 h, a Groq or template answer for 60 s), so a
+reload does not spend another model call.
 
 The chain order, providers, timeouts and fallback reasons are the ones
 POST /api/explain uses (AI_CHAIN, AI_OFFLINE, GEMINI_*, GROQ_*).
 """
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import math
 import os
 import re
 import statistics
-import time
 from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Mapping, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from services.explain import (_NUMBER_WORDS, COOLDOWN_S, NUMBER_RE, Fallback, _number_value, build_providers,
-                              chain_order)
-from services.llm_providers import ProviderError
+from services.explain import (_NUMBER_WORDS, _TENS, _UNITS, _WORD_VALUES, NUMBER_RE, Fallback, _number_value,
+                              build_providers, chain_order)
+from services.llm_providers import AnswerCache, answer_ttl, attempt, chain_signature
+from services.llm_providers import reset_cooldowns as reset_provider_cooldowns
 
 if TYPE_CHECKING:  # pragma: no cover
     import httpx
@@ -80,6 +80,7 @@ BLOCKED_OUTPUT_PATTERNS: tuple[str, ...] = (
     r"\bchance", r"\bprobab", r"\bodds\b", r"\blikelihood", r"(?:%|percent)\s+likely", r"\bcertain",
     r"\bdefinitely\b", r"\bguarantee", r"\binevitabl", r"\bsure(?:ly)?\b", r"\bgoing\s+to\b",
     r"\bbound\s+to\b", r"\bexpected\s+to\b", r"\bwill\b", r"\bcancer", r"\bmetasta", r"\btumou?r",
+    r"\b(?:more|less|as)\s+likely\b", r"\bvalidat",
 )
 _TIME = tuple(re.compile(p, re.IGNORECASE) for p in TIME_PATTERNS)
 _BLOCKED = tuple(re.compile(p, re.IGNORECASE) for p in BLOCKED_OUTPUT_PATTERNS)
@@ -111,6 +112,11 @@ _COUNT_BEFORE = re.compile(r"\bthan\s+(?:those\s+of\s+|that\s+of\s+)?$", re.IGNO
 # after _NAMED_TERMS has taken the 0 out of ARF0.
 _ARF0_VALUE = re.compile(r"\bARF0?\b\)?\s*(?:\([^)]*\)\s*)?(?:is|was|of|at|=|:)\s*(?:about\s+|around\s+|roughly\s+|"
                          r"nearly\s+|just\s+)?(\d+(?:\.\d+)?)\s*(?:%|per\s?cent\b)", re.IGNORECASE)
+# A number word that counts women ("four women", "four of the 101", "four who fractured"). Only such a word is read as
+# its digits, and only when the count is a fact (see _count_words_as_digits); any other number word is refused, so
+# "three times", "two places" or "three in the study" cannot pass through a rounded fact.
+_COUNT_WORD = re.compile(r"(?<![\w-])(?:" + "|".join(_UNITS + _TENS) + r")(?=\s+(?:of\s+the\b|(?:other\s+)?women\b|"
+                         r"who\b))", re.IGNORECASE)
 _OTHER_ARF0_BEFORE = re.compile(r"\b(?:median|average|mean|typical|fractured|lowest|highest|minimum|maximum|cohort|"
                                 r"range[ds]?|ranging|other)\b[^.;]*$", re.IGNORECASE)
 
@@ -144,8 +150,10 @@ SYSTEM_PROMPT = (
     "the fall forces, 'times' only for the factors of risk, and counts of women only for arf0_higher_than, "
     "msf_lower_than, cohort_fractured and cohort_n. Do not calculate any new number: no differences, shares "
     "of the cohort, or unit conversions such as kN. Never write a number as a word, and do not use words for "
-    "quantities or multiples (such as one, two, half, twice, double). Write ARF0 as ARF0 and do not expand "
-    "it. Do not call ARF0 a chance, probability, odds or likelihood, do not attach a time period to it, and "
+    "quantities or multiples (such as one, two, half, twice, double). Spell out each name the first time "
+    "it appears, exactly as 'MSF (minimum sidefall strength)' and 'ARF0 (absolute risk of fracture at time "
+    "0)', and write MSF and ARF0 after that. Do not call ARF0 a chance, probability, odds or likelihood, do "
+    "not attach a time period to it, and "
     "do not predict when or whether a fracture will happen (no will, within, later, soon, eventually, "
     "lifetime); the follow-up is a record of what happened. Do not diagnose or name a disease, and do not "
     "give advice, treatment, medication, exercise, screening, referrals or prevention (no should, need, "
@@ -328,6 +336,16 @@ def _kind_pools(facts: RiskFacts) -> dict[str, set[float]]:
     }
 
 
+def _count_words_as_digits(text: str, facts: RiskFacts) -> str:
+    """`text` with each number word that counts women written as digits when that count is a fact."""
+    counts = (facts.cohort_fractured, facts.arf0_higher_than, facts.msf_lower_than, facts.cohort_n)
+
+    def digits(match: re.Match) -> str:
+        value = _WORD_VALUES[match.group(0).lower()]
+        return str(value) if value in counts else match.group(0)
+    return _COUNT_WORD.sub(digits, text)
+
+
 def _kind(scan: str, match: re.Match) -> Optional[str]:
     for kind, after in _KINDS:
         if after.match(scan, match.end()):
@@ -378,6 +396,7 @@ def check(text: str, facts: RiskFacts) -> Optional[str]:
         return f"over {MAX_CHARS} characters"
     scan = _NAMED_TERMS.sub(lambda m: re.sub(r"\d", "", m.group(0)), text)
     allowed, pools = allowed_numbers(facts), _kind_pools(facts)
+    scan = _count_words_as_digits(scan, facts)  # "four women" is checked as "4 women"
     for match in NUMBER_RE.finditer(scan):
         value = _number_value(match.group(0))
         unit = _TIME_UNIT_AFTER.match(scan, match.end())
@@ -432,10 +451,10 @@ def template_text(facts: RiskFacts) -> str:
         compare = "Such a fall would about reach its strength"
     parts = [
         f"A sideways fall would load this femur {_dec(f.factor_of_risk_low, 2)} to {_dec(f.factor_of_risk_high, 2)} "
-        f"times its strength (MSF, {f.msf_newtons:,} N) in the study authors' model.",
+        f"times its minimum sidefall strength (MSF, {f.msf_newtons:,} N) in the study authors' model.",
         f"{compare}; {f.msf_lower_than} of the {f.cohort_n} women had a stronger femur.",
-        f"Its published fracture risk (ARF0) is {_dec(f.arf0_percent)}%, higher than {f.arf0_higher_than} of the "
-        f"{f.cohort_n} women.",
+        f"Its published absolute risk of fracture at time 0 (ARF0) is {_dec(f.arf0_percent)}%, higher than "
+        f"{f.arf0_higher_than} of the {f.cohort_n} women.",
     ]
     if not f.fractured_within_followup:
         parts.append("No hip fracture was recorded for this woman during the study's follow-up.")
@@ -451,40 +470,24 @@ def _with_note(text: str) -> str:
 
 
 # ----------------------------------------------------------------------------- chain
-_cooldown_until: dict[tuple[str, str], float] = {}
-# AI answers by (case_id, facts, chain order). The facts of a case only change with the data file or fe, so a reload
-# reuses the answer instead of spending the provider quota POST /api/explain also needs. A template answer is not kept,
-# so a later request can still get an AI one. Oldest first out past _ANSWERS_MAX, since fe comes from the client.
-_answers: dict[tuple[str, str, tuple[str, ...]], RiskResponse] = {}
-_ANSWERS_MAX = 256
+# Answers by (case_id, facts, chain). The facts of a case only change with the data file or fe, so a reload reuses the
+# answer instead of spending the provider quota POST /api/explain also needs. Bounded, since fe comes from the client.
+_answers = AnswerCache()
+
+# Sent after SYSTEM_PROMPT. check() refuses a number word that is not a fact, and "one" is not one: Gemini's fallback
+# model has written it despite the prompt's own rule, and its answer then fell through to Groq.
+DIGITS_RULE = ("Write every number as digits, and never use the word 'one', not even in a phrase such as 'one of "
+               "the'.")
+
+
+def system_prompt() -> str:
+    return f"{SYSTEM_PROMPT} {DIGITS_RULE}"
 
 
 def reset_cooldowns() -> None:
-    """Forget failures and kept answers (tests, or after fixing a key)."""
-    _cooldown_until.clear()
+    """Forget failed calls and kept answers (tests, or after fixing a key)."""
+    reset_provider_cooldowns()
     _answers.clear()
-
-
-async def _attempt(provider, user: str, facts: RiskFacts) -> tuple[Optional[str], Optional[str], bool]:
-    """(text, reason, try_next_model), as in services.explain: an HTTP error status or a cooldown skip may
-    try the provider's next model; a timeout, a connection error or a rejected text leaves the provider."""
-    key = (provider.name, provider.model)
-    if time.monotonic() < _cooldown_until.get(key, 0.0):
-        return None, f"skipped: failed less than {COOLDOWN_S:g} s ago", True
-    try:
-        text = await asyncio.wait_for(provider.generate(SYSTEM_PROMPT, user), timeout=provider.timeout)
-    except Exception as exc:  # also an adapter bug: it must not break the chain; messages are not forwarded
-        try_next = False
-        if isinstance(exc, ProviderError):
-            reason, try_next = exc.reason, exc.status is not None
-        elif isinstance(exc, asyncio.TimeoutError):
-            reason = f"timed out after {provider.timeout:g} s"
-        else:
-            reason = f"unexpected {type(exc).__name__}"
-        _cooldown_until[key] = time.monotonic() + COOLDOWN_S
-        return None, reason, try_next
-    reason = check(text, facts)
-    return (None, f"rejected: {reason}", False) if reason else (text, None, False)
 
 
 async def analyse(request: RiskRequest, env: Optional[Mapping[str, str]] = None, *,
@@ -496,16 +499,19 @@ async def analyse(request: RiskRequest, env: Optional[Mapping[str, str]] = None,
     order = chain_order(e)
     dataset = load_dataset() if data is None else data
     facts = build_facts(dataset, request.case_id, request.fe)
-    kept = (request.case_id, facts_json(facts), order)
-    if kept in _answers:
-        return _answers[kept]
     source = RiskSource(**{k: dataset["source"][k] for k in ("citation", "doi", "license")})
+    tiers = dict(providers) if providers is not None else build_providers(e, transport)
+    return await _answers.get_or_compute((request.case_id, facts_json(facts), chain_signature(order, tiers)),
+                                         lambda: _run_chain(request.case_id, order, facts, source, tiers),
+                                         lambda answer: answer_ttl(answer.provider))
 
+
+async def _run_chain(case_id: str, order: tuple[str, ...], facts: RiskFacts, source: RiskSource,
+                     tiers: Mapping[str, list]) -> RiskResponse:
     def done(text: str, provider: str, model: Optional[str], fallbacks: list[Fallback]) -> RiskResponse:
-        return RiskResponse(case_id=request.case_id, facts=facts, text=_with_note(text), provider=provider,
+        return RiskResponse(case_id=case_id, facts=facts, text=_with_note(text), provider=provider,
                             model=model, fallbacks=fallbacks, source=source)
 
-    tiers = dict(providers) if providers is not None else build_providers(e, transport)
     fallbacks: list[Fallback] = []
     for name in order:
         if name == "template":
@@ -519,13 +525,10 @@ async def analyse(request: RiskRequest, env: Optional[Mapping[str, str]] = None,
             fallbacks.append(Fallback(provider=name, reason=f"{models[0].key_name} not set"))
             continue
         for provider in models:
-            text, reason, try_next = await _attempt(provider, model_input(facts), facts)
+            text, reason, try_next = await attempt(provider, system_prompt(), model_input(facts),
+                                                   lambda t: check(t, facts))
             if text is not None:
-                answer = done(text, name, provider.model, fallbacks)
-                _answers[kept] = answer
-                while len(_answers) > _ANSWERS_MAX:
-                    _answers.pop(next(iter(_answers)))
-                return answer
+                return done(text, name, provider.model, fallbacks)
             log.warning("risk: %s %s fell through: %s", name, provider.model, reason)
             fallbacks.append(Fallback(provider=name, reason=f"{provider.model}: {reason}"))
             if not try_next:

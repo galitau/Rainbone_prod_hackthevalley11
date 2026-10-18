@@ -1,5 +1,6 @@
 // What the 3D viewer shows, read from the model's own manifest so every label matches the files it loads.
 import manifest from "@/public/models/hfvalid-femur/manifest.json";
+import risk from "@/public/models/hfvalid-risk.json";
 
 // The strength the API divides by (backend: fracture_risk_index_percent = stress / 150 MPa x 100).
 export const ASSUMED_STRENGTH_MPA = 150;
@@ -55,3 +56,33 @@ const year = FEMUR_MODEL.attribution.match(/\((\d{4})\)/)?.[1];
 const who = authors.length > 2 ? `${authors[0]} et al.` : authors.join(" & ");
 export const FEMUR_AUTHORS = year ? `${who} (${year})` : who;
 export const FEMUR_INSTITUTION = FEMUR_MODEL.attribution.match(/University[^.]*/)?.[0] ?? "";
+
+// The femur's published fall-based numbers from the HFValid table, worked out the way backend/services/risk.py
+// build_facts() does: ARF0 and MSF are the dataset authors' finite-element results, the ranks are against the
+// study's other women, and the factor of risk is a sideways-fall impact force divided by the femur's MSF.
+type HfvalidSubject = { arf0_percent: number; msf_newtons: number; fractured_within_followup: boolean };
+const subjects = Object.values(risk.subjects as Record<string, HfvalidSubject>);
+const subject = (risk.subjects as Record<string, HfvalidSubject>)[FEMUR_MODEL.caseId];
+const arf0s = subjects.map((s) => s.arf0_percent).sort((a, b) => a - b);
+const fracturedArf0s = subjects.filter((s) => s.fractured_within_followup).map((s) => s.arf0_percent);
+const middle = Math.floor(arf0s.length / 2);
+
+export const FEMUR_FALL_RISK = {
+  arf0Percent: subject.arf0_percent, // 47.11
+  arf0HigherThan: arf0s.filter((v) => v < subject.arf0_percent).length, // 56 women had a lower ARF0
+  cohortN: subjects.length, // 101
+  cohortArf0Min: arf0s[0], // 7.84
+  cohortArf0Max: arf0s[arf0s.length - 1], // 78.12
+  cohortArf0Median: arf0s.length % 2 ? arf0s[middle] : (arf0s[middle - 1] + arf0s[middle]) / 2, // 44.26
+  cohortFractured: fracturedArf0s.length, // 4
+  fracturedArf0Min: Math.min(...fracturedArf0s), // 53.75
+  fracturedArf0Max: Math.max(...fracturedArf0s), // 73.22
+  msfNewtons: subject.msf_newtons, // 1338.86
+  // van den Kroonenberg et al. 1995: peak trochanter impact force of a sideways fall (2,900–4,260 N).
+  factorOfRiskLow: risk.fall_force.low_newtons / subject.msf_newtons, // 2.17
+  factorOfRiskHigh: risk.fall_force.high_newtons / subject.msf_newtons, // 3.18
+  // The dataset README's own sentence defining ARF0, and the dataset's citation.
+  arf0Definition: risk.source.arf0_definition,
+  doiUrl: `https://doi.org/${risk.source.doi}`,
+  license: risk.source.license, // "CC BY 4.0"
+};

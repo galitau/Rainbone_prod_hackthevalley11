@@ -4,7 +4,9 @@ The request carries the numbers /api/simulate computed (the SimulationResponse
 fields). No model computes a number: models only word the facts built here, and
 check() rejects any text that uses a number which is not a fact (or a fact
 rounded to 1 or 0 decimals), spells a quantity out, uses a word from
-BLOCKED_OUTPUT_PATTERNS, or runs too long.
+BLOCKED_OUTPUT_PATTERNS, reads a JSON field name aloud, or runs too long. A
+lone number word right before its unit, whose value is a fact ("seventeen GPa"
+when 17 is one), is read as that number, not rejected.
 
 Providers are tried in order. AI_CHAIN sets it (comma list of gemini, groq,
 template; default gemini,groq,template; template is appended when missing).
@@ -12,27 +14,31 @@ AI_OFFLINE=1 uses the template only. A provider that has no key, fails, times
 out or is rejected falls through to the next, and the reason is reported in
 `fallbacks`. When GEMINI_MODEL answers with an HTTP error (such as 429) or is
 cooling down, gemini-3.5-flash-lite is tried before leaving Gemini. A model
-whose call failed is skipped for 60 s. The template is deterministic, needs no
-network and passes check() for every valid request.
+whose call failed is skipped for 60 s, or for 300 s after HTTP 429, by this
+route and /api/risk-analysis alike (services.llm_providers). The template is
+deterministic, needs no network and passes check() for every valid request.
+
+Answers are kept in memory per facts and chain: a Gemini answer for 1 h, a Groq
+or template answer for 60 s (so Gemini is asked again), and concurrent equal
+requests share one chain run. Reloading the page spends no model call.
 
 Keys come from the process environment, or from backend/.env when present
 (process environment wins). They are never logged or returned.
 """
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import math
 import os
 import re
-import time
 from typing import TYPE_CHECKING, Literal, Mapping, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from services.llm_providers import (GEMINI_FALLBACK_MODEL, GeminiProvider, GroqProvider, ProviderError,
-                                    env_value)
+from services.llm_providers import (FAILURE_COOLDOWN_S, GEMINI_FALLBACK_MODEL, AnswerCache, GeminiProvider,
+                                    GroqProvider, answer_ttl, attempt, chain_signature, env_value)
+from services.llm_providers import reset_cooldowns as reset_provider_cooldowns
 from services.settings import runtime_env  # noqa: F401 - routes_explain depends on it from here
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -43,7 +49,7 @@ log = logging.getLogger("rainbowbone.explain")
 PROVIDER_NAMES: tuple[str, ...] = ("gemini", "groq", "template")
 DEFAULT_ORDER: tuple[str, ...] = PROVIDER_NAMES
 DISPLAY_DECIMALS = 2
-COOLDOWN_S = 60.0
+COOLDOWN_S = FAILURE_COOLDOWN_S
 MAX_CHARS = 700  # the prompt asks for 600; the template's longest text stays below this
 NOTE = "Illustrative engineering simulation with assumed material properties, not a medical assessment."
 
@@ -76,6 +82,27 @@ _NUMBER_WORDS = re.compile(
     r"\b(?:(?:" + "|".join(sorted(NUMBER_WORDS, key=len, reverse=True)) + r")(?:s|fold)?|"
     + "|".join(sorted(OTHER_QUANTITY_WORDS, key=len, reverse=True)) + r")\b",
     re.IGNORECASE)
+# The value of each lone number word ("four" is 4). Scales, plurals, -fold and OTHER_QUANTITY_WORDS have none.
+_WORD_VALUES: dict[str, int] = {**{w: i for i, w in enumerate(_UNITS)}, **{w: 20 + 10 * i for i, w in enumerate(_TENS)}}
+# A number word joined to the next one ("twenty-two", "one hundred", "three quarters") or to "-fold" is never read as
+# one number.
+_JOINED_TO_NEXT = re.compile(r"[\s-]+" + _NUMBER_WORDS.pattern + r"|-fold\b", re.IGNORECASE)
+# A unit right after a number word ("seventeen GPa", "zero percent"). Only then is the word read as its digits: without
+# a unit it is a count or a multiple that no fact holds ("ten times below", "ten bags of sugar").
+_UNIT_AFTER_WORD = re.compile(r"\s*(?:%|per\s?cent\b|MPa\b|megapascals?\b|GPa\b|gigapascals?\b|(?-i:N)\b|newtons?\b|"
+                              r"cm3|cm³|cubic\b)", re.IGNORECASE)
+# The fact a number with a unit after it must be: "10%" is not the 10 GPa stiffness, "16 MPa" not a rounded volume.
+_UNIT_FACT: tuple[tuple[re.Pattern, str], ...] = (
+    (re.compile(r"\s*(?:%|per\s?cent\b)", re.IGNORECASE), "stress_to_strength_percent"),
+    (re.compile(r"\s*(?:MPa\b|megapascals?\b)", re.IGNORECASE), "max_von_mises_stress_mpa"),
+    (re.compile(r"\s*(?:GPa\b|gigapascals?\b)", re.IGNORECASE), "average_youngs_modulus_gpa"),
+    (re.compile(r"\s*(?:N\b|[Nn]ewtons?\b)"), "load_newtons"),
+    (re.compile(r"\s*(?:cm3|cm\u00b3|cm\^3|cubic\b)", re.IGNORECASE), "bone_volume_cm3"),
+)
+# The facts' JSON field names read aloud ("an average youngs modulus gpa of 10.0"), which a model has written as text.
+_ECHOED_KEYS = re.compile(r"\b(?:" + "|".join(k.replace("_", r"[\s_]+") for k in (
+    "average_youngs_modulus_gpa", "youngs_modulus_gpa", "max_von_mises_stress_mpa", "von_mises_stress_mpa",
+    "stress_to_strength_percent", "bone_volume_cm3", "load_newtons")) + r")\b", re.IGNORECASE)
 
 SYSTEM_PROMPT = (
     "You explain the result of one engineering computer simulation of a bone to a reader with no "
@@ -84,16 +111,17 @@ SYSTEM_PROMPT = (
     "newtons. max_von_mises_stress_mpa is the stress near the most heavily loaded spots, in megapascals "
     "(MPa): how hard the material inside is squeezed or pulled. average_youngs_modulus_gpa is the average "
     "stiffness given to the bone material, in gigapascals (GPa). bone_volume_cm3 is the volume of bone in "
-    "the model, in cubic centimetres. illustrative_index_percent is an illustrative index from 0 to 100 "
-    "that compares that stress with an assumed bone strength; it is not a medical measurement, and if you "
-    "mention it, say that it is illustrative. "
+    "the model, in cubic centimetres. stress_to_strength_percent is that stress as a percent of the strength "
+    "the model assumes for bone material: the stress-to-strength ratio, an illustrative engineering number "
+    "and not a medical measurement; if you mention it, call it the stress-to-strength ratio and say that it "
+    "is illustrative. "
     "Write 3 to 5 short sentences of plain English. Use the idea that a bone carries load the way a bridge "
     "does: a thinner or weaker bone carries the same load through less material, so that material is "
     "squeezed harder. "
-    "Rules: use only numbers that appear in the JSON, written as digits, exactly as given or rounded to "
-    "fewer decimals. Do not calculate any new number: no ratios, differences, percentages or unit "
-    "conversions. Never write a number as a word, and do not use words for quantities or multiples (such "
-    "as one, two, half, twice, double). "
+    "Rules: use only numbers that appear in the JSON, written as digits (800, never eight hundred), exactly "
+    "as given or rounded to fewer decimals. Do not calculate any new number: no ratios, differences, "
+    "percentages or unit conversions. Never write a number as a word, and do not use words for quantities "
+    "or multiples (such as zero, one, two, half, twice, double), not even 'one' in a phrase such as 'one of'. "
     "Do not diagnose, predict, advise or recommend, and do not mention fracture, breaking, cracking, failure, "
     "risk, chance, safety, danger, health, patients, doctors, what bone can withstand, treatment, surgery, "
     "therapy or cancer. No markdown, lists or headings, at most 600 characters. "
@@ -166,14 +194,15 @@ def _r(value: float) -> float:
 def build_facts(request: ExplainRequest) -> dict[str, float]:
     """The only model input: the request's numbers rounded to display precision.
 
-    The index is passed under a neutral name so a model words it as illustrative, not as a fracture risk.
+    The index is passed as stress_to_strength_percent, what it is (peak stress / assumed strength x 100), so a
+    model words it as an illustrative ratio, not as a fracture risk. The request keeps its field name.
     """
     return {
         "load_newtons": _r(request.load_newtons),
         "max_von_mises_stress_mpa": _r(request.max_von_mises_stress_mpa),
         "average_youngs_modulus_gpa": _r(request.average_youngs_modulus_gpa),
         "bone_volume_cm3": _r(request.bone_volume_cm3),
-        "illustrative_index_percent": _r(request.fracture_risk_index_percent),
+        "stress_to_strength_percent": _r(request.fracture_risk_index_percent),
     }
 
 
@@ -195,6 +224,20 @@ def allowed_numbers(facts: Mapping[str, float]) -> set[float]:
     return out
 
 
+def spelled_numbers_as_digits(text: str, allowed: set[float]) -> str:
+    """`text` with each lone number word ("zero" to "ninety") that comes right before its unit and whose value is in
+    `allowed` written as digits, so the number checks read it like the fact it is. Other number and quantity words
+    are left for check() to refuse: one without a unit after it, one not in `allowed`, a plural or -fold form, a
+    scale (hundred), or one joined to the next ("twenty-two")."""
+    def digits(match: re.Match) -> str:
+        word = match.group(0)
+        value = _WORD_VALUES.get(word.lower())
+        if value is None or _JOINED_TO_NEXT.match(text, match.end()) or not _UNIT_AFTER_WORD.match(text, match.end()):
+            return word
+        return str(value) if any(math.isclose(value, a, abs_tol=1e-9) for a in allowed) else word
+    return _NUMBER_WORDS.sub(digits, text)
+
+
 def check(text: str, facts: Mapping[str, float]) -> Optional[str]:
     """None when `text` may be shown, else the reason it is rejected."""
     if not text.strip():
@@ -202,19 +245,29 @@ def check(text: str, facts: Mapping[str, float]) -> Optional[str]:
     if len(text) > MAX_CHARS:
         return f"over {MAX_CHARS} characters"
     allowed = allowed_numbers(facts)
-    for match in NUMBER_RE.finditer(text):
-        if match.group(0) in ("2", "3") and _UNIT_EXPONENT_BEFORE.search(text, 0, match.start()):
+    scan = spelled_numbers_as_digits(text, allowed)
+    for match in NUMBER_RE.finditer(scan):
+        if match.group(0) in ("2", "3") and _UNIT_EXPONENT_BEFORE.search(scan, 0, match.start()):
             continue
         value = _number_value(match.group(0))
         if not any(math.isclose(value, a, rel_tol=1e-12, abs_tol=1e-9) for a in allowed):
             return f"number not in input: {match.group(0)}"
-    word = _NUMBER_WORDS.search(text)
+        for unit, key in _UNIT_FACT:
+            if unit.match(scan, match.end()):
+                if key in facts and not any(math.isclose(value, a, rel_tol=1e-12, abs_tol=1e-9)
+                                            for a in allowed_numbers({key: facts[key]})):
+                    return f"not the {key} in the input: {match.group(0)}"
+                break
+    word = _NUMBER_WORDS.search(scan)
     if word:
         return f"spelled-out quantity: {word.group(0)!r}"
     for pattern in _BLOCKED:
-        hit = pattern.search(text)
+        hit = pattern.search(scan)
         if hit:
             return f"blocked wording: {hit.group(0)!r}"
+    hit = _ECHOED_KEYS.search(scan)
+    if hit:
+        return f"field name: {hit.group(0)!r}"
     return None
 
 
@@ -240,8 +293,8 @@ def template_text(facts: Mapping[str, float]) -> str:
         f"pulled) reached {fmt(facts['max_von_mises_stress_mpa'])} MPa.",
         f"The bone material was given an average stiffness (Young's modulus) of "
         f"{fmt(facts['average_youngs_modulus_gpa'])} GPa.",
-        f"The index of {fmt(facts['illustrative_index_percent'])}% is illustrative only: it compares that "
-        f"stress with an assumed bone strength and is not a medical measurement.",
+        f"That stress is {fmt(facts['stress_to_strength_percent'])}% of the strength assumed for bone material: "
+        f"an illustrative stress-to-strength ratio, not a medical measurement.",
     ])
 
 
@@ -258,49 +311,31 @@ def build_providers(env: Mapping[str, str], transport: Optional["httpx.AsyncBase
     return {"gemini": gemini, "groq": [GroqProvider(env, transport)]}
 
 
-_cooldown_until: dict[tuple[str, str], float] = {}
+_answers = AnswerCache()
 
 
 def reset_cooldowns() -> None:
-    """Forget failures (tests, or after fixing a key)."""
-    _cooldown_until.clear()
-
-
-async def _attempt(provider, user: str, facts: Mapping[str, float]) -> tuple[Optional[str], Optional[str], bool]:
-    """(text, reason, try_next_model). text is set when the provider's text passes check().
-
-    try_next_model is true after an HTTP error status or a cooldown skip: the provider's next model (Gemini's
-    fallback) may still answer. A timeout, a connection error or a rejected text leaves the provider.
-    A call that fails (not a rejected text) puts this provider and model in a cooldown, so later
-    requests skip it instead of waiting for the same timeout again.
-    """
-    key = (provider.name, provider.model)
-    if time.monotonic() < _cooldown_until.get(key, 0.0):
-        return None, f"skipped: failed less than {COOLDOWN_S:g} s ago", True
-    try:
-        text = await asyncio.wait_for(provider.generate(SYSTEM_PROMPT, user), timeout=provider.timeout)
-    except Exception as exc:  # also an adapter bug: it must not break the chain; messages are not forwarded
-        try_next = False
-        if isinstance(exc, ProviderError):
-            reason, try_next = exc.reason, exc.status is not None
-        elif isinstance(exc, asyncio.TimeoutError):
-            reason = f"timed out after {provider.timeout:g} s"
-        else:
-            reason = f"unexpected {type(exc).__name__}"
-        _cooldown_until[key] = time.monotonic() + COOLDOWN_S
-        return None, reason, try_next
-    reason = check(text, facts)
-    return (None, f"rejected: {reason}", False) if reason else (text, None, False)
+    """Forget failed calls and kept answers (tests, or after fixing a key)."""
+    reset_provider_cooldowns()
+    _answers.clear()
 
 
 async def explain(request: ExplainRequest, env: Optional[Mapping[str, str]] = None, *,
                   transport: Optional["httpx.AsyncBaseTransport"] = None,
                   providers: Optional[Mapping[str, list]] = None) -> ExplainResponse:
-    """Word `request` with the first provider whose text passes check(); the template always does."""
+    """Word `request` with the first provider whose text passes check(); the template always does.
+
+    An answer is kept per facts and chain (see the module docstring), so an equal request reuses it."""
     e = os.environ if env is None else env
     order = chain_order(e)
     facts = build_facts(request)
     tiers = dict(providers) if providers is not None else build_providers(e, transport)
+    return await _answers.get_or_compute((facts_json(facts), chain_signature(order, tiers)),
+                                         lambda: _run_chain(order, facts, tiers),
+                                         lambda answer: answer_ttl(answer.provider))
+
+
+async def _run_chain(order: tuple[str, ...], facts: Mapping[str, float], tiers: Mapping[str, list]) -> ExplainResponse:
     fallbacks: list[Fallback] = []
     for name in order:
         if name == "template":
@@ -314,7 +349,8 @@ async def explain(request: ExplainRequest, env: Optional[Mapping[str, str]] = No
             fallbacks.append(Fallback(provider=name, reason=f"{models[0].key_name} not set"))
             continue
         for provider in models:
-            text, reason, try_next = await _attempt(provider, facts_json(facts), facts)
+            text, reason, try_next = await attempt(provider, SYSTEM_PROMPT, facts_json(facts),
+                                                   lambda t: check(t, facts))
             if text is not None:
                 return ExplainResponse(text=_with_note(text), provider=name, model=provider.model,
                                        fallbacks=fallbacks)
