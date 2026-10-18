@@ -1,7 +1,16 @@
 # Rainbone
 
-Rainbone is for care teams in senior living. The problem it targets is the hip fracture
-from a fall: by the time a resident falls and breaks a hip, it is already an emergency.
+**A stress test for bones.**
+
+101 women had their thighbones CT-scanned. Within five years, four of them broke.
+Rainbone shows, in 3D and in colour, where a real femur takes the most strain under
+load. Then Gemini explains in plain words, for the care team, where she stands among
+those 101 women. Try it: <https://rainbone.health>
+
+## What it does
+
+Rainbone is for care teams in senior living. The problem it targets is the fracture
+from a fall: by the time a resident falls and breaks a bone, it is already an emergency.
 Rainbone aims to turn a hip CT a resident already has into a fall-fracture check; today
 the fall numbers come from the HFValid authors' published results, not from an uploaded
 scan. It runs on one woman's femur CT from the published
@@ -9,19 +18,22 @@ HFValid study (case Pat001, age 78 at the scan): it shows the femur in 3D under 
 standing load, then sets the study authors' own fall results beside it. Their absolute
 risk of fracture at time 0 (ARF0), from a finite-element model coupled with a fall
 model, is 47.1 % for her, higher than 56 of the 101 women (study median 44.3 %; the 4
-who fractured had 53.7–73.2 %). Her minimum sideways-fall strength is 1,339 N, weaker
-than 75 of the 101, and a sideways fall hits the hip with 2.90–4.26 kN (van den
-Kroonenberg 1995), or 2.17–3.18 times that strength. An AI card words these numbers in
-plain language, and a checker rejects any answer containing a number it was not given.
+who had a fracture during the follow-up had 53.7–73.2 %). Her minimum sideways-fall
+strength (MSF) is 1,339 N, weaker than 75 of the 101, and a sideways fall hits the hip
+with 2.90–4.26 kN (van den Kroonenberg 1995), or 2.17–3.18 times that strength. An AI
+card words these numbers in plain language, and a checker rejects any answer containing
+a number it was not given.
 
 Rainbone (RainbowBone) shows how a real bone carries load. It runs a finite-element
-analysis (FEA) on a complete femur segmented from CT, colours the bone by von Mises
-stress in a 3D viewer you can rotate and cut open, reports a standing-load stress
-ratio (peak stress against an assumed 150 MPa bone strength), and explains the
-numbers in plain language. A FastAPI back end runs the same kind of solve on an
-uploaded CT volume, with each voxel's stiffness taken from its Hounsfield units. It is
-a research prototype built at Hack the Valley 11, **not a medical device**: material
-properties and loads are assumptions, and no output is a clinical measurement.
+analysis (FEA) on a complete femur segmented from CT (60,819 tetrahedra, 17,361 nodes),
+colours the bone by von Mises stress (nodal values, 0–15.83 MPa) in a 3D viewer you can
+rotate and cut open, reports a standing-load stress ratio (peak stress against an assumed
+150 MPa bone strength: 11 % for this femur, which is not a fracture probability), and
+explains the numbers in plain language. A FastAPI back end runs the same kind of solve on
+an uploaded CT volume, with each voxel's stiffness taken from its Hounsfield units. It is
+a research prototype built at Hack the Valley 11, **not a medical device**: it gives no
+forecast and no diagnosis, material properties and loads are assumptions, and no output
+is a clinical measurement.
 
 ## Architecture
 
@@ -30,56 +42,194 @@ flowchart TB
   user(["Browser"])
 
   subgraph VERCEL["Front end · Vercel · rainbone.health"]
-    next["Next.js 15 App Router<br/>/ landing, /enter, /dashboard<br/>/physics-simulations<br/>/bones in PR #3"]
-    static["frontend/public/ static files<br/>models/hfvalid-femur<br/>models/femur-press<br/>sample_bone.nii.gz"]
+    next["Next.js 15 App Router · Tailwind · vtk.js<br/>/ · /enter · /privacy · /dashboard · /physics-simulations<br/>/bones · /lesion-progression · /datasets · /preferences"]
+    static["frontend/public/<br/>HFValid femur FEA · press steps<br/>hfvalid-risk.json · sample_bone.nii.gz"]
+    proxy["Rewrites /api/* and /health<br/>to API_PROXY_TARGET"]
   end
 
-  subgraph VULTR["Back end · Vultr Compute · api.rainbone.health"]
+  subgraph VM["Back end · Vultr Compute · api.rainbone.health"]
     caddy["Caddy<br/>HTTPS reverse proxy"]
-    api["FastAPI on uvicorn<br/>POST /api/simulate<br/>POST /api/explain<br/>POST /api/risk-analysis<br/>GET /api/history<br/>GET /health<br/>GET /api/bones, PR #3"]
-    fea["SfePy finite-element solve<br/>services/fea_solver.py"]
+    api["FastAPI on uvicorn<br/>GET /health"]
+    sim["POST /api/simulate<br/>result cache by sha256, one solve at a time"]
+    fea["SfePy finite-element solve<br/>HU to stiffness, 800 N"]
+    hist["GET /api/history<br/>GET /api/ai-log"]
+    bones["GET /api/bones<br/>15-minute pre-signed URLs"]
+    prog["GET /api/progression/*"]
+
+    subgraph AI["AI layer"]
+      eps["POST /api/risk-analysis<br/>POST /api/explain"]
+      ground["Grounding · clinical_store.py<br/>reads clinical/ from Vultr Object Storage<br/>sha256 pinned in the repo, bundled copy as fallback"]
+      facts["Facts built in code<br/>no model computes a number"]
+      cache["Answer cache<br/>Gemini answer 1 h · Groq or template 60 s"]
+      cool["429 memory<br/>skip a model 300 s after HTTP 429,<br/>60 s after any other failure"]
+      chain["Provider chain<br/>gemini-3.8-flash → gemini-3.5-flash-lite<br/>→ saved Gemini answer → Groq openai/gpt-oss-120b<br/>→ template"]
+      saved[("Saved Gemini answers<br/>AI_ANSWER_STORE file")]
+      check["Checker<br/>numbers and wording"]
+      audit["Audit log · ai_log.py<br/>one row per answer in Tiger ai_analyses"]
+      eps --> ground --> facts --> cache
+      cache -->|"miss"| chain
+      cool -.-> chain
+      chain <-.->|"save, serve when no Gemini model answers"| saved
+      chain -->|"each answer"| check
+      check -->|"rejected: next provider"| chain
+      check -->|"passed"| audit
+    end
+
     caddy --> api
-    api -->|"/api/simulate"| fea
+    api --> sim --> fea
+    api --> hist
+    api --> bones
+    api --> prog
+    api --> eps
   end
 
-  subgraph CLOUD["Managed services"]
-    llm["Gemini, then Groq,<br/>then offline template"]
-    tiger[("Tiger Cloud<br/>TimescaleDB")]
-    vos[("Vultr Object Storage<br/>private bucket")]
+  subgraph MANAGED["Managed services"]
+    gemini["Google Gemini API"]
+    groq["Groq API"]
+    vos[("Vultr Object Storage · private bucket<br/>ctpelvic1k/ · clinical/ · lesion frames")]
+    tiger[("Tiger Cloud · TimescaleDB<br/>simulation_runs + hourly aggregate<br/>ai_analyses")]
   end
 
   subgraph OFFLINE["Offline pipelines, run by hand"]
-    bonefea["scripts/bone_fea<br/>Slicer, TetGen, SfePy"]
-    vpipe["scripts/vultr_pipeline<br/>TotalSegmentator, meshes<br/>PR #3"]
+    bonefea["scripts/bone_fea<br/>3D Slicer, TetGen, SfePy"]
+    tseg["scripts/vultr_pipeline/pipeline.py<br/>TotalSegmentator 2.18.0, meshes"]
+    pubc["scripts/vultr_pipeline/publish_clinical.py"]
   end
 
-  hfvalid[("HFValid femur CT<br/>Aldieri et al. 2025<br/>CC BY 4.0")]
-  ctp[("CTPelvic1K CT<br/>Zenodo 4588403<br/>CC BY 4.0")]
+  hfvalid[("HFValid femur CT<br/>Aldieri et al. 2025 · CC BY 4.0")]
+  ctp[("CTPelvic1K CT<br/>Zenodo 4588403 · CC BY 4.0")]
 
-  user -->|"pages and vtk.js models"| VERCEL
-  user -->|"HTTPS API calls"| caddy
+  user -->|"pages and vtk.js models"| next
+  next --- static
+  user -->|"same-origin /api/* and /health"| proxy
+  proxy -->|"HTTPS"| caddy
   user -.->|"/bones meshes via signed URLs"| vos
-  api -->|"/api/explain, /api/risk-analysis"| llm
-  api -->|"save run, /api/history"| tiger
-  api -.->|"/api/bones signs URLs"| vos
+  chain --> gemini
+  chain --> groq
+  ground -->|"index.json + file"| vos
+  audit --> tiger
+  sim -->|"save run"| tiger
+  hist --> tiger
+  bones -->|"sign ctpelvic1k/ URLs"| vos
+  prog --> vos
   hfvalid --> bonefea
-  bonefea -->|"VTU and VTP, committed"| static
-  ctp -.-> vpipe
-  vpipe -.->|"upload"| vos
+  bonefea -->|"VTU, VTP, JSON, committed"| static
+  static --> pubc
+  pubc -->|"clinical/ + index.json"| vos
+  ctp --> tseg
+  tseg -->|"ctpelvic1k/"| vos
 
-  classDef pr stroke-dasharray: 5 4
-  class vpipe pr
+  style AI stroke:#e8590c,stroke-width:3px
 ```
 
-Dashed lines and boxes marked PR #3 are in open pull request
-[#3](https://github.com/galitau/Rainbone_prod_hackthevalley11/pull/3), not yet on
-`main`. The app is live: the front end (built from `frontend/`) on Vercel at
-<https://rainbone.health>, and the API on a Vultr Compute instance at
-<https://api.rainbone.health>, with Caddy in front of uvicorn. To run both locally, see below.
+The app is live at <https://rainbone.health>. Vercel builds the front end from
+`frontend/` and forwards `/api/*` and `/health` to the API (`API_PROXY_TARGET` in
+`frontend/next.config.ts`), so the browser only talks to the site's own origin. The API
+runs on a Vultr Compute instance at <https://api.rainbone.health>, with Caddy in front of
+uvicorn. The `/bones` meshes are the one thing the browser downloads from somewhere
+else: straight from the private bucket, through links the API signs.
+
+### The AI layer
+
+Both AI endpoints run inside the FastAPI process and share one chain, one quota and one
+log (`backend/services/risk.py`, `explain.py`, `llm_providers.py`, `clinical_store.py`,
+`ai_log.py`).
+
+- **Grounding.** The facts are read from the private `clinical/` folder in Vultr Object
+  Storage: `clinical/index.json` lists each file's sha256, which must equal the sha256
+  pinned in this repository next to the bundled copy (`hfvalid-risk.json.sha256`,
+  `hfvalid-femur/manifest.json.sha256`), and the file's bytes must hash to it. If the
+  bucket is not configured, unreachable or does not match, the API answers from the
+  bundled copy in `frontend/public/models/` and says why in `grounding`.
+- **Facts, not model arithmetic.** The API computes every number (ranks, median, factor
+  of risk) before a model is called. The model only words them and never receives a scan
+  or its file name; the risk analysis also keeps our own FE numbers away from it.
+- **Provider chain.** `gemini-3.8-flash`, then `gemini-3.5-flash-lite` after an HTTP
+  error such as 429, then the Gemini answer saved earlier for exactly the same facts
+  (served as `served: "saved"` with its `saved_at`, and only if it still passes the
+  checker), then Groq `openai/gpt-oss-120b`, then a deterministic template that needs no
+  network. A Gemini key that is invalid or refused (HTTP 400, 401, 403) hands over to the
+  next key in `GEMINI_API_KEYS`; a 429 is never retried with another key. `AI_CHAIN` and
+  `AI_OFFLINE` change the order.
+- **Checker.** Every number in an answer must be one of the facts; in the risk analysis
+  it must also be its own kind of quantity (a percent only for ARF0, newtons only for
+  forces, a count only for women). The risk-analysis checker also rejects ranks stated
+  the wrong way round, numbers written as words, statements about the future, "chance"
+  or "probability" for ARF0, diagnosis, advice, and any claim about where the recorded
+  fracture was. A rejected answer moves on to the next provider.
+- **Answer cache and 429 memory.** An answer is kept in memory per case, grounding
+  store, facts and chain (Gemini for 1 h, Groq or template for 60 s) and comes back as
+  `served: "cached"`; concurrent equal requests share one model call. A model that failed
+  is skipped for 60 s, or 300 s after HTTP 429, by both endpoints. Every checked Gemini
+  answer is also written to the `AI_ANSWER_STORE` file, which outlives a restart.
+- **Audit log.** Each answer the chain produces writes one row to the `ai_analyses`
+  hypertable in Tiger Cloud: endpoint, case, provider, model, latency, grounding store,
+  fallbacks and the sha256 of the facts and of the text. The text itself is not stored,
+  and a saved Gemini answer is not logged again, since no model was called for it.
+  `GET /api/ai-log` reads the latest rows.
+
+### AI flow: one risk-analysis request
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant B as Browser (dashboard)
+  participant V as Vercel (rainbone.health)
+  participant A as FastAPI (Vultr Compute)
+  participant S as Vultr Object Storage
+  participant M as Gemini, then Groq
+  participant T as Tiger Cloud
+
+  B->>V: POST /api/risk-analysis (case_id Pat001, fe)
+  V->>A: rewrite to api.rainbone.health through Caddy
+  alt table not read in the last 10 min (60 s after a fallback)
+    A->>S: GET clinical/index.json
+    Note over A: the entry's sha256 must equal the pin in the repo
+    A->>S: GET clinical/hfvalid/hfvalid-risk.json
+    Note over A: the bytes must hash to the pin
+    opt bucket unset, unreachable or a mismatch
+      Note over A: bundled copy, grounding local-backup with the reason
+    end
+  else read recently
+    Note over A: reuse the table and its grounding
+  end
+  Note over A: build_facts: ARF0 47.1 %, higher than 56 of 101, median 44.3 %,<br/>MSF 1,339 N, factor of risk 2.17–3.18, 4 of 101 fractured
+  alt no answer kept for this case, store, facts and chain
+    loop gemini-3.8-flash, then gemini-3.5-flash-lite
+      Note over A: skip the model while it cools down (300 s after HTTP 429)
+      A->>M: facts JSON only (no scan, no file name, no FE numbers)
+      M-->>A: JSON text, or an HTTP error or a timeout
+      Note over A: checker: numbers and wording, a passing answer is saved
+    end
+    opt no Gemini model passed
+      Note over A: the saved Gemini answer for the same facts, if it still passes the checker
+    end
+    opt still no answer
+      A->>M: Groq openai/gpt-oss-120b, same facts JSON
+      M-->>A: JSON text, or an HTTP error or a timeout
+      Note over A: checker: numbers and wording
+    end
+    opt still no answer
+      Note over A: template built from the facts
+    end
+    A->>T: INSERT INTO ai_analyses (hashes, provider, model, latency, grounding), not for a saved answer
+    Note over A: keep the answer (Gemini 1 h, Groq or template 60 s)
+  else answer kept
+    Note over A: reuse it with the id of its ai_analyses row (not logged again)
+  end
+  A-->>V: text, facts, provider, model, served, fallbacks, source, grounding, logged
+  V-->>B: the same JSON
+  Note over B: AI card with the text and<br/>"Facts read from Vultr Object Storage · sha256 verified"
+```
+
+`POST /api/explain` follows the same steps with the femur model's manifest
+(`clinical/hfvalid/pat001-femur-manifest.json`) instead of the HFValid table. The log
+write waits at most 2.5 s and is skipped for 60 s after a failure, so a slow database
+never holds up an answer for long.
 
 ### What happens when a page loads
 
-The dashboard (`/dashboard`; `/` is the landing page and `/enter` the guest pass, `/login` redirects there):
+The dashboard (`/dashboard`):
 
 1. Next.js serves the page and the static files in `frontend/public/`.
 2. The 3D viewer (`frontend/components/BoneViewer.tsx`, vtk.js) fetches
@@ -87,46 +237,73 @@ The dashboard (`/dashboard`; `/` is the landing page and `/enter` the guest pass
    the stress and displacement fields that `scripts/bone_fea` solved offline. Nothing
    is solved in the browser. The cut-away view fetches `bone-fea.vtu` once and slices
    its tetrahedra in the browser (`frontend/lib/vtu-cut.ts`) to show the stress inside the bone.
-3. The page fetches `sample_bone.nii.gz` (a synthetic test volume, not anatomy) and
-   posts it to `POST /api/simulate`.
-4. The API keeps voxels at or above 150 HU, maps HU to stiffness, meshes the bone into
-   tetrahedra, solves an 800 N compression with SfePy, and returns peak stress, mean
-   stiffness, bone volume and the standing-load stress ratio (peak stress / assumed
-   150 MPa); the page's "All numbers and method" panel shows the first three.
-5. After answering, the API saves the run to TimescaleDB (Tiger Cloud) when
-   `DATABASE_URL` is set; `GET /api/history` reads the runs back.
-
-Open PR [#2](https://github.com/galitau/Rainbone_prod_hackthevalley11/pull/2) takes the
-API address from `NEXT_PUBLIC_API_BASE_URL` (on `main` it is fixed to
-`http://127.0.0.1:8000`) and adds three calls on load: `GET /health` (repeated every
-15 s), `POST /api/explain` with the femur's numbers for the plain-language card, and
-`GET /api/history`. `/api/explain` asks Gemini, then Groq, then falls back to an
-offline template; a checker rejects any text containing a number it was not given.
-The AI fracture risk card under Clinical metrics posts the femur's HFValid case id to
-`POST /api/risk-analysis`, which reads the dataset authors' published ARF0 and MSF from
-`frontend/public/models/hfvalid-risk.json` and words them through the same chain; its checker
-ties every number to the published fact it belongs to.
+3. It checks `GET /health` (and again every 15 s), posts the femur's case id to
+   `POST /api/explain` for the plain-words card and to `POST /api/risk-analysis` for the
+   AI fracture risk card, and reads `GET /api/history`.
+4. The live engine check fetches `sample_bone.nii.gz` (a synthetic test volume, not
+   anatomy) and posts it to `POST /api/simulate`. The API keeps voxels at or above
+   150 HU, maps HU to stiffness, meshes the bone into tetrahedra, solves an 800 N
+   compression with SfePy, and returns peak stress, mean stiffness, bone volume and the
+   standing-load stress ratio. A file it has solved before (same sha256) is answered
+   from memory and marked `X-Simulate-Reused: 1`. **Import scan** posts your own
+   `.nii` or `.nii.gz` the same way.
+5. After a real solve, the API saves the run to the `simulation_runs` hypertable in
+   Tiger Cloud when `DATABASE_URL` is set; `GET /api/history` reads the runs and the
+   hourly continuous aggregate back.
 
 `/physics-simulations` replays a precomputed hydraulic-press loading history of the
 same femur (`models/femur-press/manifest.json` and one VTP per load step). It calls
 no API.
 
-`/bones` (PR #3, opened from Imaging library) calls `GET /api/bones`. The API reads
-the pelvic bone manifest from the private Vultr Object Storage bucket and returns
-15-minute pre-signed URLs, so the browser downloads the meshes straight from the
-bucket without seeing any credentials.
+`/bones` (Imaging library) calls `GET /api/bones`. The API reads the pelvic bone
+manifest from the private Vultr Object Storage bucket and returns 15-minute pre-signed
+URLs, so the browser downloads the meshes straight from the bucket without seeing any
+credentials, and checks each mesh's sha256 before drawing it.
+
+## Live routes
+
+| Route | What it shows | API calls |
+|---|---|---|
+| [`/`](https://rainbone.health/) | Landing page: the HFValid femur in 3D with its solved numbers | none |
+| [`/enter`](https://rainbone.health/enter) | Guest pass for the Dr. Rowan demo seat, or optional Sign in with Google (`/login` redirects here) | none |
+| [`/privacy`](https://rainbone.health/privacy) | What the demo, Google sign-in and simulations store | none |
+| [`/dashboard`](https://rainbone.health/dashboard) | One-screen overview: stress map and cut-away, clinical metrics, AI fracture risk card, plain-words explanation, live engine run and history | `/health`, `/api/explain`, `/api/risk-analysis`, `/api/simulate`, `/api/history` |
+| [`/physics-simulations`](https://rainbone.health/physics-simulations) | Hydraulic-press replay of the same femur, with a printable missing region | none |
+| [`/bones`](https://rainbone.health/bones) | Imaging library: CTPelvic1K pelvic bone meshes from Vultr Object Storage | `/api/bones`, then the bucket |
+| [`/lesion-progression`](https://rainbone.health/lesion-progression) | Baseline-to-follow-up lesion annotation over eight cached 3D frames (illustrative) | `/api/progression/*` |
+| [`/datasets`](https://rainbone.health/datasets) | Secure datasets: where each dataset comes from, where it is kept, what happens to an imported scan | `/health`, `/api/bones`, `/api/history` |
+| [`/preferences`](https://rainbone.health/preferences) | Light, Dark, High contrast or System theme, text size and motion, saved in this browser only | none |
+
+## API endpoints
+
+| Method and path | What it does |
+|---|---|
+| `GET /health` | Liveness: `{"status": "ok", "service": "rainbowbone-fea"}` |
+| `POST /api/simulate` | Multipart `file`, one `.nii` or `.nii.gz` of at most 512 MiB. SfePy solve under 800 N; one solve at a time; repeat uploads answered from memory; saved to `simulation_runs` |
+| `POST /api/explain` | Plain-words explanation of simulation numbers, or of `case_id` `Pat001` read from `clinical/`. AI layer |
+| `POST /api/risk-analysis` | AI-worded fracture risk analysis of one HFValid subject (`case_id`, optional `fe`) from the published table in `clinical/`. AI layer |
+| `GET /api/history?limit=&source_filename=` | Latest `simulation_runs` rows and hourly buckets from the continuous aggregate |
+| `GET /api/ai-log?limit=` | Latest `ai_analyses` rows: provider, model, latency, grounding store, fallbacks and hashes, without the text |
+| `GET /api/bones` | CTPelvic1K manifest from the bucket with 15-minute pre-signed URLs |
+| `GET /api/progression/coordinates` | Baseline and follow-up annotation points for `/lesion-progression` |
+| `GET` / `HEAD /api/progression/frames/{0-7}.vtp` | The cached lesion-progression surface frames |
+
+Request and response fields, the checker rules and the tests are in
+[`backend/README.md`](backend/README.md).
 
 ## Repository layout
 
 | Path | What it holds |
 |---|---|
-| `package.json` (root) | Shortcuts only: `npm run setup`, `npm run dev`, `npm run build` and `npm start` run the same scripts inside `frontend/` |
-| `frontend/app/` | Next.js App Router pages: `/` (landing), `/enter` (guest pass; `/login` redirects there), `/dashboard`, `/physics-simulations` and `/bones` |
-| `frontend/components/` | Dashboard, `BoneViewer.tsx` (femur stress map and cut-away), `physics-simulations.tsx` and `press-viewer.tsx` (press replay), `landing/` (the landing hero, which renders the same femur mesh with vtk.js, and the guest pass) |
-| `frontend/lib/` | Colour ramp, tetrahedral slicing, press model types, demo data |
-| `frontend/public/models/` | Precomputed femur FEA (`hfvalid-femur`), press steps (`femur-press`) and the HFValid fracture risk table (`hfvalid-risk.json`) |
-| `backend/` | FastAPI app: `/api/simulate`, `/api/explain`, `/api/risk-analysis`, `/api/history`, `/health`. Details in [`backend/README.md`](backend/README.md) |
+| `package.json` (root) | Shortcuts only: `npm run setup`, `npm run dev`, `npm run build`, `npm start` and `npm run lint` run the same scripts inside `frontend/` |
+| `frontend/app/` | Next.js App Router pages: `/` (landing), `/enter` (guest pass; `/login` redirects there), `/privacy`, `/dashboard`, `/physics-simulations`, `/bones`, `/lesion-progression`, `/datasets` and `/preferences` |
+| `frontend/components/` | Dashboard, `BoneViewer.tsx` (femur stress map and cut-away), `risk-analysis.tsx` and `plain-explanation.tsx` (AI cards), `CloudBones.tsx` (imaging library), `physics-simulations.tsx` and `press-viewer.tsx` (press replay), `secure-datasets.tsx`, `landing/` |
+| `frontend/lib/` | API client, colour ramp, tetrahedral slicing, model numbers, preferences |
+| `frontend/public/models/` | Precomputed femur FEA (`hfvalid-femur`), press steps (`femur-press`), printable reconstruction (`femur-reconstruction`) and the HFValid fracture risk table (`hfvalid-risk.json`), with sha256 pins |
+| `backend/` | FastAPI app (`main.py`, `routes_*.py`), services (`services/`: solver, AI layer, storage, history) and tests. Details in [`backend/README.md`](backend/README.md) |
+| `backend/migrations/` | TimescaleDB schema: `001_simulation_runs.sql` (hypertable and hourly continuous aggregate), `002_ai_analyses.sql` (AI audit log) |
 | `scripts/bone_fea/` | Offline pipeline that builds `frontend/public/models/` from HFValid with 3D Slicer, TetGen and SfePy. Details in [`scripts/bone_fea/README.md`](scripts/bone_fea/README.md) |
+| `scripts/vultr_pipeline/` | CTPelvic1K to TotalSegmentator to meshes in Vultr Object Storage (`pipeline.py`), and the `clinical/` upload (`publish_clinical.py`). Details in [`scripts/vultr_pipeline/README.md`](scripts/vultr_pipeline/README.md) |
 
 ## Run locally
 
@@ -142,7 +319,8 @@ From the repository root, `npm run setup` (once) and then `npm run dev` do the s
 After pulling the commit that moved the app into `frontend/`, run `npm ci` inside `frontend/`
 once. The old `node_modules/` and `.next/` at the root can be deleted.
 
-Open <http://localhost:3000>. By default the API allows `http://localhost:3000`,
+Open <http://localhost:3000>. The page calls the API at `NEXT_PUBLIC_API_BASE_URL`
+(default `http://127.0.0.1:8000`). By default the API allows `http://localhost:3000`,
 `https://rainbone.health` and `https://www.rainbone.health` (set `CORS_ALLOW_ORIGINS` to
 change the list), so use `localhost`, not `127.0.0.1`, or the browser blocks the API calls.
 
@@ -167,15 +345,28 @@ python -m pip install -r requirements.txt
 uvicorn main:app --reload
 ```
 
-The API listens on `http://127.0.0.1:8000`, where the dashboard sends the sample scan.
+The API listens on `http://127.0.0.1:8000`, where the dashboard sends its calls.
 Run it from a full checkout: it imports the solver from `scripts/bone_fea/`.
 
-No keys are needed to start. Without them, `/api/explain` answers with the offline
-template, and without `DATABASE_URL` nothing is saved and `/api/history` answers 503.
+No keys are needed to start. Without them, both AI endpoints answer with the offline
+template from the bundled copies of the facts, nothing is saved, `/api/history` and
+`/api/ai-log` answer 503, and `/bones` and `/lesion-progression` have nothing to load.
 To turn those on, copy `backend/.env.example` to `backend/.env`
-(`Copy-Item backend\.env.example backend\.env` in PowerShell) and fill in
-`GEMINI_API_KEY`, `GROQ_API_KEY` and `DATABASE_URL`; then apply the history schema once
-with `python -m services.history migrate` from `backend/`. Never commit `.env` files.
+(`Copy-Item backend\.env.example backend\.env` in PowerShell) and fill in what you need.
+Never commit `.env` files. The variables, by name:
+
+| Variables | Used for |
+|---|---|
+| `GEMINI_API_KEY`, `GEMINI_API_KEYS`, `GEMINI_MODEL`, `GROQ_API_KEY`, `GROQ_MODEL`, `AI_CHAIN`, `AI_OFFLINE`, `AI_ANSWER_STORE` | The AI provider chain and the saved Gemini answers |
+| `DATABASE_URL` | Tiger Cloud (TimescaleDB): simulation history and the AI audit log |
+| `VULTR_S3_ENDPOINT`, `VULTR_S3_ACCESS_KEY`, `VULTR_S3_SECRET_KEY`, `VULTR_S3_BUCKET` | Vultr Object Storage: `clinical/` grounding and `/api/bones` |
+| `VULTR_ENDPOINT_URL`, `VULTR_BUCKET_PATH`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | The lesion-progression objects (each falls back to its `VULTR_S3_*` counterpart) |
+| `CORS_ALLOW_ORIGINS`, `CORS_ALLOW_ORIGIN_REGEX` | Browser origins allowed to call the API |
+| `FSLDIR` | Optional FSL bone segmentation |
+| `NEXT_PUBLIC_API_BASE_URL`, `API_PROXY_TARGET`, `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | Front end (`frontend/.env.example`): where the browser sends API calls, where Vercel forwards `/api/*` and `/health`, and the optional Google sign-in client |
+
+With `DATABASE_URL` set, apply the schema once with `python -m services.history migrate`
+from `backend/` (it runs every file in `backend/migrations/` in order).
 [`backend/README.md`](backend/README.md) covers every variable, the tests and the
 optional FSL bone segmentation.
 
@@ -183,31 +374,73 @@ optional FSL bone segmentation.
 
 - **Front end:** Vercel builds the Next.js app in `frontend/`. With the Vercel CLI, run
   `vercel deploy --prod` from inside `frontend/`. A Git-linked Vercel project needs its
-  Root Directory set to `frontend`. `NEXT_PUBLIC_API_BASE_URL` points the browser at the
-  API and is fixed at build time.
+  Root Directory set to `frontend`. Production points `API_PROXY_TARGET` at the API and
+  `NEXT_PUBLIC_API_BASE_URL` at the site itself, so API calls stay same-origin;
+  `NEXT_PUBLIC_API_BASE_URL` is fixed at build time.
+  `NEXT_PUBLIC_GOOGLE_CLIENT_ID` (optional, also fixed at build time) turns on "Sign in with
+  Google" on `/enter`; list the site's origins as Authorized JavaScript origins on that client.
 - **Back end:** any Linux host with Python 3.12. Clone the whole repository (the API imports
   the solver from `scripts/bone_fea/`), install `backend/requirements.txt`, and run
   `uvicorn main:app` from `backend/` behind an HTTPS proxy. Production runs on Vultr Compute
   with Caddy.
+- **Data:** `scripts/vultr_pipeline/pipeline.py` uploads the CTPelvic1K meshes under
+  `ctpelvic1k/` and `scripts/vultr_pipeline/publish_clinical.py` uploads `clinical/`;
+  `backend/scripts/materialize_progression.py` uploads the cached lesion frames.
 
 ## Data and credits
 
-- **HFValid** (femur CT and segmentation, case Pat001): Aldieri, La Mattina, Szyszko,
-  Baruffaldi, Viceconti (2025). *HFValid collection: Hip-Fracture validation
+| Dataset or tool | Used for | Licence |
+|---|---|---|
+| HFValid collection, University of Bologna | Femur CT and segmentation of Pat001; the published ARF0, MSF and follow-up of all 101 women | CC BY 4.0 |
+| CTPelvic1K, sub-dataset 6 (CLINIC) | Pelvic CT for the imaging library | CC BY 4.0 |
+| TotalSegmentator 2.18.0 | Bone masks and meshes of three CTPelvic1K cases | Apache-2.0 |
+| van den Kroonenberg et al. 1995 | Sideways-fall impact forces, 2.90–4.26 kN | Published figures, cited |
+
+- **HFValid** (femur CT and segmentation, case Pat001; ARF0, MSF and follow-up of every
+  subject): Aldieri, La Mattina, Szyszko, Baruffaldi, Viceconti (2025). *HFValid
   collection*. University of Bologna.
   [DOI 10.6092/unibo/amsacta/8431](https://doi.org/10.6092/unibo/amsacta/8431).
   [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Changes: Slicer
   import and export, surface reduction, tetrahedral meshing, a new illustrative FEA
-  and browser visualisation.
-- **CTPelvic1K** (pelvic CT, PR #3): Liu P. et al. Deep Learning to Segment Pelvic
+  and browser visualisation; the ARF0 and MSF table is extracted from the dataset's
+  published metadata (`scripts/bone_fea/build_risk_table.py`). The follow-up records
+  whether a subject had a fracture, not where.
+- **CTPelvic1K** (pelvic CT): Liu P. et al. Deep Learning to Segment Pelvic
   Bones: Large-scale CT Datasets and Baseline Models. IJCARS (2021). Zenodo record
   [4588403](https://zenodo.org/records/4588403),
   [DOI 10.5281/zenodo.4588403](https://doi.org/10.5281/zenodo.4588403).
   [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). The masks and meshes are
   derived from the CT by automatic segmentation.
-- **TotalSegmentator** 2.18.0 (PR #3 pipeline): Wasserthal J. et al. Radiology:
+- **TotalSegmentator** 2.18.0: Wasserthal J. et al. Radiology:
   Artificial Intelligence (2023),
   [DOI 10.1148/ryai.230024](https://doi.org/10.1148/ryai.230024). Apache-2.0.
+- **Sideways-fall forces:** van den Kroonenberg A.J. et al. (1995),
+  [PubMed 8618384](https://pubmed.ncbi.nlm.nih.gov/8618384/).
+
+## Limitations
+
+- **A research prototype, not a medical device.** It gives no forecast and no
+  diagnosis, and nothing in it has been validated for clinical use.
+- **The fall numbers are published, not computed from a scan.** ARF0 and MSF are the
+  HFValid authors' results for one case, Pat001. Importing a CT runs our standing-load
+  solve; it does not produce an ARF0 or an MSF.
+- **Our FEA is illustrative.** One uniform, uncalibrated Young's modulus (10 GPa,
+  ν 0.3), a clamped distal end and 800 N on the femoral head: a standing load, not a
+  fall. The 11 % stress ratio divides peak stress by an assumed 150 MPa strength and is
+  not a fracture probability. The press replay's damage model is not calibrated either.
+- **A small cohort.** The ranks compare one woman with 101, of whom 4 had a fracture
+  during the follow-up.
+- **The AI words facts; it does not judge them.** The checker catches wrong numbers and
+  blocked wording with rules, not by understanding the text, and when the model quotas
+  run out the card falls back to Groq or to the template.
+- **Lesion progression is a visualization demo.** Its intermediate frames and metrics
+  are illustrative placeholders, not measured progression.
+- **No server accounts.** The clinician in the header is a demo profile; Google sign-in,
+  when it is on, keeps the name, email and photo in the browser only. `GET /api/history`
+  and `GET /api/ai-log` are readable by anyone. History stores the file name exactly as
+  sent, so name files without patient details.
+- **One solve at a time,** every in-memory cache belongs to one API process, and the
+  saved-answer file assumes a single server process.
 
 ## Team
 

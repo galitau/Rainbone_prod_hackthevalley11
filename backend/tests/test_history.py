@@ -1,6 +1,6 @@
 """Simulation history without a database: a fake connection stands in for psycopg.
 
-Run from backend/:  python -m unittest discover -s tests -v
+Run from backend/:  python -m unittest discover -s tests -t .
 """
 from __future__ import annotations
 
