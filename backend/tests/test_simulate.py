@@ -25,7 +25,8 @@ sys.path.insert(0, str(BACKEND))
 from fastapi.testclient import TestClient  # noqa: E402
 
 from main import SimulationResponse, app  # noqa: E402
-from services.fea_solver import MAX_FE_VOXELS, _load_nifti, analyze_bone_volume  # noqa: E402
+from services.fea_solver import (MAX_FE_VOXELS, _load_nifti, analyze_bone_volume,  # noqa: E402
+                                 bone_weighted_percentile)
 
 REPO = BACKEND.parent
 SAMPLE = REPO / "public" / "sample_bone.nii.gz"
@@ -103,14 +104,15 @@ class SimulateEndpointTests(unittest.TestCase):
                      "fracture_risk_index_percent", "load_newtons"):
             self.assertIsInstance(body[name], float, name)
             self.assertTrue(math.isfinite(body[name]), name)
-        self.assertGreater(body["max_von_mises_stress_mpa"], 0)
-        self.assertTrue(10 <= body["average_youngs_modulus_gpa"] <= 25)
-        # 3048 voxels of 1 mm3 at 750 HU, solved without coarsening.
+        # The documented sample response (backend/README.md). 3048 voxels of 1 mm3
+        # at 750 HU, solved without coarsening; a direct solver may differ in the
+        # last bits between machines, so stresses get a 0.01 MPa tolerance.
+        self.assertAlmostEqual(body["max_von_mises_stress_mpa"], 17.71, delta=0.011)
+        self.assertAlmostEqual(body["average_youngs_modulus_gpa"], 22.79, delta=0.011)
         self.assertEqual(body["bone_volume_cm3"], 3.05)
-        self.assertTrue(0 <= body["fracture_risk_index_percent"] <= 100)
+        self.assertAlmostEqual(body["fracture_risk_index_percent"], 11.81, delta=0.011)
         self.assertEqual(body["load_newtons"], 800)
-        self.assertGreater(body["mesh_vertices"], 0)
-        self.assertGreater(body["mesh_faces"], 0)
+        self.assertEqual((body["mesh_vertices"], body["mesh_faces"]), (1610, 3216))
         self.assertEqual(body["source_filename"], "sample_bone.nii.gz")
         self.assertLess(seconds, TIME_LIMIT_S)
         self.assertEqual(os.listdir("."), [], "the API must not write SfePy output files")
@@ -177,10 +179,39 @@ class SimulateEndpointTests(unittest.TestCase):
         self.assertLess(seconds, TIME_LIMIT_S)
         _, details = analyze_bone_volume(hu.astype(np.float32), np.asarray(spacing_mm))
         self.assertLessEqual(details["fe_voxels"], MAX_FE_VOXELS)
+        self.assertEqual(details["coarsening_factors"], [6, 6, 2])
         np.testing.assert_allclose(details["reaction_newtons"], [0, 0, 800], atol=800 * 1e-6)
-        # Coarsening keeps the meshed volume within 2% of the segmented volume.
-        self.assertAlmostEqual(response.json()["bone_volume_cm3"] / details["thresholded_component_volume_cm3"],
-                               1.0, delta=0.02)
+        # The response reports the segmented volume, and the coarse mesh carries all of it.
+        self.assertEqual(response.json()["bone_volume_cm3"], round(details["thresholded_component_volume_cm3"], 2))
+        self.assertAlmostEqual(details["fe_bone_volume_cm3"], details["thresholded_component_volume_cm3"], places=6)
+
+    def test_coarsening_keeps_a_thin_hollow_wall(self):
+        # A tube 400 mm long, 13 mm outer radius, 2 mm wall, in 0.703 x 0.703 x 2 mm
+        # voxels at 1200 HU: thin cortical bone. A block that is at least half bone
+        # broke this wall into pieces and solved 10.68 of its 56.95 cm3.
+        spacing_mm = np.array([0.703125, 0.703125, 2.0])
+        x = (np.arange(64) - 31.5) * spacing_mm[0]
+        radius = np.hypot(*np.meshgrid(x, x, indexing="ij"))
+        wall = (radius <= 13) & (radius > 11)
+        hu = np.full((64, 64, 200), -1000.0, dtype=np.float32)
+        hu[wall, :] = 1200.0
+        result, details = analyze_bone_volume(hu, spacing_mm)
+        self.assertGreater(details["coarsening_factors"], [1, 1, 1])
+        self.assertEqual(result.bone_volume_cm3, round(details["thresholded_component_volume_cm3"], 2))
+        self.assertAlmostEqual(details["fe_bone_volume_cm3"], details["thresholded_component_volume_cm3"], places=6)
+        np.testing.assert_allclose(details["reaction_newtons"], [0, 0, 800], atol=800 * 1e-6)
+        # Away from the ends the wall is in uniform compression at load / wall area.
+        nominal_mpa = 800.0 / (wall.sum() * spacing_mm[0] * spacing_mm[1])
+        self.assertAlmostEqual(result.max_von_mises_stress_mpa / nominal_mpa, 1.0, delta=0.1)
+
+    def test_bone_weighted_percentile_matches_repeated_values(self):
+        rng = np.random.default_rng(3)
+        for size in (1, 2, 7, 500):
+            values = rng.normal(size=size)
+            weights = rng.integers(1, 9, size=size)
+            for q in (0.0, 50.0, 99.5, 100.0):
+                self.assertAlmostEqual(bone_weighted_percentile(values, weights, q),
+                                       float(np.percentile(np.repeat(values, weights), q)), places=12)
 
 
 if __name__ == "__main__":

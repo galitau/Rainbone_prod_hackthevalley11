@@ -115,11 +115,13 @@ def coarsen_bone(
     mask: np.ndarray,
     modulus_gpa: np.ndarray,
     factors: np.ndarray,
-) -> tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Merge blocks of factors[0] x factors[1] x factors[2] voxels.
 
-    A block is bone when at least half of its voxels are bone. Its modulus is
-    the mean modulus of those bone voxels.
+    A block is in the mesh when it holds any bone voxel, so a thin wall stays
+    connected: blocks of face-connected voxels are face-connected. Returns the
+    block mask, the mean modulus of each block's bone voxels and each block's
+    bone voxel count.
     """
     fx, fy, fz = (int(f) for f in factors)
     padding = [(0, -size % f) for size, f in zip(mask.shape, (fx, fy, fz))]
@@ -127,37 +129,47 @@ def coarsen_bone(
 
     def block_sum(values: np.ndarray) -> np.ndarray:
         padded = np.pad(values, padding)
-        return padded.reshape(shape[0], fx, shape[1], fy, shape[2], fz).sum(axis=(1, 3, 5))
+        return padded.reshape(shape[0], fx, shape[1], fy, shape[2], fz).sum(axis=(1, 3, 5), dtype=np.float64)
 
-    bone_count = block_sum(mask.astype(np.float64))
-    modulus_sum = block_sum(np.where(mask, modulus_gpa, 0.0))
+    bone_count = block_sum(mask.astype(np.uint8)).astype(np.int64)
+    modulus_sum = block_sum(np.where(mask, modulus_gpa, np.float32(0.0)))
     coarse_modulus = np.divide(modulus_sum, bone_count, out=np.zeros(shape), where=bone_count > 0)
-    return bone_count >= 0.5 * fx * fy * fz, coarse_modulus
+    return bone_count > 0, coarse_modulus, bone_count
 
 
 def _fe_grid(
     bone: np.ndarray,
     modulus_gpa: np.ndarray,
     spacing_mm: np.ndarray,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Return the FE voxel mask, its moduli and the per-axis coarsening factors.
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Return the FE voxel mask, its moduli, its bone voxel counts and the per-axis coarsening factors.
 
     Above MAX_FE_VOXELS, voxels are merged into blocks that are as close to
-    cubic as the scan spacing allows, growing the block edge until the
-    largest remaining component fits under the cap.
+    cubic as the scan spacing allows, growing the block edge until the mesh
+    fits under the cap.
     """
     factors = np.ones(3, dtype=int)
     count = int(bone.sum())
     if count <= MAX_FE_VOXELS:
-        return bone, modulus_gpa, factors
+        return bone, modulus_gpa, bone.astype(np.int64), factors
     edge_mm = float((count * np.prod(spacing_mm) / MAX_FE_VOXELS) ** (1.0 / 3.0))
     while True:
         factors = np.maximum(1, np.rint(edge_mm / spacing_mm)).astype(int)
-        mask, mask_modulus = coarsen_bone(bone, modulus_gpa, factors)
-        mask = largest_component(mask)
+        mask, mask_modulus, bone_count = coarsen_bone(bone, modulus_gpa, factors)
         if int(mask.sum()) <= MAX_FE_VOXELS:
-            return mask, mask_modulus, factors
+            return mask, mask_modulus, bone_count, factors
         edge_mm *= 1.1
+
+
+def bone_weighted_percentile(values: np.ndarray, bone_voxels: np.ndarray, q: float) -> float:
+    """np.percentile(np.repeat(values, bone_voxels), q), without building the repeated array."""
+    order = np.argsort(values, kind="stable")
+    ends = np.cumsum(bone_voxels[order])  # copies of the i-th smallest value fill [ends[i-1], ends[i])
+    last = int(ends[-1]) - 1
+    position = q / 100.0 * last
+    below = int(np.floor(position))
+    low, high = values[order][np.searchsorted(ends, [below, min(below + 1, last)], side="right")]
+    return float(low + (position - below) * (high - low))
 
 
 def analyze_bone_volume(
@@ -173,10 +185,11 @@ def analyze_bone_volume(
     # Work on the bounding box of the bone so large scans stay cheap.
     box = ndi.find_objects(bone.astype(np.uint8))[0]
     bone = bone[box]
-    modulus_gpa = np.zeros(bone.shape)
+    modulus_gpa = np.zeros(bone.shape, dtype=np.float32)
     modulus_gpa[bone] = hu_to_apparent_density_and_modulus(volume[box], bone)[1]
+    bone_volume_cm3 = float(bone.sum() * np.prod(spacing_mm) / 1000.0)
 
-    mask, mask_modulus, factors = _fe_grid(bone, modulus_gpa, spacing_mm)
+    mask, mask_modulus, bone_count, factors = _fe_grid(bone, modulus_gpa, spacing_mm)
     voxel_mm = np.asarray(spacing_mm, dtype=float) * factors
     layers = np.flatnonzero(mask.any(axis=(0, 1)))
     if int(mask.sum()) < 8 or layers.size == 0 or layers[-1] - layers[0] + 1 < 4:
@@ -187,8 +200,12 @@ def analyze_bone_volume(
 
     try:
         points, tets = bone_fea.tetrahedralize(mask, np.diag([*voxel_mm, 1.0]))
-        voxel_index = np.rint(points[tets].mean(axis=1) / voxel_mm).astype(int)
-        element_modulus_mpa = 1000.0 * mask_modulus[tuple(voxel_index.T)]
+        voxel_index = tuple(np.rint(points[tets].mean(axis=1) / voxel_mm).astype(int).T)
+        # A block that is only part bone gets its bone's modulus times its bone
+        # fraction, so the mesh keeps the stiffness of the bone it holds.
+        element_bone_voxels = bone_count[voxel_index]
+        element_fraction = element_bone_voxels / float(np.prod(factors))
+        element_modulus_mpa = 1000.0 * mask_modulus[voxel_index] * element_fraction
         band_mm = BAND_VOXELS * voxel_mm[2]
         solved = bone_fea.solve_elasticity(
             points,
@@ -204,17 +221,18 @@ def analyze_bone_volume(
         raise FEASolverError(f"Finite-element solve failed: {exc}") from exc
 
     metrics = solved["metrics"]
-    von_mises = solved["von_mises"]
-    # A percentile, not the single-element peak, so a few corner elements of
-    # the voxel mesh do not set the value. All tetrahedra have equal volume
-    # (six per voxel), so the unweighted percentile is also volume-weighted.
-    max_stress = float(np.percentile(von_mises, STRESS_PERCENTILE))
+    # Stress in the bone itself: a block that is part bone carries its load in
+    # that part, so its stress is divided by its bone fraction (1 without
+    # coarsening). A percentile over the bone volume, not the single-element
+    # peak, so a few corner elements of the voxel mesh do not set the value.
+    von_mises = solved["von_mises"] / element_fraction
+    max_stress = bone_weighted_percentile(von_mises, element_bone_voxels, STRESS_PERCENTILE)
     fracture_risk = float(np.clip((max_stress / ASSUMED_STRENGTH_MPA) * 100.0, 0.0, 100.0))
     surface = solved["faces"]
     result = FEAResult(
         max_von_mises_stress_mpa=round(max_stress, 2),
-        average_youngs_modulus_gpa=round(metrics["youngs_modulus_mpa"] / 1000.0, 2),
-        bone_volume_cm3=round(metrics["volume_cm3"], 2),
+        average_youngs_modulus_gpa=round(float(modulus_gpa[bone].mean(dtype=np.float64)), 2),
+        bone_volume_cm3=round(bone_volume_cm3, 2),
         fracture_risk_index_percent=round(fracture_risk, 2),
         load_newtons=LOAD_NEWTONS,
         mesh_vertices=int(np.unique(surface).size),
@@ -228,13 +246,16 @@ def analyze_bone_volume(
         "coarsening_factors": [int(v) for v in factors],
         "effective_voxel_mm": [float(v) for v in voxel_mm],
         "thresholded_component_voxels": int(bone.sum()),
-        "thresholded_component_volume_cm3": float(bone.sum() * np.prod(spacing_mm) / 1000.0),
+        "thresholded_component_volume_cm3": bone_volume_cm3,
         "fe_voxels": int(mask.sum()),
+        "fe_mesh_volume_cm3": metrics["volume_cm3"],
+        # Block volume times bone fraction, summed: the bone volume the mesh carries.
+        "fe_bone_volume_cm3": float(element_fraction.sum() * np.prod(voxel_mm) / 6.0 / 1000.0),
         "band_mm": float(band_mm),
         "max_element_von_mises_mpa": float(von_mises.max()),
         "seconds": time.perf_counter() - started,
         **{key: metrics[key] for key in (
-            "nodes", "elements", "loaded_area_mm2", "volume_cm3", "max_displacement_mm",
+            "nodes", "elements", "loaded_area_mm2", "max_displacement_mm",
             "min_youngs_modulus_mpa", "max_youngs_modulus_mpa", "reaction_newtons",
             "relative_free_residual", "relative_force_balance_error",
         )},

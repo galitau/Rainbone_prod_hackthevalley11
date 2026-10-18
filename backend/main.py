@@ -32,12 +32,12 @@ app.include_router(history_router)
 
 class SimulationResponse(BaseModel):
     max_von_mises_stress_mpa: float = Field(
-        description="99.5th percentile of element Von Mises stress in MPa from the SfePy solve."
+        description="99.5th percentile over the bone volume of element Von Mises stress in MPa from the SfePy solve."
     )
     average_youngs_modulus_gpa: float = Field(
-        description="Volume-weighted mean element Young's modulus in GPa from the HU mapping."
+        description="Mean Young's modulus of the bone voxels in GPa from the HU mapping."
     )
-    bone_volume_cm3: float = Field(description="Finite-element mesh volume in cm³.")
+    bone_volume_cm3: float = Field(description="Segmented bone volume in cm³.")
     fracture_risk_index_percent: float = Field(
         ge=0,
         le=100,

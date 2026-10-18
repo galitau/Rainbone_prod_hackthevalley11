@@ -54,15 +54,17 @@ finite-element solve with SfePy. It uses the same `tetrahedralize` and
 4. Coarsening: if the component has more than 8,000 voxels, voxels are merged
    into blocks of whole voxels per axis, chosen to be as close to cubic as
    the scan spacing allows (for 0.703 × 0.703 × 2 mm voxels, 6 × 6 × 2 blocks
-   of 4.22 × 4.22 × 4 mm). The block edge grows until the largest remaining
-   component has 8,000 voxels or fewer. A block is bone when at least half of
-   its voxels are bone; its modulus is the mean of those voxels. The
+   of 4.22 × 4.22 × 4 mm). The block edge grows until the mesh has 8,000
+   blocks or fewer. A block is meshed when it holds any bone voxel, so a thin
+   cortical wall stays one connected wall. Its modulus is the mean modulus
+   of its bone voxels times its bone fraction (bone voxels / block voxels),
+   so the coarse mesh keeps the stiffness of the bone it holds. The
    effective voxel size, node and element counts, support reaction and solve
    time are logged at INFO by the `services.fea_solver` logger. uvicorn's
    default logging setup does not print INFO from application loggers.
-5. Mesh: each voxel is split into six equal-volume 4-node tetrahedra in the
-   volume's own axes (array axes 0, 1, 2 as x, y, z, in mm). Each element
-   takes the modulus of its voxel.
+5. Mesh: each voxel (or block) is split into six equal-volume 4-node
+   tetrahedra in the volume's own axes (array axes 0, 1, 2 as x, y, z, in
+   mm). Each element takes the modulus of its voxel or block.
 6. Boundary conditions: nodes within 1.5 voxel heights of the minimum Z
    (the two lowest node layers) are fixed in all directions. A uniform −Z
    traction on the exterior faces within 1.5 voxel heights of the maximum Z
@@ -80,9 +82,9 @@ empty upload returns 400.
 
 | Field | Definition |
 |---|---|
-| `max_von_mises_stress_mpa` | 99.5th percentile of the element von Mises stresses, not the single-element maximum, so a few corner elements of the voxel mesh do not set the value. |
-| `average_youngs_modulus_gpa` | Volume-weighted mean of the element moduli. |
-| `bone_volume_cm3` | Volume of the finite-element mesh, after component selection and any coarsening. |
+| `max_von_mises_stress_mpa` | 99.5th percentile, over the bone volume, of the element von Mises stresses, not the single-element maximum, so a few corner elements of the voxel mesh do not set the value. With coarsening, a block's stress is divided by its bone fraction: the stress in the bone it holds. |
+| `average_youngs_modulus_gpa` | Mean modulus of the bone voxels in the component. |
+| `bone_volume_cm3` | Volume of the segmented component (bone voxels × voxel volume). Coarsening does not change it. |
 | `fracture_risk_index_percent` | `max_von_mises_stress_mpa` / 150 MPa × 100, clipped to 0–100. The 150 MPa strength is an assumption. This is an illustrative index, not a validated fracture risk. |
 | `load_newtons` | Applied compressive resultant, 800 N. |
 | `mesh_vertices`, `mesh_faces` | Vertices and triangles of the finite-element mesh's exterior surface. |
@@ -100,10 +102,17 @@ empty upload returns 400.
   sample, the 99.5th percentile is 34.36, 17.71 and 12.41 MPa with bands of
   0.5, 1.5 and 2.5 voxel heights; all of its top 0.5% elements lie within two
   band heights of the clamped or loaded end. For the femur-shaped volume
-  below it is 14.01, 13.98 and 12.16 MPa, and none of its top 0.5% elements
-  lie that close to either end.
-- Coarsening changes the geometry. The femur-shaped volume below has a
-  408.83 cm³ component before coarsening and a 408.43 cm³ mesh after it.
+  below it is 12.63, 12.61 and 10.20 MPa, and 17 of the 609 elements at or
+  above the 1.5-band value lie that close to either end.
+- Coarsening smooths the geometry into blocks and averages the bone inside
+  each block; it does not resolve a wall thinner than a block, so the
+  reported stress is an estimate at block scale. The bone volume the mesh
+  carries (block volume × bone fraction, summed) equals the segmented volume:
+  408.83 cm³ for the femur-shaped volume below, in a 537.71 cm³ block mesh.
+  On a 400 mm hollow tube with a 13 mm outer radius and a 2 mm wall
+  (0.703 × 0.703 × 2 mm voxels at 1,200 HU, coarsened 4 × 4 × 1), the
+  reported stress is 5.91 MPa against 5.62 MPa for load / wall area;
+  `tests/test_simulate.py` checks it stays within 10%.
 - No mesh-convergence study has been made. This is not a medical device, and
   no output is a clinical measurement.
 
@@ -135,8 +144,8 @@ connected-component steps. Measured with the FSL packages `fsl-avwutils`
 | `public/sample_bone.nii.gz` | 3,048 | yes | 0.04–0.08 s | under 0.01 s |
 | Femur-shaped volume (see Example response), 256 × 331 × 220 | 413,475 | yes | 1.18–1.27 s | 0.26–0.31 s |
 
-The femur-shaped volume gives the same response either way (13.98 MPa,
-22.35 GPa, 408.43 cm³, index 9.32).
+The femur-shaped volume gives the same response either way (12.61 MPa,
+22.35 GPa, 408.83 cm³, index 8.4).
 
 FSL is optional and is not in `requirements.txt`. It runs on macOS and Linux,
 and on Windows only through WSL. It is free for non-commercial use under its
@@ -197,22 +206,22 @@ From a real run of
 
 That run solved 3,909 nodes and 18,288 tetrahedra without coarsening. The
 support reaction was 800.0000 N along +Z, with a relative force-balance
-error of 1.1e-13. The largest element stress was 38.26 MPa.
+error below 1e-12. The largest element stress was 38.26 MPa.
 
 Measured request times (curl `time_total`) on one development laptop:
 
 | Input | Bone voxels | Coarsening | FE voxels | Time |
 |---|---|---|---|---|
-| `public/sample_bone.nii.gz` | 3,048 | none, 1 mm | 3,048 | 1.90 s first request (includes importing SfePy), 1.34 s after |
-| Solid 40 mm cube (test case) | 64,000 | 2 × 2 × 2, 2 mm | 8,000 | 5.70 s |
-| Femur-shaped volume, 256 × 331 × 220 voxels of 0.703 × 0.703 × 2 mm¹ | 413,475 | 6 × 6 × 2, 4.22 × 4.22 × 4 mm | 5,737 | 1.78 s |
+| `public/sample_bone.nii.gz` | 3,048 | none, 1 mm | 3,048 | 1.81 s first request (includes importing SfePy), 1.30 s after |
+| Solid 40 mm cube (test case) | 64,000 | 2 × 2 × 2, 2 mm | 8,000 | 5.56 s, 5.81 s |
+| Femur-shaped volume, 256 × 331 × 220 voxels of 0.703 × 0.703 × 2 mm¹ | 413,475 | 6 × 6 × 2, 4.22 × 4.22 × 4 mm | 7,553 | 2.42 s, 2.39 s |
 
 ¹ The HFValid Pat001 right-femur labelmap already in this repository
 (`public/models/hfvalid-femur/bone.seg.nrrd`; source and CC BY 4.0
 attribution in `scripts/bone_fea/README.md`), with every femur voxel set to
 700 HU and the rest to −1000 HU. These are not the scan's real HU values, so
-the modulus is uniform. Its response: 13.98 MPa, 22.35 GPa, 408.43 cm³,
-index 9.32. `tests/test_simulate.py` builds the same volume and checks it
+the modulus is uniform. Its response: 12.61 MPa, 22.35 GPa, 408.83 cm³,
+index 8.4. `tests/test_simulate.py` builds the same volume and checks it
 answers in under 20 s.
 
 ## Plain-language explanation
