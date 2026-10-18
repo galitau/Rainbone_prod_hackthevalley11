@@ -1,11 +1,19 @@
 # Rainbone
 
-**A stress test for bones.**
+**A stress test for bones, explained by AI.**
+
+Rainbone combines CT-derived 3D models, physics simulations and AI to explore how bone
+vulnerability can be made visible and understandable early enough to support prevention.
 
 101 women had their thighbones CT-scanned. Four had a recorded fracture during follow-up.
 Rainbone shows, in 3D and in colour, where a real femur takes the most strain under
 load. Then Gemini explains in plain words, for the care team, where she stands among
 those 101 women. Try it: <https://rainbone.health>
+
+**The AI, in one line:** code computes and Gemini only puts the results into words. Every
+number it writes is checked against the data before it's shown, its facts are read from
+Vultr Object Storage with a verified sha256, and every answer a model writes is logged in Tiger Cloud.
+See [The AI layer](#the-ai-layer).
 
 ## What it does
 
