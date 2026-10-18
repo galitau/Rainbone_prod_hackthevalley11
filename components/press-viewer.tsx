@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Maximize2, RotateCcw } from "lucide-react";
+import { Maximize2, Minimize2, Pause, Play, RotateCcw } from "lucide-react";
 import type vtkPolyData from "@kitware/vtk.js/Common/DataModel/PolyData";
 import { PRESS_PATH, type PressField, type PressModel } from "@/lib/press-model";
 
@@ -30,8 +30,9 @@ function updateDisplayNormals(data: vtkPolyData) {
   array.modified();
 }
 
-export function PressViewer({ model, frameIndex, field, scale, edges, onReady }: {
-  model: PressModel; frameIndex: number; field: PressField; scale: number; edges: boolean; onReady: (ready: boolean) => void;
+export function PressViewer({ model, frameIndex, field, scale, edges, playing, onTogglePlayback, onRestart, onReady }: {
+  model: PressModel; frameIndex: number; field: PressField; scale: number; edges: boolean;
+  playing: boolean; onTogglePlayback: () => void; onRestart: () => void; onReady: (ready: boolean) => void;
 }) {
   const section = useRef<HTMLElement>(null);
   const container = useRef<HTMLDivElement>(null);
@@ -40,8 +41,15 @@ export function PressViewer({ model, frameIndex, field, scale, edges, onReady }:
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const onReadyRef = useRef(onReady);
   onReadyRef.current = onReady;
+
+  useEffect(() => {
+    const syncFullscreen = () => setIsFullscreen(document.fullscreenElement === section.current);
+    document.addEventListener("fullscreenchange", syncFullscreen);
+    return () => document.removeEventListener("fullscreenchange", syncFullscreen);
+  }, []);
 
   useEffect(() => {
     let disposed = false;
@@ -210,18 +218,27 @@ export function PressViewer({ model, frameIndex, field, scale, edges, onReady }:
 
   useEffect(() => { if (ready) void controls.current?.update(frameIndex, field, scale, edges); }, [frameIndex, field, scale, edges, ready]);
   const maximum = field === "damage" || field === "failure_index" ? 1 : field === "displacement_mm" ? Math.max(...model.frames.map(f => f.max_displacement_mm)) : model.stress_color_max_mpa;
+  const atEnd = frameIndex === model.frames.length - 1;
+  const canPlay = ready && !loading && !error;
   async function fullscreen() {
     try {
       if (document.fullscreenElement === section.current) await document.exitFullscreen();
       else await section.current?.requestFullscreen();
     } catch { setError("Fullscreen is unavailable. The inline viewer remains interactive."); }
   }
-  return <section ref={section} aria-label="Hydraulic press 3D simulation" className="flex min-w-0 flex-col overflow-hidden rounded-xl border border-line bg-[#05080c] [&:fullscreen]:h-screen">
-    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line bg-panel px-4 py-3">
+  return <section ref={section} aria-label="Hydraulic press 3D simulation" className="flex min-w-0 flex-col overflow-hidden rounded-xl border border-line bg-[#05080c] [&:fullscreen]:h-[100dvh] [&:fullscreen]:rounded-none">
+    <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-line bg-panel px-4 py-3">
       <div><p className="text-sm font-medium">{field === "failure_index" ? "Failure proximity · strain / limit" : "Hydraulic compression rig"}</p><p className="mt-1 font-mono text-[10px] text-muted">HFValid {model.case_id} · FEA step {frameIndex + 1}/{model.frames.length} · {model.elements.toLocaleString()} elements</p></div>
-      <div className="flex gap-2"><button aria-label="Reset press camera" onClick={() => controls.current?.reset()} className="rounded-lg border border-line p-2 text-muted hover:text-ink"><RotateCcw size={15} /></button><button aria-label="Fullscreen press viewer" onClick={fullscreen} className="rounded-lg border border-line p-2 text-muted hover:text-ink"><Maximize2 size={15} /></button></div>
+      <div className="flex flex-wrap gap-2">
+        {isFullscreen && <div role="group" aria-label="Fullscreen playback controls" className="flex gap-2">
+          <button aria-label={playing ? "Pause fullscreen simulation" : atEnd ? "Replay fullscreen simulation" : "Play fullscreen simulation"} disabled={!canPlay && !playing} onClick={onTogglePlayback} className="flex items-center gap-2 rounded-lg bg-cyan px-3 py-2 text-xs font-semibold text-canvas disabled:opacity-40">{playing ? <Pause size={15} /> : <Play size={15} />}{playing ? "Pause" : atEnd ? "Replay" : "Play"}</button>
+          <button aria-label="Restart fullscreen simulation" disabled={!canPlay} onClick={onRestart} className="flex items-center gap-2 rounded-lg border border-line px-3 py-2 text-xs text-muted hover:text-ink disabled:opacity-40"><RotateCcw size={15} />Restart</button>
+        </div>}
+        <button aria-label="Reset press camera" title="Reset camera" onClick={() => controls.current?.reset()} className="rounded-lg border border-line p-2 text-muted hover:text-ink"><RotateCcw size={15} /></button>
+        <button aria-label={isFullscreen ? "Exit fullscreen press viewer" : "Fullscreen press viewer"} onClick={fullscreen} className="rounded-lg border border-line p-2 text-muted hover:text-ink">{isFullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}</button>
+      </div>
     </div>
-    <div className="relative min-h-[400px] flex-1 sm:min-h-[500px]">
+    <div className={`relative flex-1 ${isFullscreen ? "min-h-0" : "min-h-[400px] sm:min-h-[500px]"}`}>
       <div ref={container} role="img" aria-label="Rotatable femur between a hydraulic ram and distal support" className="absolute inset-0 touch-none" />
       <div className="pointer-events-none absolute left-4 top-3 rounded-md bg-panel/80 px-2 py-1 font-mono text-[10px] text-muted">DEFORMATION ×{scale} · VISUAL SCALE</div>
       {field === "failure_index" && <div className="pointer-events-none absolute left-4 top-11 max-w-[240px] rounded-md bg-panel/90 px-2 py-1.5 text-[10px] leading-4"><p className="text-[#f53b2b]">Red: damage-initiation limit reached</p><p className="text-muted">Gray: failure disabled near fixtures</p></div>}
@@ -229,7 +246,7 @@ export function PressViewer({ model, frameIndex, field, scale, edges, onReady }:
       {error && <div role="alert" className="absolute inset-x-4 bottom-12 rounded-lg border border-warning/40 bg-panel p-4 text-sm text-warning"><p>{error}</p><button onClick={() => setAttempt(value => value + 1)} className="mt-2 underline">Retry press viewer</button></div>}
       <p className="pointer-events-none absolute inset-x-3 bottom-3 text-center text-[10px] text-muted">Drag to rotate · Scroll to zoom · Shift + drag to pan</p>
     </div>
-    <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line bg-panel px-4 py-3 text-[10px] text-muted">
+    <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-line bg-panel px-4 py-3 text-[10px] text-muted">
       <p>Precomputed SfePy steps · displacement-controlled test</p>
       {field !== "anatomy" && <div className="w-72 max-w-full">
         <p>{field === "failure_index" ? "Failure proximity · peak principal strain / assumed limit" : field === "stress_mpa" ? "Nodal von Mises stress · MPa" : field === "damage" ? "Damage · 0 intact / 1 fully degraded" : "Displacement magnitude · mm"}</p>
