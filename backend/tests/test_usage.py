@@ -108,7 +108,7 @@ class ResponseUsageTests(FailoverTestCase):
         result = self.ask(KeyMock(gemini=gemini_with_usage(GOOD)))
         self.assertEqual((result.provider, result.served), ("gemini", "live"))
         self.assertEqual(result.usage.model_dump(), {**GEMINI_USAGE, "provider": "gemini", "model": PRIMARY,
-                                                     "source": "live", "served": "live", "new_tokens": 612})
+                                                     "source": "live", "served": "live"})
 
     def test_a_kept_answer_reports_the_tokens_it_was_written_with_and_no_new_ones(self):
         mock = KeyMock(gemini=gemini_with_usage(GOOD))
@@ -117,9 +117,8 @@ class ResponseUsageTests(FailoverTestCase):
         first = asyncio.run(explain(ExplainRequest(**SIM), self.env, transport=transport))
         again = asyncio.run(explain(ExplainRequest(**SIM), self.env, transport=transport))
         self.assertEqual(len(mock.calls), 1)
-        self.assertEqual((first.usage.served, first.usage.new_tokens), ("live", 612))
-        self.assertEqual((again.served, again.usage.served, again.usage.new_tokens, again.usage.total_tokens),
-                         ("cached", "cached", 0, 612))
+        self.assertEqual((first.usage.served, first.usage.total_tokens), ("live", 612))
+        self.assertEqual((again.served, again.usage.served, again.usage.total_tokens), ("cached", "cached", 612))
 
     def test_a_saved_answer_keeps_the_usage_of_the_call_that_wrote_it(self):
         self.ask(KeyMock(gemini=gemini_with_usage(GOOD)))
@@ -127,7 +126,7 @@ class ResponseUsageTests(FailoverTestCase):
         self.assertEqual(entry["usage"], GEMINI_USAGE)
         saved = self.ask(KeyMock(gemini=httpx.Response(429), groq=groq_with_usage(GOOD_GROQ)))
         self.assertEqual((saved.provider, saved.served), ("gemini", "saved"))
-        self.assertEqual((saved.usage.total_tokens, saved.usage.served, saved.usage.new_tokens), (612, "saved", 0))
+        self.assertEqual((saved.usage.total_tokens, saved.usage.served), (612, "saved"))
 
     def test_a_saved_answer_from_an_older_file_has_no_usage(self):
         self.ask(KeyMock(gemini=gemini_with_usage(GOOD)))
@@ -140,8 +139,8 @@ class ResponseUsageTests(FailoverTestCase):
 
     def test_groq_reports_its_own_tokens(self):
         result = self.ask(KeyMock(gemini=httpx.Response(503), groq=groq_with_usage(GOOD_GROQ)))
-        self.assertEqual((result.provider, result.usage.provider, result.usage.total_tokens, result.usage.new_tokens),
-                         ("groq", "groq", 420, 420))
+        self.assertEqual((result.provider, result.usage.provider, result.usage.total_tokens, result.usage.served),
+                         ("groq", "groq", 420, "live"))
 
     def test_the_template_and_a_reply_without_usage_have_none(self):
         template = self.ask(KeyMock(gemini=httpx.Response(503), groq=httpx.Response(503)))
@@ -160,8 +159,8 @@ class ResponseUsageTests(FailoverTestCase):
                                           transport=transport))
         live, kept = run(), run()
         self.assertEqual(len(mock.calls), 1)
-        self.assertEqual((live.usage.total_tokens, live.usage.new_tokens, live.usage.model), (612, 612, PRIMARY))
-        self.assertEqual((kept.served, kept.usage.served, kept.usage.new_tokens), ("cached", "cached", 0))
+        self.assertEqual((live.usage.total_tokens, live.usage.served, live.usage.model), (612, "live", PRIMARY))
+        self.assertEqual((kept.served, kept.usage.served, kept.usage.total_tokens), ("cached", "cached", 612))
 
     def test_the_routes_return_usage(self):
         mock = KeyMock(gemini=gemini_with_usage(GOOD))
@@ -172,7 +171,7 @@ class ResponseUsageTests(FailoverTestCase):
         with umock.patch.object(ex, "build_providers", lambda env, transport=None: original(env, mock.transport())):
             body = TestClient(app).post("/api/explain", json=SIM).json()
         self.assertEqual(body["usage"], {**GEMINI_USAGE, "provider": "gemini", "model": PRIMARY, "source": "live",
-                                         "served": "live", "new_tokens": 612})
+                                         "served": "live"})
 
         risk = KeyMock(gemini=gemini_with_usage(GOOD_RISK))
         app = FastAPI()

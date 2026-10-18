@@ -40,9 +40,10 @@ called for it). An answer whose row was not written is kept for at most
 
 Each model answer carries `usage`: the tokens the provider reported for the call
 that wrote it (Gemini usageMetadata, Groq usage; see services.llm_providers),
-with served and new_tokens saying whether this response spent them (live) or
-reused the answer (cached, saved: 0 new tokens). It is null for the template
-and when the provider reported no usage. Tokens are not written to the AI log.
+with served saying whether this response's model call wrote it (live) or it was
+reused: cached (kept in memory, no model call) or saved (served after the live
+models failed or were skipped, which may have called Gemini). It is null for the
+template and when the provider reported no usage. Tokens are not written to the AI log.
 
 Keys come from the process environment, or from backend/.env when present
 (process environment wins). They are never logged or returned.
@@ -227,10 +228,9 @@ class Usage(BaseModel):
     source: Literal["live"] = Field(default="live", description="The counts are the provider's usage report for "
                                                                 "the live call that wrote the answer.")
     served: Literal["live", "cached", "saved"] = Field(
-        default="live", description="As the response's served: live spent these tokens now; cached and saved "
-                                    "reuse an answer, so no new model call was made.")
-    new_tokens: Optional[int] = Field(default=None, description="Tokens this response spent: total_tokens when "
-                                                                "served live, 0 when reused.")
+        default="live", description="As the response's served: live spent these tokens now; cached reuses a kept "
+                                    "answer with no model call; saved reuses a saved answer after the live models "
+                                    "failed or were skipped (they may have been called).")
 
 
 def usage_for(provider: str, answer: ModelAnswer) -> Optional[Usage]:
@@ -241,13 +241,10 @@ def usage_for(provider: str, answer: ModelAnswer) -> Optional[Usage]:
 
 
 def served_usage(usage: Optional[Usage], served: str) -> Optional[Usage]:
-    """`usage` as seen by a response served `served`: a cached or saved answer made no new model call."""
-    if usage is None:
-        return None
-    new_tokens = usage.total_tokens if served == "live" else 0
-    if usage.served == served and usage.new_tokens == new_tokens:
+    """`usage` as seen by a response served `served`: the counts stay those of the call that wrote the answer."""
+    if usage is None or usage.served == served:
         return usage
-    return usage.model_copy(update={"served": served, "new_tokens": new_tokens})
+    return usage.model_copy(update={"served": served})
 
 
 class ExplainResponse(BaseModel):

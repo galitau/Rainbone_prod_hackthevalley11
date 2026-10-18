@@ -2,8 +2,9 @@ import { formatNumber } from "@/lib/format";
 
 // The token footprint of one AI answer, as POST /api/explain and /api/risk-analysis send it (`usage`): the tokens the
 // provider itself reported for the model call that wrote the answer (Gemini usageMetadata, Groq usage). output_tokens
-// includes Gemini's thinking tokens. served/new_tokens say whether this response made that call (live) or reused the
-// answer (cached, saved: no new call, 0 new tokens). Absent from older APIs; null for the template.
+// includes Gemini's thinking tokens. served says whether this response made that call (live) or reused the answer:
+// cached (no model call) or saved (served after the live models failed or were skipped, so Gemini may have been called
+// and its tokens are not counted here). Absent from older APIs; null for the template.
 export type AiUsage = {
   prompt_tokens: number | null;
   output_tokens: number | null;
@@ -13,7 +14,6 @@ export type AiUsage = {
   model: string;
   source: "live";
   served: "live" | "cached" | "saved";
-  new_tokens: number | null;
 };
 
 export type UsageSource = {
@@ -34,18 +34,27 @@ export const GEMINI_PROMPT_FOOTPRINT = {
   url: "https://cloud.google.com/blog/products/infrastructure/measuring-the-environmental-impact-of-ai-inference",
 } as const;
 
-export const USAGE_WHY = "Why we show this: code computes every number; Gemini only writes the words, so each answer is one short model call, and the count is the provider's own usage report.";
+// The tooltip under a counted answer, naming the model that wrote it.
+export function usageWhy(provider: string): string {
+  const writer = provider === "gemini" ? "Gemini" : "the AI model";
+  return `Why we show this: code computes every number; ${writer} only writes the words, so each answer is one short model call, and the count is the provider's own usage report.`;
+}
 
-export type UsageLine = { text: string; estimate: string | null };
+export type UsageLine = { text: string; estimate: string | null; why: string | null };
 
 const count = (value: number) => formatNumber(value, 0);
 
 // One muted line under an AI answer: the tokens a live answer spent (with Google's per-prompt estimate for a Gemini
 // one), "Reused" for an answer kept or saved earlier, and nothing for the template or when no usage was reported.
+// Only a cached answer is sure to have made no model call: a saved one is served after the live models failed or were
+// skipped, so its line does not claim that.
 export function usageLine({ provider, served, usage }: UsageSource): UsageLine | null {
   if (provider !== "gemini" && provider !== "groq") return null;
-  if (served === "cached" || served === "saved") {
-    return { text: `Reused — no new ${provider === "gemini" ? "Gemini" : "model"} call`, estimate: null };
+  if (served === "cached") {
+    return { text: `Reused — no new ${provider === "gemini" ? "Gemini" : "model"} call`, estimate: null, why: null };
+  }
+  if (served === "saved") {
+    return { text: "Saved answer reused — its tokens were counted when it was written", estimate: null, why: null };
   }
   if (!usage || usage.total_tokens === null || usage.total_tokens === undefined) return null;
   const parts = [
@@ -56,5 +65,5 @@ export function usageLine({ provider, served, usage }: UsageSource): UsageLine |
   const estimate = provider === "gemini"
     ? `est. ≈ ${GEMINI_PROMPT_FOOTPRINT.wh} Wh, ${GEMINI_PROMPT_FOOTPRINT.gco2e} gCO2e`
     : null;
-  return { text, estimate };
+  return { text, estimate, why: usageWhy(provider) };
 }
