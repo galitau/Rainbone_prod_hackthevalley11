@@ -44,13 +44,14 @@ export default function Landing() {
   return (
     <main className="bg-canvas text-ink">
       <EnterShortcut />
-      <section aria-labelledby="hero-title" className="relative overflow-hidden bg-viewport text-white lg:flex lg:h-[100svh] lg:max-h-[1000px] lg:min-h-[680px] lg:flex-col">
+      <section aria-labelledby="hero-title" className="relative overflow-hidden bg-viewport text-white lg:flex lg:min-h-[clamp(680px,100svh,1000px)] lg:flex-col">
         <div aria-hidden className="rb-glow pointer-events-none absolute inset-0" />
         <div aria-hidden className="rb-ct-grid pointer-events-none absolute inset-0" />
         <div aria-hidden className="rb-vignette pointer-events-none absolute inset-0" />
         <div aria-hidden className="spectrum-line rb-draw-x absolute inset-x-0 top-0 h-[2px]" />
 
-        {/* The brand lockup is the header's home link: at headline scale it opens the hero above the eyebrow. */}
+        {/* The brand lockup is the header's home link: at headline scale it opens the hero above the eyebrow.
+            The hero is at least one screen tall (680-1000 px) and grows on a short screen instead of clipping the stats. */}
         <header className="relative z-20 mx-auto flex w-full max-w-[1440px] items-center justify-between gap-3 px-4 pt-4 lg:items-start lg:px-12 lg:pt-6">
           <Link href="/" aria-label="Rainbone home" className={`rounded-xl ${FOCUS_DARK}`}><RainboneLockup /></Link>
           <div className="flex items-center gap-3">
@@ -60,7 +61,7 @@ export default function Landing() {
         </header>
 
         {/* No positioned ancestors here: on desktop the hero frame is absolute to the section. */}
-        <div className="rb-hero-column mx-auto max-w-[1440px] px-4 pb-10 pt-6 lg:flex lg:min-h-0 lg:w-full lg:flex-1 lg:flex-col lg:px-12 lg:pb-0 lg:pt-0">
+        <div className="rb-hero-column mx-auto max-w-[1440px] px-4 pb-10 pt-6 lg:flex lg:w-full lg:flex-1 lg:flex-col lg:px-12 lg:pb-0 lg:pt-0">
           <div className="lg:max-w-[min(760px,calc(52vw-40px))]">
             <p className="rb-rise relative z-10 font-mono text-[11px] uppercase tracking-[0.14em] text-spectrum-cyan lg:text-[12px]">CT scan → finite elements → stress</p>
             <h1 id="hero-title" className="relative z-10 mt-3 font-serif text-[30px] font-semibold leading-[1.02] tracking-[-0.02em] text-white lg:mt-4 lg:text-[clamp(40px,min(4.3vw,7.5vh),70px)] lg:leading-[0.95] lg:tracking-[-0.025em]">
