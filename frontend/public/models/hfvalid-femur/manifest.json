@@ -89,7 +89,7 @@
   "files_sha256": {
     "bone.seg.nrrd": "66dae95940ec6e5002b5037d9e1432291830d8ed2e105add056c96ee1a50599e",
     "slicer-surface.vtp": "5f342bf906efa73d3bb0acafc1cf4f5ea4ccfaa53776cca75e9d27ed5412454b",
-    "fea-surface.vtp": "e0e7e55a56d9fcf46624a435041d8463c3e09273ab6407f320d0e6ffbb8f607b",
-    "bone-fea.vtu": "e012cddb9bb49ac570d9ff405944b0edce244669a7c3c324b3a1d2fd5d90f235"
+    "fea-surface.vtp": "4bb27e38868cb4b082b173d0b49390bb754de61bab5077ccf718a1a09ab8ab4a",
+    "bone-fea.vtu": "640996b0dc4c1d2d4daa211a6bfd9df1843a9b7129860cf7a5cf0de51fb70592"
   }
 }
