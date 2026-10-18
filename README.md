@@ -2,7 +2,7 @@
 
 **A stress test for bones.**
 
-101 women had their thighbones CT-scanned. Within five years, four of them broke.
+101 women had their thighbones CT-scanned. Four had a recorded fracture during follow-up.
 Rainbone shows, in 3D and in colour, where a real femur takes the most strain under
 load. Then Gemini explains in plain words, for the care team, where she stands among
 those 101 women. Try it: <https://rainbone.health>
@@ -21,8 +21,8 @@ model, is 47.1 % for her, higher than 56 of the 101 women (study median 44.3 %; 
 who had a fracture during the follow-up had 53.7–73.2 %). Her minimum sideways-fall
 strength (MSF) is 1,339 N, weaker than 75 of the 101, and a sideways fall hits the hip
 with 2.90–4.26 kN (van den Kroonenberg 1995), or 2.17–3.18 times that strength. An AI
-card words these numbers in plain language, and a checker rejects any answer containing
-a number it was not given.
+card words these numbers in plain language. Deterministic checks screen numerical and
+clinical wording; they reduce unsupported output without proving every sentence correct.
 
 Rainbone (RainbowBone) shows how a real bone carries load. It runs a finite-element
 analysis (FEA) on a complete femur segmented from CT (60,819 tetrahedra, 17,361 nodes),
@@ -50,9 +50,9 @@ flowchart TB
   subgraph VM["Back end · Vultr Compute · api.rainbone.health"]
     caddy["Caddy<br/>HTTPS reverse proxy"]
     api["FastAPI on uvicorn<br/>GET /health"]
-    sim["POST /api/simulate<br/>result cache by sha256, one solve at a time"]
+    sim["POST /api/simulate<br/>3 admitted uploads per process, one solve at a time<br/>sha256 cache and stable execution UUID"]
     fea["SfePy finite-element solve<br/>HU to stiffness, 800 N"]
-    hist["GET /api/history<br/>GET /api/ai-log"]
+    hist["GET /api/history?run_id=...<br/>exact saved execution and input hash<br/>GET /api/ai-log"]
     bones["GET /api/bones<br/>15-minute pre-signed URLs"]
     prog["GET /api/progression/*"]
 
@@ -60,7 +60,7 @@ flowchart TB
       eps["POST /api/risk-analysis<br/>POST /api/explain"]
       ground["Grounding · clinical_store.py<br/>reads clinical/ from Vultr Object Storage<br/>sha256 pinned in the repo, bundled copy as fallback"]
       facts["Facts built in code<br/>no model computes a number"]
-      cache["Answer cache<br/>Gemini answer 1 h · Groq or template 60 s"]
+      cache["Answer cache · current-checker revalidation<br/>case + source hash + facts + checker version<br/>Gemini answer 1 h · Groq or template 60 s"]
       cool["429 memory<br/>skip a model 300 s after HTTP 429,<br/>60 s after any other failure"]
       chain["Provider chain<br/>gemini-3.8-flash → gemini-3.5-flash-lite<br/>→ saved Gemini answer → Groq openai/gpt-oss-120b<br/>→ template"]
       saved[("Saved Gemini answers<br/>AI_ANSWER_STORE file")]
@@ -131,6 +131,13 @@ else: straight from the private bucket, through links the API signs.
 
 ### The AI layer
 
+This is a fixed evidence-to-explanation workflow: retrieval, deterministic calculation,
+generation, validation and provenance. It does not use autonomous clinical agents.
+The useful next architectural step is a typed, evidence-linked review brief with critical
+numbers and outcomes rendered directly from server facts. That brief is a proposal, not
+an implemented feature; an agent framework or vector database is not required for the
+current known-case lookup.
+
 Both AI endpoints run inside the FastAPI process and share one chain, one quota and one
 log (`backend/services/risk.py`, `explain.py`, `llm_providers.py`, `clinical_store.py`,
 `ai_log.py`).
@@ -140,7 +147,8 @@ log (`backend/services/risk.py`, `explain.py`, `llm_providers.py`, `clinical_sto
   pinned in this repository next to the bundled copy (`hfvalid-risk.json.sha256`,
   `hfvalid-femur/manifest.json.sha256`), and the file's bytes must hash to it. If the
   bucket is not configured, unreachable or does not match, the API answers from the
-  bundled copy in `frontend/public/models/` and says why in `grounding`.
+  bundled copy in `frontend/public/models/` and says why in `grounding`. The backup
+  must also match its pin; if it does not, evidence is unavailable and generation stops.
 - **Facts, not model arithmetic.** The API computes every number (ranks, median, factor
   of risk) before a model is called. The model only words them and never receives a scan
   or its file name; the risk analysis also keeps our own FE numbers away from it.
@@ -158,17 +166,23 @@ log (`backend/services/risk.py`, `explain.py`, `llm_providers.py`, `clinical_sto
   women", is read as its digits and checked), statements about the future, "chance" or
   "probability" for ARF0, diagnosis, advice, and wording that puts the recorded fracture
   at the hip, since the follow-up does not record where it was. A rejected answer moves
-  on to the next provider.
+  on to the next provider. Checks also preserve number signs and reject supported patterns
+  that bind a strength rank to ARF0 or contradict the recorded follow-up outcome.
+  These checks cover explicit failure patterns, not unrestricted
+  semantic verification or clinical validation; accepted prose still needs human review.
 - **Answer cache and 429 memory.** An answer is kept in memory per case, grounding
-  store, facts and chain (Gemini for 1 h, Groq or template for 60 s) and comes back as
-  `served: "cached"`; concurrent equal requests share one model call. A model that failed
-  is skipped for 60 s, or 300 s after HTTP 429, by both endpoints. Every checked Gemini
-  answer is also written to the `AI_ANSWER_STORE` file, which outlives a restart.
-- **Audit log.** Each answer the chain produces writes one row to the `ai_analyses`
+  store/key/hash, facts, checker version and chain (Gemini for 1 h, Groq or template for
+  60 s). A hit must pass the current checker before returning as `served: "cached"`;
+  concurrent equal requests share one model call. A model that failed
+  is skipped for 60 s, or 300 s after HTTP 429, by both endpoints. Eligible checked Gemini
+  answers are also saved to `AI_ANSWER_STORE` when the local answer store is writable;
+  this best-effort saved-answer cache outlives a restart.
+- **Audit log.** Each answer the chain produces attempts to write one row to the `ai_analyses`
   hypertable in Tiger Cloud: endpoint, case, provider, model, latency, grounding store,
   fallbacks and the sha256 of the facts and of the text. The text itself is not stored,
   and a saved Gemini answer is not logged again, since no model was called for it.
-  `GET /api/ai-log` reads the latest rows.
+  `GET /api/ai-log` reads the latest rows. Logging is best effort: the UI says
+  "Logged in Tiger Cloud" only when the API returns a confirmed log identity.
 
 ### AI flow: one risk-analysis request
 
@@ -250,8 +264,18 @@ The dashboard (`/dashboard`):
    from memory and marked `X-Simulate-Reused: 1`. **Import scan** posts your own
    `.nii` or `.nii.gz` the same way.
 5. After a real solve, the API saves the run to the `simulation_runs` hypertable in
-   Tiger Cloud when `DATABASE_URL` is set; `GET /api/history` reads the runs and the
-   hourly continuous aggregate back.
+   Tiger Cloud when `DATABASE_URL` is set. The response carries its execution `run_id`,
+   `input_sha256`, original filename and `pending`, `saved` or `unavailable` persistence
+   state. `GET /api/history?run_id=...` reads that exact execution back; the browser polls
+   for at most five seconds and confirms a save only after matching the returned identity.
+   Renaming identical contents preserves the original execution and creates no extra row.
+   The hourly aggregate counts executions, not patient change.
+
+Uploaded results appear in their own panel. The displayed reference femur, published
+HFValid measures and AI cards remain Pat001; an upload does not replace them. Admission
+is bounded before multipart parsing: at most three requests per API process, with one
+solver active at a time. Excess requests receive HTTP 429 with `Retry-After: 5` and are
+not queued. Cache and admission state are process-local, not a distributed job queue.
 
 `/physics-simulations` replays a precomputed hydraulic-press loading history of the
 same femur (`models/femur-press/manifest.json` and one VTP per load step). It calls
@@ -281,10 +305,10 @@ credentials, and checks each mesh's sha256 before drawing it.
 | Method and path | What it does |
 |---|---|
 | `GET /health` | Liveness: `{"status": "ok", "service": "rainbowbone-fea"}` |
-| `POST /api/simulate` | Multipart `file`, one `.nii` or `.nii.gz` of at most 512 MiB. SfePy solve under 800 N; one solve at a time; repeat uploads answered from memory; saved to `simulation_runs` |
+| `POST /api/simulate` | Multipart `file`, one `.nii` or `.nii.gz` of at most 512 MiB. Three admitted uploads per process, one solve at a time; HTTP 429 when busy. Returns execution UUID/hash and persistence state; identical contents reuse the execution |
 | `POST /api/explain` | Plain-words explanation of simulation numbers, or of `case_id` `Pat001` read from `clinical/`. AI layer |
 | `POST /api/risk-analysis` | AI-worded fracture risk analysis of one HFValid subject (`case_id`, optional `fe`) from the published table in `clinical/`. AI layer |
-| `GET /api/history?limit=&source_filename=` | Latest `simulation_runs` rows and hourly buckets from the continuous aggregate |
+| `GET /api/history?limit=&source_filename=&run_id=` | Exact execution when `run_id` is supplied (takes precedence); otherwise latest or filename-filtered runs, plus hourly activity buckets |
 | `GET /api/ai-log?limit=` | Latest `ai_analyses` rows: provider, model, latency, grounding store, fallbacks and hashes, without the text |
 | `GET /api/bones` | CTPelvic1K manifest from the bucket with 15-minute pre-signed URLs |
 | `GET /api/progression/coordinates` | Baseline and follow-up annotation points for `/lesion-progression` |

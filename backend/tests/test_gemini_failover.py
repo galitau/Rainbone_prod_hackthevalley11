@@ -413,6 +413,16 @@ class SavedAnswerTests(FailoverTestCase):
         result = self.ask(KeyMock(gemini=httpx.Response(503), groq=groq_reply(GOOD_GROQ)))
         self.assertEqual((result.provider, result.served), ("groq", "live"))
 
+    def test_saved_risk_answer_with_live_rank_mixup_is_not_served(self):
+        self.ask_risk(KeyMock(gemini=gemini_reply(GOOD_RISK)))
+        data = json.loads(self.store.read_text())
+        for entry in data["answers"].values():
+            entry["text"] = ("Its ARF0 is 47.1 percent, which is weaker than 75 of the 101 women "
+                             "in the study, and higher than 56 of the 101 women.")
+        self.store.write_text(json.dumps(data))
+        result = self.ask_risk(KeyMock(gemini=httpx.Response(503), groq=groq_reply(GOOD_RISK)))
+        self.assertEqual((result.provider, result.served), ("groq", "live"))
+
     def test_groq_and_template_answers_are_never_saved(self):
         self.ask(KeyMock(gemini=httpx.Response(503), groq=groq_reply(GOOD_GROQ)))
         self.clock.now += 61

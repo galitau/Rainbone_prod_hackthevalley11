@@ -440,12 +440,15 @@ class AnswerCache:
         self._pending.clear()
 
     async def get_or_compute(self, key: Hashable, compute: Callable[[], Awaitable[Any]],
-                             ttl_of: Callable[[Any], float]) -> Any:
+                             ttl_of: Callable[[Any], float], *,
+                             valid: Optional[Callable[[Any], bool]] = None) -> Any:
         """The kept answer for `key`, else the result of compute() (shared by concurrent callers), kept for
         ttl_of(result) seconds. A failed or cancelled computation is not kept."""
         hit = self.get(key)
-        if hit is not None:
+        if hit is not None and (valid is None or valid(hit)):
             return hit
+        if hit is not None:
+            self._entries.pop(key, None)
         loop = asyncio.get_running_loop()
         task = self._pending.get(key)
         if task is None or task.done() or task.get_loop() is not loop:

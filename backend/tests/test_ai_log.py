@@ -250,6 +250,26 @@ class AnswerLoggingTests(AiLogTestCase):
                          first["logged"])
         self.assertEqual(len(self.inserts()), 1)
 
+    def test_same_facts_from_a_different_source_digest_get_a_new_analysis(self):
+        dataset, grounding = rk.load_grounded_dataset({})
+        with mock.patch.object(rk, "load_grounded_dataset", return_value=(dataset, grounding)):
+            first = self.client.post("/api/risk-analysis", json={"case_id": "Pat001"}).json()
+        changed = grounding.model_copy(update={"sha256": "0" * 64})
+        with mock.patch.object(rk, "load_grounded_dataset", return_value=(dataset, changed)):
+            second = self.client.post("/api/risk-analysis", json={"case_id": "Pat001"}).json()
+        self.assertNotEqual(first["logged"]["id"], second["logged"]["id"])
+        self.assertEqual(len(self.inserts()), 2)
+
+    def test_invalid_kept_risk_answer_is_recomputed(self):
+        self.client.post("/api/risk-analysis", json={"case_id": "Pat001"})
+        [(key, (expires, answer))] = rk._answers._entries.items()
+        invalid = "Its ARF0 is 47.1 percent, which is weaker than 75 of the 101 women."
+        rk._answers._entries[key] = (expires, answer.model_copy(update={"text": invalid + " " + rk.NOTE}))
+        response = self.client.post("/api/risk-analysis", json={"case_id": "Pat001"}).json()
+        self.assertEqual(response["provider"], "template")
+        self.assertNotIn(invalid, response["text"])
+        self.assertEqual(len(self.inserts()), 2)
+
     def test_a_failed_log_never_breaks_the_answer(self):
         self.connector.error = psycopg.OperationalError("connection refused")
         with self.assertLogs("rainbowbone.ai_log", "WARNING"):

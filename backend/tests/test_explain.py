@@ -478,6 +478,20 @@ class AnswerCacheTests(ExplainTestCase):
         super().setUp()
         self.clock = Clock().patch(self)
 
+    def test_kept_answer_is_revalidated_before_reuse(self):
+        cache = AnswerCache()
+        cache.put("case", "old invalid answer", 60)
+        calls = []
+
+        async def compute():
+            calls.append(True)
+            return "current valid answer"
+
+        value = asyncio.run(cache.get_or_compute("case", compute, lambda _: 60,
+                                                 valid=lambda text: text == "current valid answer"))
+        self.assertEqual(value, "current valid answer")
+        self.assertEqual(calls, [True])
+
     def test_a_gemini_answer_is_kept_for_an_hour(self):
         mock = Mock(gemini=gemini_reply(GOOD))
         answers = [run(SIM, KEYS, mock) for _ in range(4)]

@@ -119,6 +119,35 @@ class CheckerTests(unittest.TestCase):
             with self.subTest(text=text):
                 self.assertIsNone(check(text, self.facts))
 
+    def test_live_arf0_strength_rank_mixup_is_rejected(self):
+        text = ("Its ARF0 (absolute risk of fracture at time 0) is 47.1 percent, which is weaker than "
+                "75 of the 101 women in the study, and higher than 56 of the 101 women.")
+        self.assertIn("ARF0 comparison", check(text, self.facts))
+        self.assertIsNone(check("Its MSF is weaker than 75 of the 101 women. Its ARF0 is 47.1%, "
+                                "higher than 56 of the 101 women.", self.facts))
+
+    def test_signed_values_and_force_subjects(self):
+        for text in ("Its ARF0 is -47.1%.", "Its ARF0 is −47.1%.", "Its MSF is 2,900 N.",
+                     "The fall force is 1,339 N."):
+            with self.subTest(text=text):
+                self.assertIsNotNone(check(text, self.facts))
+        self.assertIsNone(check("A fall of 2,900–4,260 N exceeds its strength.", self.facts))
+        self.assertIsNone(check("A fall of 2,900-4,260 N exceeds its strength.", self.facts))
+
+    def test_recorded_outcome_is_bound_to_selected_case(self):
+        for text in ("This woman had a fracture during follow-up.", "The study recorded a fracture.",
+                     "A fracture was recorded for this woman."):
+            with self.subTest(text=text):
+                self.assertIsNotNone(check(text, self.facts))
+                self.assertIsNone(check(text, self.fractured))
+        for text in ("No fracture was recorded for this woman.",
+                     "The study follow-up recorded no fracture for this woman.",
+                     "This woman did not have a fracture during follow-up."):
+            with self.subTest(text=text):
+                self.assertIsNone(check(text, self.facts))
+                self.assertIsNotNone(check(text, self.fractured))
+        self.assertIsNone(check("4 women fractured during follow-up.", self.facts))
+
     def test_names_spelled_out_as_the_prompt_asks_pass(self):
         # The prompt asks for "MSF (minimum sidefall strength)" and "ARF0 (absolute risk of fracture at time 0)" on
         # first use: the 0 of "time 0" is a name, not a number, and the ARF0 value is still checked through it.

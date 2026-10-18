@@ -80,7 +80,7 @@ export function Dashboard(props: DashboardProps) {
   }, []);
   // The patient overview, physics simulations and lesion progression fit the window from lg up: header, page header
   // and one row; no page scroll.
-  const fit = view === "overview" || view === "physics" || view === "progression";
+  const fit = view === "overview" || view === "physics" || view === "progression" || view === "imaging";
 
   return (
     <main className={`min-h-screen bg-canvas text-ink${fit ? " lg:flex lg:h-dvh lg:min-h-[640px] lg:flex-col lg:overflow-hidden" : ""}`}>
@@ -146,7 +146,7 @@ export function Dashboard(props: DashboardProps) {
             : props.view === "progression" ? <LesionProgression />
             : props.view === "datasets" ? <SecureDatasets />
             : props.view === "preferences" ? <PreferencesPanel />
-            : <div className="mx-auto max-w-[1440px] p-5 md:p-8"><CloudBones /></div>}
+            : <CloudBones />}
         </section>
       </div>
     </main>
