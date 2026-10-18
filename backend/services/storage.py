@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from typing import Any
+from urllib.parse import urlparse
 
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
@@ -18,7 +19,9 @@ def _env(env: dict[str, str], *names: str) -> str:
 
 def _settings() -> tuple[str, str]:
     env = runtime_env()
-    bucket_path = _env(env, "VULTR_BUCKET_PATH", "bucket_path") or "rainbowbone-bones/therapy"
+    bucket_path = _env(env, "VULTR_BUCKET_PATH", "bucket_path")
+    if not bucket_path:
+        bucket_path = f"{_env(env, 'VULTR_S3_BUCKET') or 'rainbowbone-bones'}/therapy"
     bucket_path = bucket_path.strip("/")
     bucket, _, prefix = bucket_path.partition("/")
     if not bucket or not prefix:
@@ -28,15 +31,21 @@ def _settings() -> tuple[str, str]:
 
 def _client():
     env = runtime_env()
-    endpoint = _env(env, "VULTR_ENDPOINT_URL", "endpoint_url", "ENDPOINT_URL")
+    endpoint = _env(env, "VULTR_ENDPOINT_URL", "endpoint_url", "ENDPOINT_URL", "VULTR_S3_ENDPOINT")
     if not endpoint:
         raise RuntimeError("VULTR_ENDPOINT_URL is not configured.")
+    if "://" not in endpoint:
+        endpoint = "https://" + endpoint
+    host = urlparse(endpoint).hostname or ""
+    region = _env(env, "AWS_DEFAULT_REGION", "aws_default_region")
+    if not region:
+        region = host.split(".")[0] if host.endswith(".vultrobjects.com") else "us-east-1"
     return boto3.client(
         "s3",
         endpoint_url=endpoint,
-        aws_access_key_id=_env(env, "AWS_ACCESS_KEY_ID", "aws_access_key_id"),
-        aws_secret_access_key=_env(env, "AWS_SECRET_ACCESS_KEY", "aws_secret_access_key"),
-        region_name=_env(env, "AWS_DEFAULT_REGION", "aws_default_region") or "us-east-1",
+        aws_access_key_id=_env(env, "AWS_ACCESS_KEY_ID", "aws_access_key_id", "VULTR_S3_ACCESS_KEY"),
+        aws_secret_access_key=_env(env, "AWS_SECRET_ACCESS_KEY", "aws_secret_access_key", "VULTR_S3_SECRET_KEY"),
+        region_name=region,
     )
 
 

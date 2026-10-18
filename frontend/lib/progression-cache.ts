@@ -1,11 +1,12 @@
-const PROGRESSION_API = "http://127.0.0.1:8000/api/progression";
+import { apiUrl } from "@/lib/api";
+
 const frameCache = new Map<number, Promise<ArrayBuffer>>();
 
 function loadFrame(frameIndex: number): Promise<ArrayBuffer> {
   const existing = frameCache.get(frameIndex);
   if (existing) return existing;
 
-  const request = fetch(`${PROGRESSION_API}/frames/${frameIndex}.vtp`)
+  const request = fetch(apiUrl(`/api/progression/frames/${frameIndex}.vtp`))
     .then(async response => {
       if (!response.ok) {
         throw new Error(`VTP frame request failed (${response.status}).`);
