@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import {
   Activity,
   Bell,
@@ -11,6 +11,7 @@ import {
   FileUp,
   FolderOpen,
   LayoutDashboard,
+  LayoutPanelLeft,
   ScanLine,
   Settings2,
   ShieldCheck,
@@ -26,6 +27,7 @@ import { LiveRun, ALL_NUMBERS_ID } from "@/components/live-run";
 import { PlainExplanation } from "@/components/plain-explanation";
 import { FractureRiskAnalysis } from "@/components/risk-analysis";
 import { LesionProgression } from "@/components/lesion-progression";
+import { CollapsiblePanel, PanelSplitter, useOverviewLayout, type PanelId } from "@/components/overview-layout";
 import { API_BASE_URL, type ExplanationState, type HistoryState, type RiskAnalysisState, type SimulationResult } from "@/lib/api";
 import { FEMUR_AUTHORS, FEMUR_INSTITUTION, FEMUR_MODEL } from "@/lib/model";
 import { REDUCE_MOTION_CLASS } from "@/lib/preferences-script";
@@ -76,10 +78,12 @@ export function Dashboard(props: DashboardProps) {
   useEffect(() => {
     void prefetchProgressionFrames();
   }, []);
+  // The patient overview fits the window from lg up: header, patient header and one row; no page scroll.
+  const fit = view === "overview";
 
   return (
-    <main className="min-h-screen bg-canvas text-ink">
-      <div className="flex min-h-screen">
+    <main className={`min-h-screen bg-canvas text-ink${fit ? " lg:flex lg:h-dvh lg:min-h-[640px] lg:flex-col lg:overflow-hidden" : ""}`}>
+      <div className={`flex min-h-screen${fit ? " lg:min-h-0 lg:flex-1" : ""}`}>
         <aside className="sticky top-0 hidden h-screen w-[256px] shrink-0 flex-col bg-nav lg:flex">
           <div className="spectrum-line h-[3px]" aria-hidden />
           <div className="px-5 pb-2 pt-6"><Link href="/" aria-label="Rainbone home" className="inline-block rounded-lg"><RainboneLogo /></Link></div>
@@ -103,7 +107,7 @@ export function Dashboard(props: DashboardProps) {
           </div>
         </aside>
 
-        <section className="min-w-0 flex-1">
+        <section className={`min-w-0 flex-1${fit ? " lg:flex lg:min-h-0 lg:flex-col" : ""}`}>
           <header className="sticky top-0 z-10 border-b border-line bg-surface/90 backdrop-blur">
             <div className="flex h-16 items-center justify-between gap-4 px-5 md:px-8">
               <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-1.5 text-[13px] text-muted">
@@ -166,27 +170,38 @@ function Overview({ run, explanation, risk, history, onRunSample, onUpload }: Ov
     }
   };
 
+  // From lg up: the femur viewer fills the row, a splitter sets the panel column's width, and the panels scroll
+  // on their own and collapse to their header. Width and collapsed panels are remembered per browser.
+  const layout = useOverviewLayout();
+  const rowRef = useRef<HTMLDivElement>(null);
+  // The same element on every render, so resizing the panels does not re-render the viewer (it follows its container).
+  const viewer = useMemo(() => <BoneViewer />, []);
+  const panel = (id: PanelId, title: string, card: React.ReactNode) => (
+    <CollapsiblePanel id={id} title={title} collapsed={layout.collapsed[id]} onCollapsedChange={collapsed => layout.setCollapsed(id, collapsed)}>{card}</CollapsiblePanel>
+  );
+
   return (
-    <div className="mx-auto max-w-[1440px] p-5 md:p-8">
-      <PatientHeader importing={run.status === "loading"} onImport={importScan} />
-      <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
-        <div className="min-w-0 space-y-6">
-          <BoneViewer />
-          {runs.length > 0 && <StressChart runs={runs} name={run.input.name} hourly={history.status === "ready" ? history.hourly : undefined} />}
+    <div className="mx-auto max-w-[1440px] p-5 md:p-8 lg:flex lg:min-h-0 lg:w-full lg:max-w-none lg:flex-1 lg:flex-col lg:px-6 lg:pb-3 lg:pt-4">
+      <PatientHeader importing={run.status === "loading"} onImport={importScan} onResetLayout={layout.reset} />
+      <div ref={rowRef} style={{ "--panel-w": `${layout.panelWidth}px` } as React.CSSProperties} className="mt-6 grid gap-6 lg:mt-4 lg:flex lg:min-h-0 lg:flex-1 lg:gap-0">
+        <div className="min-w-0 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col lg:[&>section]:flex lg:[&>section]:min-h-0 lg:[&>section]:flex-1 lg:[&>section]:flex-col lg:[&>section]:overflow-y-auto lg:[&>section>div.relative]:min-h-[240px] lg:[&>section>div.relative+div>span]:min-w-48">
+          {viewer}
         </div>
-        <div className="min-w-0 space-y-6">
-          <ClinicalMetrics />
-          <FractureRiskAnalysis state={risk} />
-          <PlainExplanation state={explanation} />
-          <LiveRun run={run} history={history} onRunSample={onRunSample} onUpload={onUpload} />
+        <PanelSplitter width={layout.panelWidth} rowRef={rowRef} onResize={layout.setPanelWidth} />
+        <div id="overview-panels" className="flex min-w-0 flex-col gap-6 lg:min-h-0 lg:w-[var(--panel-w)] lg:max-w-[calc(100%-416px)] lg:shrink-0 lg:gap-4 lg:overflow-y-auto lg:overscroll-contain lg:pb-1 lg:pr-1 lg:[&_#all-numbers]:scroll-mt-0">
+          {panel("metrics", "Clinical metrics", <ClinicalMetrics />)}
+          {panel("risk", "AI fracture risk analysis", <FractureRiskAnalysis state={risk} />)}
+          {panel("plain", "In plain words", <PlainExplanation state={explanation} />)}
+          {panel("numbers", "All numbers and method", <LiveRun run={run} history={history} onRunSample={onRunSample} onUpload={onUpload} />)}
+          {runs.length > 0 && panel("history", "Saved simulation runs", <StressChart runs={runs} name={run.input.name} hourly={history.status === "ready" ? history.hourly : undefined} />)}
         </div>
       </div>
-      <p className="mt-8 border-t border-line pt-5 text-[11px] leading-5 text-muted">Rainbone is a research prototype. Simulations use assumed material properties and are not validated for clinical diagnosis or treatment decisions.</p>
+      <p className="mt-8 border-t border-line pt-5 text-[11px] leading-5 text-muted lg:mt-3 lg:shrink-0 lg:border-t-0 lg:pt-0 lg:leading-4">Rainbone is a research prototype. Simulations use assumed material properties and are not validated for clinical diagnosis or treatment decisions.</p>
     </div>
   );
 }
 
-function PatientHeader({ importing, onImport }: { importing: boolean; onImport: (file: File) => void }) {
+function PatientHeader({ importing, onImport, onResetLayout }: { importing: boolean; onImport: (file: File) => void; onResetLayout: () => void }) {
   const fileInput = useRef<HTMLInputElement>(null);
   return (
     <div className="flex flex-col justify-between gap-5 md:flex-row md:items-end">
@@ -195,7 +210,7 @@ function PatientHeader({ importing, onImport }: { importing: boolean; onImport: 
           <h1 className="font-serif text-[28px] font-semibold leading-tight tracking-[-0.01em] text-ink">{FEMUR_MODEL.anatomy}</h1>
           <a href={FEMUR_MODEL.sourceUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-full border border-link/20 bg-link/[0.07] px-2.5 py-1 text-[12px] font-medium text-link hover:bg-link/[0.12]"><span className="h-1.5 w-1.5 rounded-full bg-link" aria-hidden />{FEMUR_MODEL.dataset} {FEMUR_MODEL.caseId}</a>
         </div>
-        <dl className="mt-3 flex flex-wrap gap-x-6 gap-y-2 text-[13px] text-body">
+        <dl className="mt-3 lg:mt-1 flex flex-wrap gap-x-6 gap-y-2 text-[13px] text-body">
           <Meta icon={<UserRound size={14} />} label="Patient" value={`${FEMUR_MODEL.dataset} ${FEMUR_MODEL.caseId}`} mono />
           <Meta icon={<ScanLine size={14} />} label="Modality" value={`CT · ${FEMUR_INSTITUTION || FEMUR_AUTHORS}`} />
           <Meta icon={<Database size={14} />} label="Source" value={`${FEMUR_AUTHORS} · ${FEMUR_MODEL.license}`} />
@@ -214,7 +229,10 @@ function PatientHeader({ importing, onImport }: { importing: boolean; onImport: 
           event.target.value = "";
         }}
       />
-      <button type="button" onClick={() => fileInput.current?.click()} disabled={importing} className="inline-flex w-fit items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-[13px] font-medium text-white shadow-card transition hover:bg-primary-hover disabled:opacity-60"><FileUp size={16} /> Import scan</button>
+      <div className="flex w-fit shrink-0 items-center gap-2">
+        <button type="button" onClick={onResetLayout} title="Restore the default panel width and panels" className="hidden items-center gap-1.5 rounded-lg px-3 py-2.5 text-[13px] font-medium text-muted transition hover:bg-sunken hover:text-ink lg:inline-flex"><LayoutPanelLeft size={16} aria-hidden /> Reset layout</button>
+        <button type="button" onClick={() => fileInput.current?.click()} disabled={importing} className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-[13px] font-medium text-white shadow-card transition hover:bg-primary-hover disabled:opacity-60"><FileUp size={16} /> Import scan</button>
+      </div>
     </div>
   );
 }

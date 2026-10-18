@@ -260,3 +260,35 @@ html.pref-text-large .text-\[28px\] {
 .text-\[28px\] {
   font-size: 31px;
 }
+
+/* CollapsiblePanel (components/overview-layout.tsx): a card whose component rendered nothing (API unavailable)
+   leaves no empty slot. */
+.panel-frame:has(> button:only-child) {
+  display: none;
+}
+
+@media (min-width: 1024px) {
+  /* Room for the −/+ button in the card's header row (its first child). */
+  .panel-frame > :first-child > :first-child {
+    padding-right: 3.5rem;
+  }
+
+  /* The −/+ replaces the All numbers chevron. */
+  .panel-frame > details > summary > svg {
+    display: none;
+  }
+
+  /* Collapsed: the card keeps only its header row (a <details> card closes through `open`). */
+  .panel-frame[data-collapsed="true"] > :not(details) > :not(:first-child) {
+    display: none;
+  }
+
+  .panel-frame[data-collapsed="true"] > :not(details) > :first-child {
+    border-bottom-color: transparent;
+  }
+
+  /* The saved-runs card's title and latest value stack in the narrow panel column. */
+  .panel-frame[data-panel="history"] > section > :first-child {
+    flex-direction: column;
+  }
+}
