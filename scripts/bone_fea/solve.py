@@ -1,6 +1,7 @@
-"""Offline linear-elastic SfePy solve for the dashboard's reference model.
+"""Linear-elastic SfePy solve for the dashboard's reference model.
 
-Units: millimetres, newtons, MPa. This module does not change the API solver.
+Units: millimetres, newtons, MPa. backend/services/fea_solver.py also uses
+this module for POST /api/simulate.
 """
 from __future__ import annotations
 
@@ -40,12 +41,17 @@ def surface_faces(points, tets):
 
 def solve_elasticity(points, tets, load_newtons=800.0, youngs_modulus_mpa=10000.0,
                      poisson_ratio=0.3, support_depth_mm=1e-6,
-                     load_depth_mm=1e-6, head_center=None):
+                     load_depth_mm=1e-6, head_center=None,
+                     element_youngs_modulus_mpa=None, save_results=True):
     """Assemble and solve 3D P1 tetrahedral elasticity with SfePy.
 
     Clamp a distal Z band and apply uniform -Z traction to a proximal surface
     band (optionally limited to the femoral head). The default infinitesimal
     bands select the flat faces used in the analytical verification test.
+    Optional element_youngs_modulus_mpa gives one isotropic modulus per
+    tetrahedron; it replaces youngs_modulus_mpa, and the metrics then report
+    the volume-weighted mean modulus. save_results=False stops SfePy from
+    writing domain.vtk to the working directory.
     """
     from sfepy.base.base import IndexedStruct
     from sfepy.discrete import FieldVariable, Material, Integral, Equation, Equations, Problem, Function, Functions
@@ -59,6 +65,11 @@ def solve_elasticity(points, tets, load_newtons=800.0, youngs_modulus_mpa=10000.
 
     if load_newtons <= 0 or youngs_modulus_mpa <= 0 or not 0 <= poisson_ratio < 0.5:
         raise ValueError("Invalid elastic material or load.")
+    if element_youngs_modulus_mpa is not None:
+        element_youngs_modulus_mpa = np.asarray(element_youngs_modulus_mpa, dtype=np.float64)
+        if (element_youngs_modulus_mpa.shape != (len(tets),)
+                or not np.all(np.isfinite(element_youngs_modulus_mpa) & (element_youngs_modulus_mpa > 0))):
+            raise ValueError("Supply one finite, positive Young's modulus per tetrahedron.")
     faces, owners = surface_faces(points, tets)
     zmin, zmax = points[:, 2].min(), points[:, 2].max()
     def fixed_vertices(coordinates, domain=None):
@@ -92,7 +103,17 @@ def solve_elasticity(points, tets, load_newtons=800.0, youngs_modulus_mpa=10000.
     field = Field.from_args('displacement', np.float64, 'vector', omega, approx_order=1)
     u = FieldVariable('u', 'unknown', field)
     v = FieldVariable('v', 'test', field, primary_var_name='u')
-    solid = Material('solid', D=stiffness_from_youngpoisson(3, youngs_modulus_mpa, poisson_ratio))
+    if element_youngs_modulus_mpa is None:
+        solid = Material('solid', D=stiffness_from_youngpoisson(3, youngs_modulus_mpa, poisson_ratio))
+    else:
+        def element_stiffness(ts, coors, mode=None, term=None, **kwargs):
+            # SfePy expects one stiffness per quadrature point, cell-major.
+            if mode != 'qp':
+                return None
+            cells = term.region.cells
+            stiffness = stiffness_from_youngpoisson(3, element_youngs_modulus_mpa[cells], poisson_ratio)
+            return {'D': np.repeat(stiffness, len(coors) // len(cells), axis=0)}
+        solid = Material('solid', function=Function('element_stiffness', element_stiffness))
     traction = Material('traction', val=np.array([[0.0], [0.0], [-load_newtons / area]]))
     integral = Integral('i', order=2)
     elastic = Term.new('dw_lin_elastic(solid.D, v, u)', integral, omega, solid=solid, v=v, u=u)
@@ -101,7 +122,7 @@ def solve_elasticity(points, tets, load_newtons=800.0, youngs_modulus_mpa=10000.
     problem.set_bcs(ebcs=Conditions([EssentialBC('clamp', fixed, {'u.all': 0.0})]))
     status = IndexedStruct()
     problem.set_solver(Newton({'i_max': 1, 'eps_a': 1e-7, 'eps_r': 1e-10}, lin_solver=ScipyDirect({}), status=status))
-    state = problem.solve()
+    state = problem.solve(save_results=save_results)
     displacement = state().copy().reshape(-1, 3)
     stress = problem.evaluate('ev_cauchy_stress.2.Omega(solid.D, u)', mode='el_avg', solid=solid, u=u).reshape(-1, 6)
     vm = get_von_mises_stress(stress).ravel()
@@ -117,7 +138,7 @@ def solve_elasticity(points, tets, load_newtons=800.0, youngs_modulus_mpa=10000.
     if not np.isfinite(displacement).all() or not np.isfinite(vm).all() or max(relative_residual, balance_error) > 1e-6:
         raise RuntimeError(f'FEA failed equilibrium checks: residual={relative_residual}, balance={balance_error}')
     volumes = np.abs(np.linalg.det(points[tets[:, 1:]] - points[tets[:, :1]])) / 6
-    return {
+    result = {
         'displacement': displacement, 'stress': stress, 'von_mises': vm,
         'faces': faces, 'owners': owners, 'top_faces': top, 'bottom_faces': bottom,
         'metrics': {
@@ -137,3 +158,10 @@ def solve_elasticity(points, tets, load_newtons=800.0, youngs_modulus_mpa=10000.
             'relative_force_balance_error': balance_error,
         },
     }
+    if element_youngs_modulus_mpa is not None:
+        result['metrics'].update({
+            'youngs_modulus_mpa': float(np.average(element_youngs_modulus_mpa, weights=volumes)),
+            'min_youngs_modulus_mpa': float(element_youngs_modulus_mpa.min()),
+            'max_youngs_modulus_mpa': float(element_youngs_modulus_mpa.max()),
+        })
+    return result

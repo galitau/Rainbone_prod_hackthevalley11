@@ -36,3 +36,21 @@ input {
 .scrollbar-hide::-webkit-scrollbar {
   display: none;
 }
+
+/* Every font one step bigger, in proportion: tailwind.config.ts raises the text-* sizes; these raise the
+   fixed pixel sizes the components use by the same ratio. */
+.text-\[9px\] {
+  font-size: 11px;
+}
+
+.text-\[10px\] {
+  font-size: 12px;
+}
+
+.text-\[11px\] {
+  font-size: 13px;
+}
+
+.text-\[13px\] {
+  font-size: 15px;
+}

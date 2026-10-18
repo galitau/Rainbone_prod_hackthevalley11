@@ -1,11 +1,14 @@
-import { Gauge, Info, Ruler, Scale, Zap } from "lucide-react";
-import type { ClinicalMetrics as Metrics } from "@/lib/mock-data";
+import { Ruler, Scale, Zap } from "lucide-react";
+import { formatNumber } from "@/lib/format";
+import { FEMUR_MODEL } from "@/lib/model";
 
-export function ClinicalMetrics({ metrics, simulationStatus }: { metrics: Metrics; simulationStatus: "loading" | "ready" | "error" }) {
+// The femur's own finite-element numbers, read from its model manifest (the same solve the viewer colours show).
+export function ClinicalMetrics() {
+  const m = FEMUR_MODEL;
   const cards = [
-    { label: "Max Von Mises stress", value: metrics.maxStress, unit: "MPa", icon: <Zap size={16} />, tone: "text-warning" },
-    { label: "Average Young’s modulus", value: metrics.youngsModulus, unit: "GPa", icon: <Scale size={16} />, tone: "text-violet" },
-    { label: "Bone volume", value: metrics.boneVolume, unit: "cm³", icon: <Ruler size={16} />, tone: "text-cyan" },
+    { label: "Max Von Mises stress", value: formatNumber(m.shownStressMpa, 1), unit: "MPa", icon: <Zap size={16} />, tone: "text-warning" },
+    { label: "Young’s modulus (assumed)", value: formatNumber(m.youngsModulusGpa, 1), unit: "GPa", icon: <Scale size={16} />, tone: "text-violet" },
+    { label: "Bone volume", value: formatNumber(m.volumeCm3, 1), unit: "cm³", icon: <Ruler size={16} />, tone: "text-cyan" },
   ];
-  return <section className="rounded-xl border border-line bg-panel p-5 shadow-glow"><div className="flex items-center justify-between"><div><p className="font-mono text-[10px] uppercase tracking-[0.16em] text-muted">Clinical metrics</p><p className="mt-1 text-xs text-muted">Finite element analysis</p></div><span className={`font-mono text-[9px] uppercase tracking-wider ${simulationStatus === "ready" ? "text-cyan" : simulationStatus === "error" ? "text-warning" : "text-muted"}`}>{simulationStatus === "ready" ? "API LIVE" : simulationStatus === "error" ? "MOCK DATA" : "LOADING"}</span></div><div className="mt-6 space-y-3">{cards.map((card) => <div className="rounded-lg border border-line/80 bg-[#101a24] p-3.5" key={card.label}><div className="flex items-center justify-between"><span className={`flex items-center gap-2 text-xs ${card.tone}`}>{card.icon}{card.label}</span><span className="font-mono text-[10px] text-muted">LIVE</span></div><p className="mt-3 font-mono text-2xl tracking-tight text-ink">{card.value}<span className="ml-1 text-xs text-muted">{card.unit}</span></p></div>)}</div><div className="mt-5 border-t border-line pt-5"><div className="flex items-center justify-between"><span className="flex items-center gap-2 text-xs text-muted"><Gauge size={16} /> Fracture risk index</span><span className="font-mono text-xs text-warning">elevated</span></div><div className="mt-3 flex items-end justify-between"><p className="font-mono text-4xl tracking-tight text-warning">{metrics.fractureRisk}<span className="text-lg">%</span></p><p className="pb-1 font-mono text-[10px] text-muted">95% CI ± 4.2%</p></div><div className="mt-3 h-1.5 overflow-hidden rounded-full bg-[#26333e]"><div className="h-full rounded-full bg-gradient-to-r from-cyan via-warning to-[#ef806b]" style={{ width: `${metrics.fractureRisk}%` }} /></div><p className="mt-3 text-[11px] leading-5 text-muted">Risk estimate combines stress concentration, density, and patient-specific geometry.</p></div></section>;
+  return <section className="rounded-xl border border-line bg-panel p-5 shadow-glow"><div className="flex items-center justify-between"><div><p className="font-mono text-[10px] uppercase tracking-[0.16em] text-muted">Clinical metrics</p><p className="mt-1 text-xs text-muted">Finite element analysis · {m.solver}</p></div><span className="font-mono text-[9px] uppercase tracking-wider text-cyan">{m.dataset} {m.caseId}</span></div><div className="mt-6 space-y-3">{cards.map((card) => <div className="rounded-lg border border-line/80 bg-[#101a24] p-3.5" key={card.label}><div className="flex items-center justify-between"><span className={`flex items-center gap-2 text-xs ${card.tone}`}>{card.icon}{card.label}</span><span className="font-mono text-[10px] text-muted">FEA</span></div><p className="mt-3 font-mono text-2xl tracking-tight text-ink">{card.value}<span className="ml-1 text-xs text-muted">{card.unit}</span></p></div>)}</div></section>;
 }

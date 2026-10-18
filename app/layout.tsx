@@ -10,16 +10,18 @@ const plexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "RainbowBone | Clinical Biomechanics",
-  description: "A clinical dashboard for bone mechanics and fracture risk analysis.",
+  title: "RainbowBone | Bone stress simulation",
+  description:
+    "Finite-element stress simulation of a patient-derived femur, explained in plain words. Research prototype, not a medical device.",
 };
 
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en">
-      <body suppressHydrationWarning className={`${inter.variable} ${plexMono.variable}`}>
+    // The font variables sit on <html> because Tailwind's base styles set the font family there.
+    <html lang="en" className={`${inter.variable} ${plexMono.variable}`}>
+      <body suppressHydrationWarning className="font-sans">
         {children}
       </body>
     </html>
