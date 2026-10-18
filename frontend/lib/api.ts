@@ -166,11 +166,27 @@ export async function fetchHistory(limit = 12, sourceFilename?: string, timeoutM
   return { status: "unavailable", reason: "no runs in the answer" };
 }
 
+// Where an AI answer's facts were read from: the private Vultr Object Storage copy, checked against the sha256 pinned
+// in the repository, or the copy bundled with the API, with the reason the bucket was not used.
+export type Grounding = {
+  store: "vultr-object-storage" | "local-backup";
+  key: string;
+  sha256: string;
+  verified: boolean;
+  reason?: string | null;
+};
+
+// The Tiger Cloud row an AI answer was logged as; null when the API has no database or the write failed.
+export type Logged = { id: string; store: "tiger" } | null;
+
 export type Explanation = {
   text: string;
   provider: "gemini" | "groq" | "template";
   model: string | null;
   fallbacks: { provider: string; reason: string }[];
+  // Optional: absent from older APIs. grounding is null when the numbers came in the request.
+  grounding?: Grounding | null;
+  logged?: Logged;
 };
 
 // "unavailable": the backend has no /api/explain (404) or this page cannot reach it, so the dashboard shows
@@ -182,7 +198,8 @@ export type ExplanationState =
   | { status: "unavailable" }
   | { status: "error"; message: string };
 
-// Posts simulation numbers (the fields of a /api/simulate response) to /api/explain. Never throws.
+// Posts simulation numbers (the fields of a /api/simulate response) to /api/explain, or a case_id whose numbers the
+// API reads from object storage itself. Never throws.
 export async function fetchExplanation(simulation: unknown): Promise<ExplanationState> {
   let response: Response;
   try {
@@ -241,6 +258,8 @@ export type RiskAnalysis = {
   model: string | null;
   fallbacks: { provider: string; reason: string }[];
   source: { citation: string; doi: string; license: string };
+  grounding?: Grounding | null; // absent from older APIs
+  logged?: Logged;
 };
 
 // "unavailable": the API has no /api/risk-analysis or no published data for this case (404), or this page cannot

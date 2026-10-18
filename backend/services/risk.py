@@ -1,9 +1,12 @@
 """AI fracture risk analysis of one HFValid femur (POST /api/risk-analysis).
 
 The numbers come from the HFValid collection (Aldieri, La Mattina, Szyszko,
-Baruffaldi, Viceconti 2025, University of Bologna, CC BY 4.0), read from
-frontend/public/models/hfvalid-risk.json: each subject's ARF0 and MSF as computed by the
-dataset authors' finite-element model, and the recorded follow-up.
+Baruffaldi, Viceconti 2025, University of Bologna, CC BY 4.0; de-identified public research
+data, not patient records): each subject's ARF0 and MSF as computed by the dataset authors'
+finite-element model, and the recorded follow-up. The table is read from Vultr Object Storage
+(clinical/hfvalid/hfvalid-risk.json) and checked against its pinned sha256 by
+services.clinical_store, with frontend/public/models/hfvalid-risk.json as the bundled backup
+copy; the response's `grounding` says which was used and why.
 Sideways-fall forces are van den Kroonenberg et al. 1995 (PubMed 8618384).
 
 build_facts() computes every number a model may use: the subject's place among
@@ -15,27 +18,35 @@ decimals), uses a fact as the wrong quantity (the age as a percent, a rank as a
 risk), states a rank the wrong way round, spells a quantity out, predicts a
 time, calls ARF0 a chance or likelihood, diagnoses or advises. A rejected or
 failed provider falls through to the next, and finally to a deterministic
-template built only from the facts. An answer is kept per case, facts and
-chain (a Gemini answer for 1 h, a Groq or template answer for 60 s), so a
-reload does not spend another model call.
+template built only from the facts. An answer is kept per case, grounding
+store, facts and chain (a Gemini answer for 1 h, a Groq or template answer for
+60 s), so a reload does not spend another model call. Each answer the chain
+produces is logged once in Tiger Cloud (services.ai_log); a kept answer is not
+logged again and keeps the `logged` id of its row, and one whose row was not
+written is kept for at most 60 s.
 
 The chain order, providers, timeouts and fallback reasons are the ones
 POST /api/explain uses (AI_CHAIN, AI_OFFLINE, GEMINI_*, GROQ_*).
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import math
 import os
 import re
 import statistics
+import time
 from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Mapping, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from services import ai_log
+from services.ai_log import Logged
+from services.clinical_store import CATALOGUE, ClinicalDataUnavailable, Grounding, get_clinical_json
 from services.explain import (_NUMBER_WORDS, _TENS, _UNITS, _WORD_VALUES, NUMBER_RE, Fallback, _number_value,
                               build_providers, chain_order)
 from services.llm_providers import AnswerCache, answer_ttl, attempt, chain_signature
@@ -46,7 +57,7 @@ if TYPE_CHECKING:  # pragma: no cover
 
 log = logging.getLogger("rainbowbone.risk")
 
-DATA_PATH = Path(__file__).resolve().parents[2] / "frontend" / "public" / "models" / "hfvalid-risk.json"
+DATA_PATH = CATALOGUE["hfvalid-risk"].local  # frontend/public/models/hfvalid-risk.json, the bundled backup copy
 MAX_CHARS = 600  # the prompt asks for 420; the template's longest text stays below this
 NOTE = "Published research data, not a diagnosis or medical advice."
 
@@ -81,6 +92,8 @@ BLOCKED_OUTPUT_PATTERNS: tuple[str, ...] = (
     r"\bdefinitely\b", r"\bguarantee", r"\binevitabl", r"\bsure(?:ly)?\b", r"\bgoing\s+to\b",
     r"\bbound\s+to\b", r"\bexpected\s+to\b", r"\bwill\b", r"\bcancer", r"\bmetasta", r"\btumou?r",
     r"\b(?:more|less|as)\s+likely\b", r"\bvalidat",
+    # The dataset records a fracture without naming where, so the answer may not call it a hip fracture.
+    r"\bhip\s+fractur", r"\bbr(?:oke|eaks?|oken)\s+(?:a|her|their|the)\s+hips?\b", r"\bhips?\s+(?:was|were)\s+broken",
 )
 _TIME = tuple(re.compile(p, re.IGNORECASE) for p in TIME_PATTERNS)
 _BLOCKED = tuple(re.compile(p, re.IGNORECASE) for p in BLOCKED_OUTPUT_PATTERNS)
@@ -124,7 +137,7 @@ SYSTEM_PROMPT = (
     "You explain to a reader with no medical or engineering background how likely one real thigh bone "
     "(femur) is to break, using only published research data about it. The user message is JSON. The femur "
     "belongs to one of cohort_n women in the HFValid study, who had a CT scan of the femur and were followed "
-    "to record whether they had a hip fracture afterwards. Fields: age is the woman's age at the CT scan. "
+    "to record whether they had a fracture afterwards. Fields: age is the woman's age at the CT scan. "
     "msf_newtons is the femur's Minimum Sidefall Strength (MSF): the smallest sideways-fall force, over many "
     "fall directions, that the study authors' finite-element model says would break it. msf_lower_than is how "
     "many women in the study had a stronger femur (a higher MSF): write 'N of the cohort_n women had a "
@@ -137,9 +150,9 @@ SYSTEM_PROMPT = (
     "that, and let msf_lower_than show how this femur compares. arf0_percent is its ARF0, the absolute risk of "
     "fracture the study authors estimated from that model coupled with a model of falling; arf0_higher_than "
     "is how many women in the study had a lower ARF0. cohort_median_arf0_percent is the study's median ARF0; "
-    "cohort_fractured women had a hip fracture during the follow-up, with ARF0 from "
+    "cohort_fractured women had a recorded fracture during the follow-up, with ARF0 from "
     "fractured_arf0_min_percent to fractured_arf0_max_percent. fractured_within_followup says whether this "
-    "woman had a hip fracture during the follow-up, and days_ct_to_fracture is then the days from the CT scan "
+    "woman had a recorded fracture during the follow-up, and days_ct_to_fracture is then the days from the CT scan "
     "to it. "
     "Write 2 or 3 short plain sentences, at most 420 characters, on how likely this femur is to break: first "
     "what a sideways fall would do to it (factor_of_risk_low to factor_of_risk_high times its strength), then "
@@ -164,7 +177,7 @@ SYSTEM_PROMPT = (
 
 
 class RiskDataUnavailable(RuntimeError):
-    """frontend/public/models/hfvalid-risk.json is missing or unreadable."""
+    """The HFValid table could not be read from the bucket nor from the bundled copy, or is malformed."""
 
 
 class UnknownCase(KeyError):
@@ -225,14 +238,14 @@ class RiskResponse(BaseModel):
     model: Optional[str]
     fallbacks: list[Fallback]
     source: RiskSource
+    grounding: Optional[Grounding] = Field(default=None, description="Where the HFValid table was read from.")
+    logged: Optional[Logged] = Field(default=None, description="The Tiger Cloud row of this answer; null when "
+                                                               "DATABASE_URL is unset or the write failed.")
 
 
 # ----------------------------------------------------------------------------- data
-@lru_cache(maxsize=4)
-def _load(path: Path, mtime_ns: int) -> dict:
-    """The file at `path`, checked for the fields build_facts() reads (cached per modification time)."""
-    with path.open(encoding="utf-8") as handle:
-        data = json.load(handle)
+def validate_dataset(data: Any) -> dict:
+    """`data`, checked for the fields build_facts() reads. Raises ValueError, KeyError or TypeError."""
     subjects = data["subjects"]
     if not isinstance(subjects, dict) or not subjects:
         raise ValueError("no subjects")
@@ -250,12 +263,30 @@ def _load(path: Path, mtime_ns: int) -> dict:
     return data
 
 
+@lru_cache(maxsize=4)
+def _load(path: Path, mtime_ns: int) -> dict:
+    """The file at `path`, validated (cached per modification time)."""
+    with path.open(encoding="utf-8") as handle:
+        return validate_dataset(json.load(handle))
+
+
 def load_dataset(path: Optional[Path] = None) -> dict:
     """The parsed dataset, re-read when the file changes. Raises RiskDataUnavailable."""
     p = path or DATA_PATH
     try:
         return _load(p, p.stat().st_mtime_ns)
     except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
+        raise RiskDataUnavailable(f"fracture risk data is not available ({type(exc).__name__})") from None
+
+
+def load_grounded_dataset(env: Mapping[str, str]) -> tuple[dict, Grounding]:
+    """The table from the bucket (or the bundled copy) and where it came from. Raises RiskDataUnavailable."""
+    try:
+        data, grounding = get_clinical_json("hfvalid-risk", env)
+        return validate_dataset(data), grounding
+    except ClinicalDataUnavailable:
+        raise RiskDataUnavailable("fracture risk data is not available") from None
+    except (ValueError, KeyError, TypeError, AttributeError) as exc:
         raise RiskDataUnavailable(f"fracture risk data is not available ({type(exc).__name__})") from None
 
 
@@ -457,11 +488,11 @@ def template_text(facts: RiskFacts) -> str:
         f"{f.arf0_higher_than} of the {f.cohort_n} women.",
     ]
     if not f.fractured_within_followup:
-        parts.append("No hip fracture was recorded for this woman during the study's follow-up.")
+        parts.append("No fracture was recorded for this woman during the study's follow-up.")
     elif f.days_ct_to_fracture is not None:
-        parts.append(f"The study recorded a hip fracture {f.days_ct_to_fracture:,} days after this CT scan.")
+        parts.append(f"The study recorded a fracture {f.days_ct_to_fracture:,} days after this CT scan.")
     else:
-        parts.append("The study recorded a hip fracture during the follow-up.")
+        parts.append("The study recorded a fracture during the follow-up.")
     return " ".join(parts)
 
 
@@ -470,8 +501,9 @@ def _with_note(text: str) -> str:
 
 
 # ----------------------------------------------------------------------------- chain
-# Answers by (case_id, facts, chain). The facts of a case only change with the data file or fe, so a reload reuses the
-# answer instead of spending the provider quota POST /api/explain also needs. Bounded, since fe comes from the client.
+# Answers by (case_id, grounding store, facts, chain). The facts of a case only change with the data file or fe, so a
+# reload reuses the answer instead of spending the provider quota POST /api/explain also needs. Bounded, since fe comes
+# from the client.
 _answers = AnswerCache()
 
 # Sent after SYSTEM_PROMPT. check() refuses a number word that is not a fact, and "one" is not one: Gemini's fallback
@@ -494,16 +526,32 @@ async def analyse(request: RiskRequest, env: Optional[Mapping[str, str]] = None,
                   data: Optional[Mapping[str, Any]] = None,
                   transport: Optional["httpx.AsyncBaseTransport"] = None,
                   providers: Optional[Mapping[str, list]] = None) -> RiskResponse:
-    """Facts for `request.case_id`, worded by the first provider whose text passes check()."""
+    """Facts for `request.case_id`, worded by the first provider whose text passes check().
+
+    The table comes from the bucket or the bundled copy (`grounding`), unless the caller passes `data`."""
+    started = time.perf_counter()
     e = os.environ if env is None else env
     order = chain_order(e)
-    dataset = load_dataset() if data is None else data
+    if data is None:
+        dataset, grounding = await asyncio.to_thread(load_grounded_dataset, e)
+    else:
+        dataset, grounding = data, None
     facts = build_facts(dataset, request.case_id, request.fe)
     source = RiskSource(**{k: dataset["source"][k] for k in ("citation", "doi", "license")})
     tiers = dict(providers) if providers is not None else build_providers(e, transport)
-    return await _answers.get_or_compute((request.case_id, facts_json(facts), chain_signature(order, tiers)),
-                                         lambda: _run_chain(request.case_id, order, facts, source, tiers),
-                                         lambda answer: answer_ttl(answer.provider))
+
+    async def produce() -> RiskResponse:
+        answer = await _run_chain(request.case_id, order, facts, source, tiers)
+        logged = await ai_log.log_answer(e, "risk-analysis", request.case_id, answer, facts_json(facts), started,
+                                         grounding)
+        return answer.model_copy(update={"grounding": grounding, "logged": logged})
+
+    # Kept per store too, so the ai_analyses row an answer points to records where its facts came from.
+    key = (request.case_id, grounding and grounding.store, facts_json(facts), chain_signature(order, tiers))
+    answer = await _answers.get_or_compute(
+        key, produce, lambda answer: ai_log.kept_for(answer_ttl(answer.provider), answer.logged, e))
+    # A kept answer shows this request's reason for a fallback (the store is the same, or it would not be kept).
+    return answer if answer.grounding == grounding else answer.model_copy(update={"grounding": grounding})
 
 
 async def _run_chain(case_id: str, order: tuple[str, ...], facts: RiskFacts, source: RiskSource,
