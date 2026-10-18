@@ -1,18 +1,14 @@
 "use client";
 
+import { useRef } from "react";
 import {
   Activity,
-  Bell,
-  CalendarDays,
-  ChevronDown,
   ChevronRight,
-  CircleHelp,
+  Database,
   FileUp,
   FolderOpen,
   LayoutDashboard,
   ScanLine,
-  Settings2,
-  ShieldCheck,
   UserRound,
 } from "lucide-react";
 import Link from "next/link";
@@ -21,11 +17,37 @@ import { RainboneLogo } from "@/components/brand";
 import { ClinicalMetrics } from "@/components/clinical-metrics";
 import { StressChart } from "@/components/stress-chart";
 import { BoneViewer } from "@/components/BoneViewer";
-import type { ClinicalMetrics as Metrics } from "@/lib/mock-data";
-import { mockMetrics } from "@/lib/mock-data";
+import { LiveRun, ALL_NUMBERS_ID } from "@/components/live-run";
+import { PlainExplanation } from "@/components/plain-explanation";
+import { FractureRiskAnalysis } from "@/components/risk-analysis";
+import { API_BASE_URL, type ExplanationState, type HistoryState, type RiskAnalysisState, type SimulationResult } from "@/lib/api";
+import { FEMUR_AUTHORS, FEMUR_INSTITUTION, FEMUR_MODEL } from "@/lib/model";
 const PhysicsSimulations = dynamic(() => import("@/components/physics-simulations").then(module => module.PhysicsSimulations));
 
-export function Dashboard({ metrics = mockMetrics, simulationStatus = "ready", view = "overview" }: { metrics?: Metrics; simulationStatus?: "loading" | "ready" | "error"; view?: "overview" | "physics" }) {
+export type ApiHealth = "checking" | "online" | "offline";
+export type RunInput = { name: string; kind: "sample" | "upload" };
+export type RunState =
+  | { status: "loading"; input: RunInput }
+  | { status: "ready"; input: RunInput; result: SimulationResult; ms: number }
+  | { status: "error"; input: RunInput; message: string };
+
+type OverviewProps = {
+  view?: "overview";
+  run: RunState;
+  explanation: ExplanationState;
+  risk: RiskAnalysisState;
+  history: HistoryState;
+  health: ApiHealth;
+  onRunSample: () => void;
+  onUpload: (file: File) => void;
+};
+
+// app/physics-simulations/page.tsx renders <Dashboard view="physics" />.
+type DashboardProps = OverviewProps | { view: "physics" };
+
+export function Dashboard(props: DashboardProps) {
+  const view = props.view === "physics" ? "physics" : "overview";
+  const health = props.view === "physics" ? undefined : props.health;
   return (
     <main className="min-h-screen bg-canvas text-ink">
       <div className="flex min-h-screen">
@@ -38,14 +60,9 @@ export function Dashboard({ metrics = mockMetrics, simulationStatus = "ready", v
             <NavItem active={view === "physics"} href="/physics-simulations" icon={<Activity size={17} />} label="Physics simulations" />
             <NavItem icon={<FolderOpen size={17} />} label="Imaging library" />
           </nav>
-          <nav aria-label="Account" className="mt-8 space-y-1 px-3">
-            <p className="px-3 pb-2 text-[11px] font-medium uppercase tracking-[0.08em] text-nav-muted">Workspace</p>
-            <NavItem icon={<ShieldCheck size={17} />} label="Secure datasets" />
-            <NavItem icon={<Settings2 size={17} />} label="Preferences" />
-          </nav>
           <div className="mt-auto p-4">
             <div className="rounded-xl border border-nav-line bg-white/[0.03] p-4">
-              <p className="flex items-center gap-2 text-xs font-medium text-nav-ink"><span className="h-2 w-2 rounded-full bg-spectrum-green" aria-hidden /> All services operational</p>
+              {health ? <NavHealth health={health} /> : <p className="text-xs font-medium text-nav-ink">Physics simulation</p>}
               <p className="mt-1.5 text-[11px] leading-4 text-nav-muted">Research prototype · not for clinical diagnosis</p>
             </div>
           </div>
@@ -58,19 +75,11 @@ export function Dashboard({ metrics = mockMetrics, simulationStatus = "ready", v
                 <span className="lg:hidden"><RainboneMarkSmall /></span>
                 <span className="hidden sm:inline">Patients</span>
                 <ChevronRight size={14} className="hidden shrink-0 sm:block" aria-hidden />
-                <span className="hidden sm:inline">RB-24081</span>
+                <span className="hidden sm:inline">{FEMUR_MODEL.dataset} {FEMUR_MODEL.caseId}</span>
                 <ChevronRight size={14} className="hidden shrink-0 sm:block" aria-hidden />
                 <span className="truncate font-medium text-ink" aria-current="page">{view === "physics" ? "Physics simulations" : "Patient overview"}</span>
               </nav>
-              <div className="flex items-center gap-2">
-                <IconButton label="Help"><CircleHelp size={18} /></IconButton>
-                <IconButton label="Notifications"><Bell size={18} /></IconButton>
-                <div className="ml-2 hidden items-center gap-3 border-l border-line pl-4 sm:flex">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-[11px] font-semibold text-white">DR</div>
-                  <div className="hidden text-left xl:block"><p className="text-[13px] font-medium leading-4 text-ink">Dr. Rowan</p><p className="text-[11px] text-muted">Radiology</p></div>
-                  <ChevronDown size={14} className="text-muted" aria-hidden />
-                </div>
-              </div>
+              {health && <ApiStatus health={health} />}
             </div>
             <nav aria-label="Mobile workspace navigation" className="flex gap-1 overflow-x-auto border-t border-line px-4 py-2 scrollbar-hide lg:hidden">
               <MobileNavItem active={view === "overview"} href="/" label="Patient overview" />
@@ -78,52 +87,103 @@ export function Dashboard({ metrics = mockMetrics, simulationStatus = "ready", v
             </nav>
           </header>
 
-          {view === "physics" ? <PhysicsSimulations /> : <div className="mx-auto max-w-[1440px] p-5 md:p-8">
-            <PatientHeader />
-            <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
-              <div className="min-w-0 space-y-6">
-                <BoneViewer />
-                <StressChart />
-              </div>
-              <ClinicalMetrics metrics={metrics} simulationStatus={simulationStatus} />
-            </div>
-            <p className="mt-8 border-t border-line pt-5 text-[11px] leading-5 text-muted">Rainbone is a research prototype. Simulations use assumed material properties and are not validated for clinical diagnosis or treatment decisions.</p>
-          </div>}
+          {props.view === "physics" ? <PhysicsSimulations /> : <Overview {...props} />}
         </section>
       </div>
     </main>
   );
 }
 
-function PatientHeader() {
+function Overview({ run, explanation, risk, history, onRunSample, onUpload }: OverviewProps) {
+  // Saved runs of the same input as the live run, so the chart never mixes different scans.
+  const runs = history.status === "ready" ? history.runs.filter((saved) => saved.source_filename === run.input.name) : [];
+
+  // "Import scan" solves the file and opens the panel that shows its numbers.
+  const importScan = (file: File) => {
+    onUpload(file);
+    const panel = document.getElementById(ALL_NUMBERS_ID) as HTMLDetailsElement | null;
+    if (panel) {
+      panel.open = true;
+      panel.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  };
+
   return (
-    <div className="flex flex-col justify-between gap-5 md:flex-row md:items-end">
-      <div className="min-w-0">
-        <div className="flex flex-wrap items-center gap-3">
-          <h1 className="font-serif text-[28px] font-semibold leading-tight tracking-[-0.01em] text-ink">Proximal femur — left</h1>
-          <StatusPill />
+    <div className="mx-auto max-w-[1440px] p-5 md:p-8">
+      <PatientHeader importing={run.status === "loading"} onImport={importScan} />
+      <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
+        <div className="min-w-0 space-y-6">
+          <BoneViewer />
+          {runs.length > 1 && <StressChart runs={runs} name={run.input.name} />}
         </div>
-        <dl className="mt-3 flex flex-wrap gap-x-6 gap-y-2 text-[13px] text-body">
-          <Meta icon={<UserRound size={14} />} label="Patient" value="RB-24081" mono />
-          <Meta icon={<ScanLine size={14} />} label="Modality" value="CT · CT-ORG reference" />
-          <Meta icon={<CalendarDays size={14} />} label="Acquired" value="12 Oct 2026" />
-        </dl>
+        <div className="min-w-0 space-y-6">
+          <ClinicalMetrics />
+          <FractureRiskAnalysis state={risk} />
+          <PlainExplanation state={explanation} />
+          <LiveRun run={run} history={history} onRunSample={onRunSample} onUpload={onUpload} />
+        </div>
       </div>
-      <button className="inline-flex w-fit items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-[13px] font-medium text-white shadow-card transition hover:bg-primary-hover"><FileUp size={16} /> Import scan</button>
+      <p className="mt-8 border-t border-line pt-5 text-[11px] leading-5 text-muted">Rainbone is a research prototype. Simulations use assumed material properties and are not validated for clinical diagnosis or treatment decisions.</p>
     </div>
   );
 }
 
-function StatusPill() {
-  return <span className="inline-flex items-center gap-1.5 rounded-full border border-link/20 bg-link/[0.07] px-2.5 py-1 text-[12px] font-medium text-link"><span className="h-1.5 w-1.5 rounded-full bg-link" aria-hidden />In review</span>;
+function PatientHeader({ importing, onImport }: { importing: boolean; onImport: (file: File) => void }) {
+  const fileInput = useRef<HTMLInputElement>(null);
+  return (
+    <div className="flex flex-col justify-between gap-5 md:flex-row md:items-end">
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-3">
+          <h1 className="font-serif text-[28px] font-semibold leading-tight tracking-[-0.01em] text-ink">{FEMUR_MODEL.anatomy}</h1>
+          <a href={FEMUR_MODEL.sourceUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-full border border-link/20 bg-link/[0.07] px-2.5 py-1 text-[12px] font-medium text-link hover:bg-link/[0.12]"><span className="h-1.5 w-1.5 rounded-full bg-link" aria-hidden />{FEMUR_MODEL.dataset} {FEMUR_MODEL.caseId}</a>
+        </div>
+        <dl className="mt-3 flex flex-wrap gap-x-6 gap-y-2 text-[13px] text-body">
+          <Meta icon={<UserRound size={14} />} label="Patient" value={`${FEMUR_MODEL.dataset} ${FEMUR_MODEL.caseId}`} mono />
+          <Meta icon={<ScanLine size={14} />} label="Modality" value={`CT · ${FEMUR_INSTITUTION || FEMUR_AUTHORS}`} />
+          <Meta icon={<Database size={14} />} label="Source" value={`${FEMUR_AUTHORS} · ${FEMUR_MODEL.license}`} />
+        </dl>
+      </div>
+      <input
+        ref={fileInput}
+        type="file"
+        accept=".nii,.gz"
+        className="sr-only"
+        tabIndex={-1}
+        aria-hidden
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          if (file) onImport(file);
+          event.target.value = "";
+        }}
+      />
+      <button type="button" onClick={() => fileInput.current?.click()} disabled={importing} className="inline-flex w-fit items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-[13px] font-medium text-white shadow-card transition hover:bg-primary-hover disabled:opacity-60"><FileUp size={16} /> Import scan</button>
+    </div>
+  );
 }
 
 function Meta({ icon, label, value, mono }: { icon: React.ReactNode; label: string; value: string; mono?: boolean }) {
   return <div className="flex items-center gap-1.5"><span className="text-muted" aria-hidden>{icon}</span><dt className="sr-only">{label}</dt><dd className={mono ? "font-mono text-[12.5px]" : ""}>{value}</dd></div>;
 }
 
-function IconButton({ label, children }: { label: string; children: React.ReactNode }) {
-  return <button className="rounded-lg p-2 text-muted transition hover:bg-sunken hover:text-ink" aria-label={label}>{children}</button>;
+const HEALTH = {
+  checking: { label: "Checking the engine", dot: "bg-muted", pill: "border-line bg-sunken text-muted", nav: "text-nav-muted" },
+  online: { label: "Engine online", dot: "bg-success", pill: "border-success/25 bg-success/[0.07] text-success", nav: "text-nav-ink" },
+  // A browser cannot tell a server that is down from one that refuses this page's origin (CORS), so say only that.
+  offline: { label: "Engine unreachable", dot: "bg-caution", pill: "border-caution/25 bg-caution/[0.08] text-caution", nav: "text-nav-ink" },
+} as const;
+
+function ApiStatus({ health }: { health: ApiHealth }) {
+  const state = HEALTH[health];
+  return (
+    <span role="status" title={`GET ${API_BASE_URL}/health, checked every 15 s`} className={`inline-flex shrink-0 items-center gap-2 rounded-full border px-2.5 py-1 text-[12px] font-medium ${state.pill}`}>
+      <span className={`h-1.5 w-1.5 rounded-full ${state.dot}`} aria-hidden /> {state.label}
+    </span>
+  );
+}
+
+function NavHealth({ health }: { health: ApiHealth }) {
+  const state = HEALTH[health];
+  return <p className={`flex items-center gap-2 text-xs font-medium ${state.nav}`}><span className={`h-2 w-2 rounded-full ${state.dot}`} aria-hidden /> {state.label}</p>;
 }
 
 function RainboneMarkSmall() {

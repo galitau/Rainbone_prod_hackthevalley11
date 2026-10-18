@@ -130,3 +130,61 @@ select {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Every font about 12% bigger, in proportion: tailwind.config.ts raises the text-* sizes and these raise
+   the fixed pixel sizes the components use. */
+.text-\[9px\] {
+  font-size: 10.5px;
+}
+
+.text-\[10px\] {
+  font-size: 11.5px;
+}
+
+.text-\[10\.5px\] {
+  font-size: 12px;
+}
+
+.text-\[11px\] {
+  font-size: 12.5px;
+}
+
+.text-\[11\.5px\] {
+  font-size: 13px;
+}
+
+.text-\[12px\] {
+  font-size: 13.5px;
+}
+
+.text-\[12\.5px\] {
+  font-size: 14px;
+}
+
+.text-\[13px\] {
+  font-size: 14.5px;
+}
+
+.text-\[13\.5px\] {
+  font-size: 15px;
+}
+
+.text-\[15px\] {
+  font-size: 17px;
+}
+
+.text-\[17px\] {
+  font-size: 19px;
+}
+
+.text-\[19px\] {
+  font-size: 21px;
+}
+
+.text-\[22px\] {
+  font-size: 25px;
+}
+
+.text-\[28px\] {
+  font-size: 31px;
+}

@@ -48,6 +48,17 @@ const config: Config = {
         serif: ["var(--font-source-serif)", "Georgia", "serif"],
         mono: ["var(--font-ibm-plex-mono)", "ui-monospace", "monospace"],
       },
+      // Each size about 12% above Tailwind's default, so the whole app reads bigger in proportion.
+      fontSize: {
+        xs: ["0.8125rem", { lineHeight: "1.125rem" }],
+        sm: ["0.9375rem", { lineHeight: "1.375rem" }],
+        base: ["1.125rem", { lineHeight: "1.75rem" }],
+        lg: ["1.25rem", { lineHeight: "1.75rem" }],
+        xl: ["1.375rem", { lineHeight: "1.875rem" }],
+        "2xl": ["1.6875rem", { lineHeight: "2.125rem" }],
+        "3xl": ["2.0625rem", { lineHeight: "2.375rem" }],
+        "4xl": ["2.5rem", { lineHeight: "1" }],
+      },
       boxShadow: {
         card: "0 1px 2px rgb(20 33 46 / 0.04), 0 1px 1px rgb(20 33 46 / 0.03)",
         raised: "0 8px 24px -8px rgb(20 33 46 / 0.12), 0 2px 4px rgb(20 33 46 / 0.04)",
