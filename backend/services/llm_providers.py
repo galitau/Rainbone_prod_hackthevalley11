@@ -12,12 +12,20 @@ Keys travel only in request headers; reasons and log lines never contain them.
 
 Both ask for the JSON object {"text": "..."}. httpx is imported when a request
 is made, so the API still starts (and the template still answers) without it.
+
+The chain state both AI routes share also lives here, since they call the same
+models with the same keys and so spend one quota: attempt() makes one call and
+starts a cooldown when it fails (300 s after HTTP 429, else 60 s), so later
+requests from either route skip that model; AnswerCache keeps answers in memory.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import re
-from typing import TYPE_CHECKING, Any, Mapping, Optional
+import time
+from collections import OrderedDict
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Hashable, Mapping, Optional
 
 if TYPE_CHECKING:  # pragma: no cover
     import httpx
@@ -176,3 +184,138 @@ class GroqProvider:
         if choice.get("finish_reason") == "length":
             raise ProviderError("cut off at the token limit")
         return _output_text(content)
+
+
+# ----------------------------------------------------------------------------- shared chain state
+FAILURE_COOLDOWN_S = 60.0  # after a timeout, a connection error or an HTTP error
+RATE_LIMIT_COOLDOWN_S = 300.0  # after HTTP 429: the model's quota is spent, so the next Gemini model answers meanwhile
+GEMINI_ANSWER_TTL_S = 3600.0
+OTHER_ANSWER_TTL_S = 60.0  # Groq and template answers, so Gemini is asked again a minute later
+ANSWER_CACHE_MAX = 256
+
+
+def _now() -> float:
+    return time.monotonic()
+
+
+# (provider name, model) -> (monotonic time the cooldown ends, the reason a skipped attempt reports)
+_cooldowns: dict[tuple[str, str], tuple[float, str]] = {}
+
+
+def reset_cooldowns() -> None:
+    """Forget failed calls (tests, or after fixing a key)."""
+    _cooldowns.clear()
+
+
+def start_cooldown(provider, status: Optional[int]) -> None:
+    """Skip `provider`'s model for a while: RATE_LIMIT_COOLDOWN_S after HTTP 429, else FAILURE_COOLDOWN_S."""
+    if status == 429:
+        seconds, reason = RATE_LIMIT_COOLDOWN_S, f"skipped: HTTP 429 less than {RATE_LIMIT_COOLDOWN_S:g} s ago"
+    else:
+        seconds, reason = FAILURE_COOLDOWN_S, f"skipped: failed less than {FAILURE_COOLDOWN_S:g} s ago"
+    _cooldowns[(provider.name, provider.model)] = (_now() + seconds, reason)
+
+
+def cooldown_reason(provider) -> Optional[str]:
+    """Why `provider`'s model is skipped now, or None when it may be called."""
+    until, reason = _cooldowns.get((provider.name, provider.model), (0.0, ""))
+    return reason if _now() < until else None
+
+
+async def attempt(provider, system: str, user: str,
+                  check: Callable[[str], Optional[str]]) -> tuple[Optional[str], Optional[str], bool]:
+    """(text, reason, try_next_model). text is set when the provider's text passes check().
+
+    try_next_model is true after an HTTP error status or a cooldown skip: the provider's next model (Gemini's
+    fallback) may still answer. A timeout, a connection error or a rejected text leaves the provider.
+    A call that fails (not a rejected text) starts a cooldown for this provider and model, so later requests
+    from either AI route skip it instead of waiting for the same error again.
+    """
+    skipped = cooldown_reason(provider)
+    if skipped:
+        return None, skipped, True
+    try:
+        text = await asyncio.wait_for(provider.generate(system, user), timeout=provider.timeout)
+    except Exception as exc:  # also an adapter bug: it must not break the chain; messages are not forwarded
+        try_next, status = False, None
+        if isinstance(exc, ProviderError):
+            reason, status = exc.reason, exc.status
+            try_next = status is not None
+        elif isinstance(exc, asyncio.TimeoutError):
+            reason = f"timed out after {provider.timeout:g} s"
+        else:
+            reason = f"unexpected {type(exc).__name__}"
+        start_cooldown(provider, status)
+        return None, reason, try_next
+    reason = check(text)
+    return (None, f"rejected: {reason}", False) if reason else (text, None, False)
+
+
+def chain_signature(order: tuple[str, ...], tiers: Mapping[str, list]) -> tuple:
+    """The chain an answer comes from, for cache keys: each provider's models and whether its key is set
+    (never the key itself)."""
+    return tuple((name,) if name == "template" else
+                 (name, tuple(p.model for p in tiers[name]), bool(tiers[name][0].configured)) for name in order)
+
+
+def answer_ttl(provider: str) -> float:
+    return GEMINI_ANSWER_TTL_S if provider == "gemini" else OTHER_ANSWER_TTL_S
+
+
+class AnswerCache:
+    """Answers kept in memory, each for its own lifetime; the least recently used goes first past max_entries.
+
+    get_or_compute() also lets concurrent requests for one key share a single computation, so a burst of page
+    loads makes one model call instead of one each.
+    """
+
+    def __init__(self, max_entries: int = ANSWER_CACHE_MAX):
+        self.max_entries = max_entries
+        self._entries: "OrderedDict[Hashable, tuple[float, Any]]" = OrderedDict()
+        self._pending: dict[Hashable, "asyncio.Future"] = {}
+
+    def __len__(self) -> int:
+        return len(self._entries)
+
+    def get(self, key: Hashable) -> Any:
+        entry = self._entries.get(key)
+        if entry is None:
+            return None
+        if _now() >= entry[0]:
+            del self._entries[key]
+            return None
+        self._entries.move_to_end(key)
+        return entry[1]
+
+    def put(self, key: Hashable, value: Any, ttl_s: float) -> None:
+        self._entries.pop(key, None)
+        self._entries[key] = (_now() + ttl_s, value)
+        while len(self._entries) > self.max_entries:
+            self._entries.popitem(last=False)
+
+    def clear(self) -> None:
+        self._entries.clear()
+        self._pending.clear()
+
+    async def get_or_compute(self, key: Hashable, compute: Callable[[], Awaitable[Any]],
+                             ttl_of: Callable[[Any], float]) -> Any:
+        """The kept answer for `key`, else the result of compute() (shared by concurrent callers), kept for
+        ttl_of(result) seconds. A failed or cancelled computation is not kept."""
+        hit = self.get(key)
+        if hit is not None:
+            return hit
+        loop = asyncio.get_running_loop()
+        task = self._pending.get(key)
+        if task is None or task.done() or task.get_loop() is not loop:
+            task = loop.create_task(compute())
+            self._pending[key] = task
+
+            def finished(done: "asyncio.Task") -> None:
+                if self._pending.get(key) is done:
+                    del self._pending[key]
+                if not done.cancelled() and done.exception() is None:
+                    self.put(key, done.result(), ttl_of(done.result()))
+
+            task.add_done_callback(finished)
+        # A caller that is cancelled (a closed browser tab) leaves the computation running for the others.
+        return await asyncio.shield(task)

@@ -71,8 +71,8 @@ export async function runSimulation(file: File): Promise<SimulationOutcome> {
   return { ok: false, reachedApi: true, message: "The API answered without simulation results." };
 }
 
-// GET /health: true only when the API answers {"status": "ok"}. Never throws.
-export async function checkHealth(): Promise<boolean> {
+// One GET /health: true only when the API answers {"status": "ok"}. Never throws.
+async function healthOnce(): Promise<boolean> {
   try {
     const response = await fetch(apiUrl("/health"), { cache: "no-store", signal: timeout(SHORT_TIMEOUT_MS) });
     if (!response.ok) return false;
@@ -81,6 +81,16 @@ export async function checkHealth(): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+// Wait before the second /health try, so one dropped request during a busy solve does not show the API as offline.
+const HEALTH_RETRY_DELAY_MS = 1_500;
+
+// GET /health: false only after 2 consecutive failed tries, HEALTH_RETRY_DELAY_MS apart. Never throws.
+export async function checkHealth(): Promise<boolean> {
+  if (await healthOnce()) return true;
+  await new Promise((resolve) => setTimeout(resolve, HEALTH_RETRY_DELAY_MS));
+  return healthOnce();
 }
 
 export type HistoryRun = {

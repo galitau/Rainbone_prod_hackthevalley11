@@ -241,9 +241,22 @@ class SimulateWiringTests(HistoryTestCase):
     def setUp(self):
         super().setUp()
         self.client = TestClient(main.app)
+        self.addCleanup(main._simulate_results.clear)
 
-    def post_scan(self):
+    def post_scan(self, reuse: bool = False):
+        """Post the same stub; a real solve each time unless `reuse`, which lets a kept result answer."""
+        if not reuse:
+            main._simulate_results.clear()
         return self.client.post("/api/simulate", files={"file": ("test.nii.gz", b"stub", "application/gzip")})
+
+    def test_a_repeated_upload_reuses_the_result_and_saves_no_second_row(self):
+        conn = self.use_database()
+        with mock.patch.object(main, "simulate_fea", return_value=dict(RESULT)) as solve:
+            first = self.post_scan()
+            again = self.post_scan(reuse=True)
+        self.assertEqual((first.json(), again.json()), (RESULT, RESULT))
+        self.assertEqual(solve.call_count, 1)
+        self.assertEqual(len(conn.executed), 1)
 
     def test_successful_simulation_is_saved_with_the_returned_values(self):
         conn = self.use_database()
@@ -274,8 +287,10 @@ class SimulateWiringTests(HistoryTestCase):
 
     def test_real_endpoint_answers_the_same_with_or_without_history(self):
         files = {"file": (SAMPLE_SCAN.name, SAMPLE_SCAN.read_bytes(), "application/gzip")}
+        main._simulate_results.clear()
         without_db = self.client.post("/api/simulate", files=files)
         conn = self.use_database()
+        main._simulate_results.clear()  # solve again, so this run is saved
         with_db = self.client.post("/api/simulate", files=files)
         self.assertEqual(without_db.status_code, 200, without_db.text)
         self.assertEqual((with_db.status_code, with_db.json()), (200, without_db.json()))
