@@ -68,7 +68,7 @@ export function Dashboard(props: DashboardProps) {
           <div className="px-5 pb-2 pt-6"><RainboneLogo /></div>
           <nav aria-label="Workspace" className="mt-8 space-y-1 px-3">
             <p className="px-3 pb-2 text-[11px] font-medium uppercase tracking-[0.08em] text-nav-muted">Analysis</p>
-            <NavItem active={view === "overview"} href="/" icon={<LayoutDashboard size={17} />} label="Patient overview" />
+            <NavItem active={view === "overview"} href="/dashboard" icon={<LayoutDashboard size={17} />} label="Patient overview" />
             <NavItem active={view === "physics"} href="/physics-simulations" icon={<Activity size={17} />} label="Physics simulations" />
             <NavItem active={view === "imaging"} href="/bones" icon={<FolderOpen size={17} />} label="Imaging library" />
             <NavItem active={view === "progression"} href="/lesion-progression" icon={<ScanLine size={17} />} label="Lesion progression" />
@@ -109,7 +109,7 @@ export function Dashboard(props: DashboardProps) {
               </div>
             </div>
             <nav aria-label="Mobile workspace navigation" className="flex gap-1 overflow-x-auto border-t border-line px-4 py-2 scrollbar-hide lg:hidden">
-              <MobileNavItem active={view === "overview"} href="/" label="Patient overview" />
+              <MobileNavItem active={view === "overview"} href="/dashboard" label="Patient overview" />
               <MobileNavItem active={view === "physics"} href="/physics-simulations" label="Physics simulations" />
               <MobileNavItem active={view === "imaging"} href="/bones" label="Imaging library" />
               <MobileNavItem active={view === "progression"} href="/lesion-progression" label="Lesion progression" />

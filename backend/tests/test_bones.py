@@ -95,6 +95,9 @@ class MissingConfigurationTests(unittest.TestCase):
 @mock_aws
 class PresignedUrlTests(unittest.TestCase):
     def setUp(self) -> None:
+        cache = mock.patch.object(routes_bones, "_manifest_cache", None)
+        cache.start()
+        self.addCleanup(cache.stop)
         patcher = mock.patch.dict(os.environ, S3_ENV)
         patcher.start()
         self.addCleanup(patcher.stop)
