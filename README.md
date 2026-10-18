@@ -18,14 +18,14 @@ those 101 women. Try it: <https://rainbone.health>
 
 **The AI, in one line:** code computes and Gemini only puts the results into words. Every
 number it writes is checked against the data before it's shown, its facts are read from
-Vultr Object Storage with a verified sha256, and every answer a model writes is logged in Tiger Cloud.
+Vultr Object Storage with a verified sha256, and each new model answer is logged in Tiger Cloud when the database is reachable.
 See [The AI layer](#the-ai-layer).
 
 | Sponsor tech | What it does in Rainbone | Where to see it |
 |---|---|---|
-| **Gemini API** | Writes the AI fracture-risk analysis, the plain-words explanation and Ask Rainbone's answers, only over facts the code computed; every number is checked before it is shown | Dashboard AI cards, the Ask Rainbone drawer |
+| **Gemini API** | Writes the AI fracture-risk analysis and the plain-words explanation, and picks which checked statements Ask Rainbone shows, only over facts the code computed; every number is checked before it is shown | Dashboard AI cards, the Ask Rainbone drawer |
 | **Vultr** | Compute runs the FastAPI and SfePy engine at api.rainbone.health; Object Storage holds the AI's sha256-pinned clinical facts and the pelvic meshes | Imaging library, the provenance line under each AI card |
-| **Tiger Data** | TimescaleDB stores every simulation run (hypertable plus an hourly continuous aggregate) and an audit row for every AI answer | History chart, Secure datasets → Recent AI answers, `/api/ai-log` |
+| **Tiger Data** | TimescaleDB stores completed simulation runs (hypertable plus an hourly continuous aggregate) and the provenance of each new AI generation; a cached or saved answer adds no row | History chart, Secure datasets → Recent AI answers, `/api/ai-log` |
 | **GoDaddy Registry** | The `.health` domain | <https://rainbone.health> |
 
 ## What it does
