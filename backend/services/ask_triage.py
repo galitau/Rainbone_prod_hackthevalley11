@@ -32,11 +32,21 @@ class TriageResult:
 async def triage(models: list, question: str, page: Optional[str], deadline: float) -> TriageResult:
     """Reuse configured Gemini models, key cooldowns and 429 cooldown; never persist raw questions."""
     deadline = min(deadline, time.perf_counter() + TRIAGE_BUDGET_S)
+    failures: list[str] = []
     for provider in models:
-        if not isinstance(provider, llm.GeminiProvider) or not provider.configured or llm.cooldown_reason(provider):
+        if not isinstance(provider, llm.GeminiProvider):
+            continue
+        if not provider.configured:
+            failures.append(f"{provider.model}: not configured")
+            continue
+        cooldown = llm.cooldown_reason(provider)
+        if cooldown:
+            category = "HTTP 429 cooldown" if "429" in cooldown else "provider failure cooldown"
+            failures.append(f"{provider.model}: {category}")
             continue
         for _, key, key_id in provider._keys:
             if llm.key_cooldown_reason(key_id, provider.model):
+                failures.append(f"{provider.model}: credential cooldown")
                 continue
             remaining = deadline - time.perf_counter()
             if remaining <= 0:
@@ -59,6 +69,8 @@ async def triage(models: list, question: str, page: Optional[str], deadline: flo
                                         for part in parts if "functionCall" in part and not part.get("thought")])
                 return TriageResult(calls, provider.model, f"Gemini native function-call triage · {provider.model}")
             except llm.ProviderError as exc:
+                category = f"HTTP {exc.status}" if exc.status is not None else "provider request failed"
+                failures.append(f"{provider.model}: {category}")
                 if exc.status in (401, 403):
                     llm.start_key_cooldown(key_id, provider.model, exc.status)
                     continue
@@ -66,6 +78,11 @@ async def triage(models: list, question: str, page: Optional[str], deadline: flo
                     llm.start_cooldown(provider, exc.status)
                 # Unsupported tools/arguments (400) do not invalidate a key or disable the normal writer.
                 break
-            except (asyncio.TimeoutError, ValueError, KeyError, IndexError, TypeError, AttributeError):
+            except asyncio.TimeoutError:
+                failures.append(f"{provider.model}: native request timed out")
                 break
-    return TriageResult([], None, "Rules triage: native function calling unavailable or rejected")
+            except (ValueError, KeyError, IndexError, TypeError, AttributeError):
+                failures.append(f"{provider.model}: invalid native tool response")
+                break
+    detail = "; ".join(dict.fromkeys(failures)) or "no native Gemini provider in this chain"
+    return TriageResult([], None, f"Rules triage: {detail}")

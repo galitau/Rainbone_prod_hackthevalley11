@@ -67,9 +67,9 @@ def validate_calls(value: Any) -> list[ToolCall]:
 def get_patient_facts(case_id: str, env: Mapping[str, str], evidence) -> ToolResult:
     data, grounding = risk.load_grounded_dataset(env)
     facts = risk.build_facts(data, case_id)
-    return ToolResult("get_patient_facts", ("arf0", "strength", "fall_ratio"),
+    return ToolResult("get_patient_facts", ("arf0", "strength", "fall_ratio", "prediction_limit", "recorded_outcome"),
                       {"case_id": case_id, "facts": facts.model_dump(exclude={"fe"}),
-                       "source_ids": ["HFValid-Pat001", "van-den-Kroonenberg-1995"],
+                       "source_ids": ["HFValid-Pat001", "van-den-Kroonenberg-1995", "Rainbone-guide"],
                        "sha256": grounding.sha256}, "Read verified Pat001 research facts; SHA256 checked")
 
 
@@ -120,7 +120,7 @@ def rules_plan(selection: str) -> list[ToolCall]:
     """Deterministic fallback routing. It is always labeled rules, never Gemini triage."""
     calls = []
     for statement in selection.split(","):
-        if statement in {"arf0", "strength", "fall_ratio"}:
+        if statement in {"arf0", "strength", "fall_ratio", "prediction_limit", "recorded_outcome"}:
             item = {"name": "get_patient_facts", "args": {"case_id": "Pat001"}}
         elif statement == "arf0_rank":
             item = {"name": "compare_with_cohort", "args": {"metric": "arf0"}}
@@ -133,4 +133,6 @@ def rules_plan(selection: str) -> list[ToolCall]:
                                                       "upload" if statement == "upload_privacy" else statement}}
         if item not in calls:
             calls.append(item)
+    if "strength" in selection.split(","):
+        calls.append({"name": "compare_with_cohort", "args": {"metric": "msf"}})
     return validate_calls(calls)

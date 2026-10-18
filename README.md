@@ -216,7 +216,11 @@ The writer receives an explicit allowed-ID list and a valid example for those ou
 For recognized intents, the code critic also requires the primary fact or page instruction;
 an irrelevant statement or refusal cannot silently pass. It permits one bounded rewrite
 before falling through the provider chain and reports fixed rejection categories without
-quoting model output or the question. The
+quoting model output or the question. Provider failures and cooldowns are shown separately
+from critic rejections, so a Gemini HTTP 429 correctly appears as a rate-limit fallback.
+Strength comparisons use the MSF cohort ranking; explicit ARF0 comparisons keep their
+different ranking. Prediction questions receive the research limitation and recorded
+Pat001 follow-up outcome, never a forecast. The
 server rejects unknown IDs, sources, routes and answers over 120 words, then renders exact
 statements. The UI discloses that models select checked statements; a provider label does
 not imply unrestricted generated prose. Unsupported requests get a bounded site-help response.
