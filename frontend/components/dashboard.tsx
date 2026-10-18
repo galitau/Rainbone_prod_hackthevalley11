@@ -3,12 +3,17 @@
 import { useRef } from "react";
 import {
   Activity,
+  Bell,
+  ChevronDown,
   ChevronRight,
+  CircleHelp,
   Database,
   FileUp,
   FolderOpen,
   LayoutDashboard,
   ScanLine,
+  Settings2,
+  ShieldCheck,
   UserRound,
 } from "lucide-react";
 import Link from "next/link";
@@ -61,6 +66,11 @@ export function Dashboard(props: DashboardProps) {
             <NavItem active={view === "physics"} href="/physics-simulations" icon={<Activity size={17} />} label="Physics simulations" />
             <NavItem active={view === "imaging"} href="/bones" icon={<FolderOpen size={17} />} label="Imaging library" />
           </nav>
+          <nav aria-label="Account" className="mt-8 space-y-1 px-3">
+            <p className="px-3 pb-2 text-[11px] font-medium uppercase tracking-[0.08em] text-nav-muted">Workspace</p>
+            <NavItem icon={<ShieldCheck size={17} />} label="Secure datasets" />
+            <NavItem icon={<Settings2 size={17} />} label="Preferences" />
+          </nav>
           <div className="mt-auto p-4">
             <div className="rounded-xl border border-nav-line bg-white/[0.03] p-4">
               {health ? <NavHealth health={health} /> : <p className="text-xs font-medium text-nav-ink">{view === "imaging" ? "Imaging library" : "Physics simulation"}</p>}
@@ -80,7 +90,16 @@ export function Dashboard(props: DashboardProps) {
                 <ChevronRight size={14} className="hidden shrink-0 sm:block" aria-hidden />
                 <span className="truncate font-medium text-ink" aria-current="page">{view === "physics" ? "Physics simulations" : view === "imaging" ? "Imaging library" : "Patient overview"}</span>
               </nav>
-              {health && <ApiStatus health={health} />}
+              <div className="flex items-center gap-2">
+                {health && <ApiStatus health={health} />}
+                <IconButton label="Help"><CircleHelp size={18} /></IconButton>
+                <IconButton label="Notifications"><Bell size={18} /></IconButton>
+                <div className="ml-2 hidden items-center gap-3 border-l border-line pl-4 sm:flex" title="Demo account">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-[11px] font-semibold text-white">DR</div>
+                  <div className="hidden text-left xl:block"><p className="text-[13px] font-medium leading-4 text-ink">Dr. Rowan</p><p className="text-[11px] text-muted">Radiology · demo</p></div>
+                  <ChevronDown size={14} className="text-muted" aria-hidden />
+                </div>
+              </div>
             </div>
             <nav aria-label="Mobile workspace navigation" className="flex gap-1 overflow-x-auto border-t border-line px-4 py-2 scrollbar-hide lg:hidden">
               <MobileNavItem active={view === "overview"} href="/" label="Patient overview" />
@@ -186,6 +205,10 @@ function ApiStatus({ health }: { health: ApiHealth }) {
 function NavHealth({ health }: { health: ApiHealth }) {
   const state = HEALTH[health];
   return <p className={`flex items-center gap-2 text-xs font-medium ${state.nav}`}><span className={`h-2 w-2 rounded-full ${state.dot}`} aria-hidden /> {state.label}</p>;
+}
+
+function IconButton({ label, children }: { label: string; children: React.ReactNode }) {
+  return <button type="button" className="rounded-lg p-2 text-muted transition hover:bg-sunken hover:text-ink" aria-label={label}>{children}</button>;
 }
 
 function RainboneMarkSmall() {
