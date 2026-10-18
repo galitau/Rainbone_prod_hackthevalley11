@@ -23,10 +23,11 @@ from fastapi.testclient import TestClient
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from routes_risk import router  # noqa: E402
+from services import llm_providers  # noqa: E402
 from services import risk as rk  # noqa: E402
 from services.risk import FeInput, RiskRequest, analyse, build_facts, check, template_text  # noqa: E402
 from services.settings import runtime_env  # noqa: E402
-from tests.test_explain import GROQ_HOST, KEYS, LITE, PRIMARY, Mock, gemini_reply, groq_reply  # noqa: E402
+from tests.test_explain import GROQ_HOST, KEYS, LITE, PRIMARY, Clock, Mock, gemini_reply, groq_reply  # noqa: E402
 
 DATA = json.loads(rk.DATA_PATH.read_text(encoding="utf-8"))
 FE = {"peak_stress_mpa": 15.83, "load_newtons": 800, "stress_index_percent": 10.553333}
@@ -218,10 +219,21 @@ class CheckerTests(unittest.TestCase):
                 self.assertEqual(check(text, self.facts), f"wrong direction: {phrase!r}")
 
     def test_spelled_out_quantities_fail(self):
-        for text, word in [("Higher than four women.", "four"), ("Twice its strength.", "Twice"),
-                           ("About three quarters of the women.", "three")]:
+        for text, word in [("Higher than five women.", "five"), ("Twice its strength.", "Twice"),
+                           ("About three quarters of the women.", "three"), ("She is one of the 101 women.", "one"),
+                           ("Higher than fifty-six of the 101 women.", "fifty"), ("Over one hundred women.", "one")]:
             with self.subTest(text=text):
                 self.assertEqual(check(text, self.facts), f"spelled-out quantity: {word!r}")
+
+    def test_a_number_word_that_is_a_fact_gets_the_same_checks_as_its_digits(self):
+        # cohort_fractured is 4: "four" passes where "4" would, and fails where "4" would.
+        for text in ["Four of the 101 women had a hip fracture.", "The four women who fractured had 53.7% to 73.2%."]:
+            with self.subTest(text=text):
+                self.assertIsNone(check(text, self.facts))
+        for text, reason in [("Its ARF0 is four percent.", "not a percent in the input: 4"),
+                             ("It may break within four years.", "time prediction: '4 years'")]:
+            with self.subTest(text=text):
+                self.assertEqual(check(text, self.facts), reason)
 
     def test_length_and_empty(self):
         self.assertEqual(check(" ", self.facts), "empty text")
@@ -237,7 +249,8 @@ class ChainTests(RiskTestCase):
         self.assertEqual(result.case_id, "Pat001")
         self.assertEqual(result.source.model_dump(), {k: DATA["source"][k] for k in ("citation", "doi", "license")})
         body = json.loads(mock.requests[0].content)
-        self.assertEqual(body["systemInstruction"], {"parts": [{"text": rk.SYSTEM_PROMPT}]})
+        self.assertEqual(body["systemInstruction"], {"parts": [{"text": f"{rk.SYSTEM_PROMPT} {rk.DIGITS_RULE}"}]})
+        self.assertIn("digits", rk.DIGITS_RULE)
         sent = json.loads(body["contents"][0]["parts"][0]["text"])
         self.assertEqual(sent, result.facts.model_dump(exclude={"fe"}))
         self.assertEqual(result.facts.fe.model_dump(), {"peak_stress_mpa": 15.83, "load_newtons": 800.0,
@@ -245,19 +258,36 @@ class ChainTests(RiskTestCase):
         for absent in ("Pat001", "15.83", "10.55"):
             self.assertNotIn(absent, mock.requests[0].content.decode())
 
-    def test_an_ai_answer_is_kept_and_a_template_is_not(self):
-        offline = Mock()
-        first = run({"case_id": "Pat001", "fe": FE}, {}, offline)
+    def test_a_gemini_answer_is_kept_for_an_hour_and_a_template_for_a_minute(self):
+        clock = Clock().patch(self)
+        first = run({"case_id": "Pat001", "fe": FE}, {}, Mock())
         self.assertEqual(first.provider, "template")
+        self.assertIs(run({"case_id": "Pat001", "fe": FE}, {}, Mock()), first)
         mock = Mock(gemini=gemini_reply(GOOD), groq=groq_reply(GOOD))
-        answers = [run({"case_id": "Pat001", "fe": FE}, KEYS, mock) for _ in range(3)]
-        self.assertEqual(mock.calls, [PRIMARY])  # the template answer did not stop the upgrade; repeats are kept
+        answers = [run({"case_id": "Pat001", "fe": FE}, KEYS, mock) for _ in range(4)]
+        self.assertEqual(mock.calls, [PRIMARY])  # keys set: another chain, so the template did not stop Gemini
         self.assertEqual({(a.provider, a.text) for a in answers}, {("gemini", f"{GOOD} {rk.NOTE}")})
         run({"case_id": "Pat001"}, KEYS, mock)
         self.assertEqual(mock.calls, [PRIMARY] * 2)  # other facts (no fe) ask again
-        rk.reset_cooldowns()
+        clock.now += llm_providers.OTHER_ANSWER_TTL_S + 1
+        self.assertIsNot(run({"case_id": "Pat001", "fe": FE}, {}, Mock()), first)  # the template expired
+        self.assertEqual(mock.calls, [PRIMARY] * 2)
+        clock.now += llm_providers.GEMINI_ANSWER_TTL_S
         run({"case_id": "Pat001", "fe": FE}, KEYS, mock)
         self.assertEqual(mock.calls, [PRIMARY] * 3)
+        rk.reset_cooldowns()
+        run({"case_id": "Pat001", "fe": FE}, KEYS, mock)
+        self.assertEqual(mock.calls, [PRIMARY] * 4)
+
+    def test_a_429_sends_the_next_requests_straight_to_the_fallback_gemini_model(self):
+        Clock().patch(self)
+        first = run({"case_id": "Pat001"}, KEYS, Mock(gemini=httpx.Response(429), lite=gemini_reply(GOOD)))
+        self.assertEqual((first.provider, first.model), ("gemini", LITE))
+        rk._answers.clear()
+        mock = Mock(gemini=gemini_reply(GOOD), lite=gemini_reply(GOOD))
+        result = run({"case_id": "Pat001"}, KEYS, mock)
+        self.assertEqual((result.provider, result.model, mock.calls), ("gemini", LITE, [LITE]))
+        self.assertEqual(reasons(result), [("gemini", f"{PRIMARY}: skipped: HTTP 429 less than 300 s ago")])
 
     def test_rejected_gemini_text_falls_through_to_groq(self):
         for text, reason in [("An ARF0 of 52%.", "number not in input: 52"),

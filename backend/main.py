@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import hashlib
 import logging
+import threading
 import time
-from functools import partial
-from typing import Annotated
+from collections import OrderedDict
+from typing import Annotated, Any
 
 import anyio
 import anyio.to_thread
@@ -22,6 +24,32 @@ from services.settings import runtime_env
 
 # One solve at a time: a full CT can hold several GB while it is segmented.
 SOLVE_LIMITER = anyio.CapacityLimiter(1)
+
+# Results of real solves by sha256 of the uploaded bytes. The solve reads only the bytes, so the same file always gives
+# the same numbers; posting it again (the dashboard's sample on every visit) answers at once instead of queueing behind
+# SOLVE_LIMITER. It is read before the limiter, and again once a request holds it, so identical uploads queued behind a
+# solve reuse its result. Only source_filename comes from each request. Failed solves are not kept. A reused result
+# saves no history row: simulation history records solves that ran, never a repeat of one.
+SIMULATE_CACHE_MAX = 64
+_simulate_results: "OrderedDict[str, dict[str, Any]]" = OrderedDict()
+_simulate_results_lock = threading.Lock()
+
+
+def _kept_result(digest: str) -> dict[str, Any] | None:
+    with _simulate_results_lock:
+        result = _simulate_results.get(digest)
+        if result is None:
+            return None
+        _simulate_results.move_to_end(digest)
+        return dict(result)
+
+
+def _keep_result(digest: str, result: dict[str, Any]) -> None:
+    with _simulate_results_lock:
+        _simulate_results[digest] = dict(result)
+        _simulate_results.move_to_end(digest)
+        while len(_simulate_results) > SIMULATE_CACHE_MAX:
+            _simulate_results.popitem(last=False)
 
 # Browser origins allowed to call the API: the local dev server and the production site.
 CORS_ORIGINS_ENV = "CORS_ALLOW_ORIGINS"
@@ -94,14 +122,22 @@ async def simulate(file: Annotated[UploadFile, File(description="NIfTI .nii or .
     if len(payload) > MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=413, detail=f"Upload a NIfTI file of at most {MAX_UPLOAD_BYTES // 2**20} MiB.")
 
-    started = time.perf_counter()
-    try:
-        result = await anyio.to_thread.run_sync(partial(simulate_fea, payload, filename=file.filename),
-                                                limiter=SOLVE_LIMITER)
-    except FEASolverError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    filename = file.filename
+    digest = await anyio.to_thread.run_sync(lambda: hashlib.sha256(payload).hexdigest())
+    result = _kept_result(digest)
+    if result is None:
+        started = time.perf_counter()
 
-    response = SimulationResponse(**result)
-    # Saved after the response is sent; a failed save is logged and never fails the simulation.
-    background_tasks.add_task(save_simulation_run, result, solve_ms=(time.perf_counter() - started) * 1000.0)
-    return response
+        def solve_unless_kept() -> tuple[dict[str, Any], bool]:
+            kept = _kept_result(digest)  # an identical upload may have been solved while this one queued
+            return (kept, False) if kept is not None else (simulate_fea(payload, filename=filename), True)
+
+        try:
+            result, solved = await anyio.to_thread.run_sync(solve_unless_kept, limiter=SOLVE_LIMITER)
+        except FEASolverError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        if solved:
+            _keep_result(digest, result)
+            # Saved after the response is sent; a failed save is logged and never fails the simulation.
+            background_tasks.add_task(save_simulation_run, result, solve_ms=(time.perf_counter() - started) * 1000.0)
+    return SimulationResponse(**{**result, "source_filename": filename})
