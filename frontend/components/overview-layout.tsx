@@ -2,34 +2,35 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
-// The patient overview's own layout from lg up: how wide the panel column is and which panels are collapsed.
-// Remembered per browser; the page renders the defaults when storage is unavailable.
+// A page's own layout from lg up: how wide the panel column is and which panels are collapsed. The patient overview,
+// physics simulations and lesion progression each keep their own, remembered per browser; a page renders its
+// defaults when storage is unavailable.
 
 export type PanelId = "metrics" | "risk" | "plain" | "numbers" | "history";
-type Layout = { panelWidth: number; collapsed: Record<PanelId, boolean> };
+type Layout<Id extends string> = { panelWidth: number; collapsed: Record<Id, boolean> };
+// One per page, defined at module level so it is the same object on every render.
+export type PanelLayoutConfig<Id extends string> = { storageKey: string; layout: Layout<Id> };
 
 export const PANEL_MIN = 320;
 export const PANEL_MAX = 640;
 // 360 leaves the viewer wide enough at 1366 px for its header to stay on one row.
 export const PANEL_DEFAULT = 360;
 // The viewer header (Anatomy · Stress · Displacement, reset, fullscreen) needs about 400 px; the panel column's
-// max-width in dashboard.tsx (100% - 416px) is this plus the splitter.
+// max-width in each page (100% - 416px) is this plus the splitter.
 const VIEWER_MIN = 400;
 const SPLITTER_W = 16;
 const STEP = 16;
 const BIG_STEP = 64;
-const STORAGE_KEY = "rainbone.overview-layout.v1";
 
 // The defaults are the overview as it looks without any saved layout (All numbers starts closed).
-const DEFAULT_LAYOUT: Layout = {
-  panelWidth: PANEL_DEFAULT,
-  collapsed: { metrics: false, risk: false, plain: false, numbers: true, history: false },
+const OVERVIEW_LAYOUT: PanelLayoutConfig<PanelId> = {
+  storageKey: "rainbone.overview-layout.v1",
+  layout: { panelWidth: PANEL_DEFAULT, collapsed: { metrics: false, risk: false, plain: false, numbers: true, history: false } },
 };
-const PANEL_IDS = Object.keys(DEFAULT_LAYOUT.collapsed) as PanelId[];
 
-function readLayout(): Layout | null {
+function readLayout<Id extends string>({ storageKey, layout: defaults }: PanelLayoutConfig<Id>): Layout<Id> | null {
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw = window.localStorage.getItem(storageKey);
     if (!raw) return null;
     const saved: unknown = JSON.parse(raw);
     if (!saved || typeof saved !== "object") return null;
@@ -39,51 +40,55 @@ function readLayout(): Layout | null {
       panelWidth: typeof panelWidth === "number" && Number.isFinite(panelWidth)
         ? Math.round(Math.min(PANEL_MAX, Math.max(PANEL_MIN, panelWidth)))
         : PANEL_DEFAULT,
-      collapsed: Object.fromEntries(PANEL_IDS.map(id => {
+      collapsed: Object.fromEntries((Object.keys(defaults.collapsed) as Id[]).map(id => {
         const flag = flags[id];
-        return [id, typeof flag === "boolean" ? flag : DEFAULT_LAYOUT.collapsed[id]];
-      })) as Record<PanelId, boolean>,
+        return [id, typeof flag === "boolean" ? flag : defaults.collapsed[id]];
+      })) as Record<Id, boolean>,
     };
   } catch {
     return null;
   }
 }
 
-function writeLayout(layout: Layout) {
+function writeLayout<Id extends string>(storageKey: string, layout: Layout<Id>) {
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(layout));
+    window.localStorage.setItem(storageKey, JSON.stringify(layout));
   } catch {
     // Storage blocked or full: the layout still applies until the page is reloaded.
   }
 }
 
-function clearLayout() {
+function clearLayout(storageKey: string) {
   try {
-    window.localStorage.removeItem(STORAGE_KEY);
+    window.localStorage.removeItem(storageKey);
   } catch {
     // Nothing saved that could be read back.
   }
 }
 
 export function useOverviewLayout() {
-  const [layout, setLayout] = useState<Layout>(DEFAULT_LAYOUT);
+  return usePanelLayout(OVERVIEW_LAYOUT);
+}
+
+export function usePanelLayout<Id extends string>(config: PanelLayoutConfig<Id>) {
+  const [layout, setLayout] = useState<Layout<Id>>(config.layout);
   const current = useRef(layout);
 
   // Every change goes through here and writes storage itself: a write effect would run with the defaults
   // in the same commit as the restore below and overwrite the saved layout.
-  const commit = useCallback((next: Layout, persist: boolean) => {
+  const commit = useCallback((next: Layout<Id>, persist: boolean) => {
     current.current = next;
     setLayout(next);
-    if (persist) writeLayout(next);
-  }, []);
+    if (persist) writeLayout(config.storageKey, next);
+  }, [config]);
 
   // After hydration and before paint, so the server markup matches and the saved width does not flash.
   useLayoutEffect(() => {
-    const saved = readLayout();
+    const saved = readLayout(config);
     if (saved) commit(saved, false);
-  }, [commit]);
+  }, [config, commit]);
 
-  const setCollapsed = useCallback((id: PanelId, collapsed: boolean) => {
+  const setCollapsed = useCallback((id: Id, collapsed: boolean) => {
     const layout = current.current;
     if (layout.collapsed[id] === collapsed) return;
     commit({ ...layout, collapsed: { ...layout.collapsed, [id]: collapsed } }, true);
@@ -97,15 +102,15 @@ export function useOverviewLayout() {
   }, [commit]);
 
   const reset = useCallback(() => {
-    commit(DEFAULT_LAYOUT, false);
-    clearLayout();
-  }, [commit]);
+    commit(config.layout, false);
+    clearLayout(config.storageKey);
+  }, [config, commit]);
 
   return { ...layout, setCollapsed, setPanelWidth, reset };
 }
 
 type CollapsiblePanelProps = {
-  id: PanelId;
+  id: string;
   title: string;
   collapsed: boolean;
   onCollapsedChange: (collapsed: boolean) => void;
@@ -157,6 +162,8 @@ export function CollapsiblePanel({ id, title, collapsed, onCollapsedChange, clas
 
 type PanelSplitterProps = {
   width: number;
+  // The id of the panel column it resizes.
+  panelsId?: string;
   rowRef: React.RefObject<HTMLDivElement | null>;
   onResize: (width: number, persist: boolean) => void;
 };
@@ -165,7 +172,7 @@ type PanelSplitterProps = {
 // VIEWER_MIN px. Arrow keys move it by STEP (Shift: BIG_STEP), Home and End go to the limits, Enter and a double-click
 // restore the default. It works from the column's rendered width: CSS caps the column when the row cannot fit the
 // saved width, and that saved width is kept until the handle actually moves.
-export function PanelSplitter({ width, rowRef, onResize }: PanelSplitterProps) {
+export function PanelSplitter({ width, panelsId = "overview-panels", rowRef, onResize }: PanelSplitterProps) {
   const [dragging, setDragging] = useState(false);
   const drag = useRef<{ id: number; x: number; w: number; last: number } | null>(null);
   const [measured, setMeasured] = useState<{ shown: number; min: number; max: number } | null>(null);
@@ -179,7 +186,7 @@ export function PanelSplitter({ width, rowRef, onResize }: PanelSplitterProps) {
     return { min: Math.min(PANEL_MIN, cap), max: Math.max(Math.min(PANEL_MIN, cap), cap) };
   }, [rowRef]);
   const rendered = () => {
-    const panels = document.getElementById("overview-panels");
+    const panels = document.getElementById(panelsId);
     return panels ? Math.round(panels.getBoundingClientRect().width) : width;
   };
   const clamp = (px: number) => {
@@ -188,7 +195,7 @@ export function PanelSplitter({ width, rowRef, onResize }: PanelSplitterProps) {
   };
 
   useEffect(() => {
-    const panels = document.getElementById("overview-panels");
+    const panels = document.getElementById(panelsId);
     const row = rowRef.current;
     if (!panels || !row || typeof ResizeObserver === "undefined") return;
     const measure = () => {
@@ -201,7 +208,7 @@ export function PanelSplitter({ width, rowRef, onResize }: PanelSplitterProps) {
     observer.observe(panels);
     observer.observe(row);
     return () => observer.disconnect();
-  }, [rowRef, limits]);
+  }, [panelsId, rowRef, limits]);
 
   const shown = measured?.shown ?? width;
 
@@ -225,7 +232,7 @@ export function PanelSplitter({ width, rowRef, onResize }: PanelSplitterProps) {
       ref={self}
       role="separator"
       aria-orientation="vertical"
-      aria-controls="overview-panels"
+      aria-controls={panelsId}
       aria-label="Resize the panel column"
       aria-valuemin={measured ? Math.min(measured.min, shown) : PANEL_MIN}
       aria-valuemax={measured ? Math.max(measured.max, shown) : PANEL_MAX}

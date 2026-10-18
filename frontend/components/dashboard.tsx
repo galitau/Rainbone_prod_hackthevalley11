@@ -78,8 +78,9 @@ export function Dashboard(props: DashboardProps) {
   useEffect(() => {
     void prefetchProgressionFrames();
   }, []);
-  // The patient overview fits the window from lg up: header, patient header and one row; no page scroll.
-  const fit = view === "overview";
+  // The patient overview, physics simulations and lesion progression fit the window from lg up: header, page header
+  // and one row; no page scroll.
+  const fit = view === "overview" || view === "physics" || view === "progression";
 
   return (
     <main className={`min-h-screen bg-canvas text-ink${fit ? " lg:flex lg:h-dvh lg:min-h-[640px] lg:flex-col lg:overflow-hidden" : ""}`}>

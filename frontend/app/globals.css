@@ -273,8 +273,16 @@ html.pref-text-large .text-\[28px\] {
     padding-right: 3.5rem;
   }
 
-  /* The −/+ replaces the All numbers chevron. */
+  /* The −/+ replaces the All numbers chevron, and the disclosure triangle of a <details> card without one. */
   .panel-frame > details > summary > svg {
+    display: none;
+  }
+
+  .panel-frame > details > summary {
+    list-style: none;
+  }
+
+  .panel-frame > details > summary::-webkit-details-marker {
     display: none;
   }
 
@@ -295,5 +303,22 @@ html.pref-text-large .text-\[28px\] {
   /* Its run timestamps wrap so the evidence table fits the column without scrolling sideways. */
   .panel-frame[data-panel="history"] [role="region"] time {
     white-space: normal;
+  }
+
+  /* Lesion progression's frame previews, two across in the panel column: shorter, and the coordinates wrap under
+     the frame label instead of running past the card. */
+  .panel-frame[data-panel="frames"] section > div.relative {
+    height: 9rem;
+  }
+
+  .panel-frame[data-panel="frames"] section > div:last-child {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.125rem;
+    padding: 0.5rem 0.75rem;
+  }
+
+  .panel-frame[data-panel="frames"] section > div:last-child > span {
+    overflow-wrap: anywhere;
   }
 }
