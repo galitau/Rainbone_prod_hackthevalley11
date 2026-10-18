@@ -5,6 +5,7 @@ import { formatNumber } from "@/lib/format";
 import { aiAnswerLabel } from "@/lib/ai-label";
 import type { Explanation, ExplanationState } from "@/lib/api";
 import { GroundingLine } from "@/components/grounding-line";
+import { UsageLine } from "@/components/usage-line";
 
 function sourceLabel(explanation: Explanation) {
   return aiAnswerLabel(explanation);
@@ -26,6 +27,7 @@ export function PlainExplanation({ state }: { state: ExplanationState }) {
       {state.status === "ready" && (
         <div className="space-y-1 border-t border-line bg-sunken/60 px-5 py-3 text-[11.5px] leading-5 text-muted">
           <p>{sourceLabel(state.explanation)} · every number in it was checked against the femur&apos;s solved values</p>
+          <UsageLine answer={state.explanation} />
           <GroundingLine grounding={state.explanation.grounding} logged={state.explanation.logged} />
           <button type="button" className="rounded font-medium text-link underline-offset-4 hover:underline" onClick={() => openAskRainbone(`Why is ${formatNumber(FEMUR_INDEX_PERCENT, 2)}% not a fracture chance?`)}>Ask a follow-up</button>
         </div>

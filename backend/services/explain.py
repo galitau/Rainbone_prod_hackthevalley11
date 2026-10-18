@@ -38,6 +38,12 @@ Cloud (services.ai_log); a kept answer is not logged again and keeps the
 called for it). An answer whose row was not written is kept for at most
 60 s, so a later one is logged.
 
+Each model answer carries `usage`: the tokens the provider reported for the call
+that wrote it (Gemini usageMetadata, Groq usage; see services.llm_providers),
+with served and new_tokens saying whether this response spent them (live) or
+reused the answer (cached, saved: 0 new tokens). It is null for the template
+and when the provider reported no usage. Tokens are not written to the AI log.
+
 Keys come from the process environment, or from backend/.env when present
 (process environment wins). They are never logged or returned.
 """
@@ -59,7 +65,7 @@ from services.ai_log import Logged
 from services.clinical_store import ClinicalDataUnavailable, Grounding, get_clinical_json
 
 from services.llm_providers import (FAILURE_COOLDOWN_S, GEMINI_FALLBACK_MODEL, AnswerCache, GeminiProvider,
-                                    GroqProvider, answer_ttl, ask_models, chain_signature, env_value)
+                                    GroqProvider, ModelAnswer, answer_ttl, ask_models, chain_signature, env_value)
 from services.llm_providers import reset_cooldowns as reset_provider_cooldowns
 from services.settings import runtime_env  # noqa: F401 - routes_explain depends on it from here
 
@@ -206,6 +212,44 @@ class Fallback(BaseModel):
     reason: str
 
 
+class Usage(BaseModel):
+    """The tokens the provider reported for the model call that wrote an answer."""
+
+    prompt_tokens: Optional[int] = Field(description="Input tokens (Gemini promptTokenCount, Groq prompt_tokens).")
+    output_tokens: Optional[int] = Field(description="Generated tokens, thinking included (Gemini "
+                                                     "candidatesTokenCount + thoughtsTokenCount, Groq "
+                                                     "completion_tokens).")
+    thinking_tokens: Optional[int] = Field(default=None, description="Gemini thoughtsTokenCount, part of "
+                                                                     "output_tokens; null when not reported.")
+    total_tokens: Optional[int] = Field(description="The provider's own total (Gemini totalTokenCount).")
+    provider: Literal["gemini", "groq"]
+    model: str
+    source: Literal["live"] = Field(default="live", description="The counts are the provider's usage report for "
+                                                                "the live call that wrote the answer.")
+    served: Literal["live", "cached", "saved"] = Field(
+        default="live", description="As the response's served: live spent these tokens now; cached and saved "
+                                    "reuse an answer, so no new model call was made.")
+    new_tokens: Optional[int] = Field(default=None, description="Tokens this response spent: total_tokens when "
+                                                                "served live, 0 when reused.")
+
+
+def usage_for(provider: str, answer: ModelAnswer) -> Optional[Usage]:
+    """The Usage of a chain answer, or None when its provider reported none."""
+    if not answer.usage:
+        return None
+    return served_usage(Usage(**answer.usage, provider=provider, model=answer.model), answer.served)
+
+
+def served_usage(usage: Optional[Usage], served: str) -> Optional[Usage]:
+    """`usage` as seen by a response served `served`: a cached or saved answer made no new model call."""
+    if usage is None:
+        return None
+    new_tokens = usage.total_tokens if served == "live" else 0
+    if usage.served == served and usage.new_tokens == new_tokens:
+        return usage
+    return usage.model_copy(update={"served": served, "new_tokens": new_tokens})
+
+
 class ExplainResponse(BaseModel):
     text: str
     provider: Literal["gemini", "groq", "template"]
@@ -220,6 +264,8 @@ class ExplainResponse(BaseModel):
                                                                      "they came in the request.")
     logged: Optional[Logged] = Field(default=None, description="The Tiger Cloud row of this answer; null when "
                                                                "DATABASE_URL is unset or the write failed.")
+    usage: Optional[Usage] = Field(default=None, description="Tokens of the model call that wrote this answer; "
+                                                             "null for the template or when none were reported.")
 
 
 # ----------------------------------------------------------------------------- environment and order
@@ -437,6 +483,9 @@ async def explain(request: ExplainRequest, env: Optional[Mapping[str, str]] = No
     answer = await _answers.get_or_compute(
         key, produce, lambda answer: ai_log.kept_for(answer_ttl(answer.provider), answer.logged, e),
         valid=lambda answer: check(answer.text.removesuffix(" " + NOTE), facts) is None)
+    usage = served_usage(answer.usage, answer.served)  # a kept answer made no new model call
+    if usage is not answer.usage:
+        answer = answer.model_copy(update={"usage": usage})
     # A kept answer shows this request's reason for a fallback (the store is the same, or it would not be kept).
     return answer if answer.grounding == grounding else answer.model_copy(update={"grounding": grounding})
 
@@ -460,5 +509,6 @@ async def _run_chain(order: tuple[str, ...], facts: Mapping[str, float], tiers: 
                                   fell_through, kind="explain", facts=facts_json(facts))
         if answer is not None:
             return ExplainResponse(text=_with_note(answer.text), provider=name, model=answer.model,
-                                   served=answer.served, saved_at=answer.saved_at, fallbacks=fallbacks)
+                                   served=answer.served, saved_at=answer.saved_at, fallbacks=fallbacks,
+                                   usage=usage_for(name, answer))
     raise RuntimeError("chain ended without the template")  # chain_order always appends it
