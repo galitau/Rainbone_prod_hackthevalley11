@@ -7,6 +7,7 @@ Run from backend/:  python -m unittest discover -s tests -v
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import json
 import logging
 import random
@@ -23,7 +24,7 @@ from fastapi.testclient import TestClient
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from routes_risk import router  # noqa: E402
-from services import llm_providers  # noqa: E402
+from services import clinical_store, llm_providers  # noqa: E402
 from services import risk as rk  # noqa: E402
 from services.risk import FeInput, RiskRequest, analyse, build_facts, check, template_text  # noqa: E402
 from services.settings import runtime_env  # noqa: E402
@@ -429,16 +430,23 @@ class RouteTests(RiskTestCase):
         app = FastAPI()
         app.include_router(router)
         app.dependency_overrides[runtime_env] = lambda: env
-        patcher = umock.patch.object(rk, "DATA_PATH", data_path)
+        # The bundled copy services.clinical_store falls back to (no VULTR_S3_* in these envs).
+        entry = dataclasses.replace(clinical_store.CATALOGUE["hfvalid-risk"], local=data_path)
+        patcher = umock.patch.dict(clinical_store.CATALOGUE, {"hfvalid-risk": entry})
         patcher.start()
         self.addCleanup(patcher.stop)
+        clinical_store.reset_cache()
+        self.addCleanup(clinical_store.reset_cache)
         return TestClient(app)
 
     def test_contract_shape(self):
         response = self.client({}).post("/api/risk-analysis", json={"case_id": "Pat001", "fe": FE})
         self.assertEqual(response.status_code, 200)
         body = response.json()
-        self.assertEqual(set(body), {"case_id", "facts", "text", "provider", "model", "fallbacks", "source"})
+        self.assertEqual(set(body), {"case_id", "facts", "text", "provider", "model", "fallbacks", "source",
+                                     "grounding", "logged"})
+        self.assertEqual(body["grounding"]["store"], "local-backup")  # no VULTR_S3_* in this env
+        self.assertIsNone(body["logged"])  # no DATABASE_URL
         self.assertEqual(set(body["facts"]), {
             "age", "arf0_percent", "arf0_higher_than", "cohort_n", "cohort_median_arf0_percent", "cohort_fractured",
             "fractured_arf0_min_percent", "fractured_arf0_max_percent", "msf_newtons", "msf_lower_than",

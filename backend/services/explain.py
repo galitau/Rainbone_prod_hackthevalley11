@@ -1,7 +1,14 @@
 """Plain-language explanation of computed simulation results (POST /api/explain).
 
 The request carries the numbers /api/simulate computed (the SimulationResponse
-fields). No model computes a number: models only word the facts built here, and
+fields), or a case_id instead: for "Pat001" the numbers are read from the
+femur model's manifest in Vultr Object Storage
+(clinical/hfvalid/pat001-femur-manifest.json, de-identified public research
+data, HFValid, CC BY 4.0), checked against its pinned sha256 by
+services.clinical_store, with the bundled frontend/public copy as backup; the
+response's `grounding` says which was used.
+
+No model computes a number: models only word the facts built here, and
 check() rejects any text that uses a number which is not a fact (or a fact
 rounded to 1 or 0 decimals), spells a quantity out, uses a word from
 BLOCKED_OUTPUT_PATTERNS, reads a JSON field name aloud, or runs too long. A
@@ -18,23 +25,33 @@ whose call failed is skipped for 60 s, or for 300 s after HTTP 429, by this
 route and /api/risk-analysis alike (services.llm_providers). The template is
 deterministic, needs no network and passes check() for every valid request.
 
-Answers are kept in memory per facts and chain: a Gemini answer for 1 h, a Groq
-or template answer for 60 s (so Gemini is asked again), and concurrent equal
-requests share one chain run. Reloading the page spends no model call.
+Answers are kept in memory per case_id, grounding store, facts and chain: a
+Gemini answer for 1 h, a Groq or template answer for 60 s (so Gemini is asked
+again), and concurrent equal requests share one chain run. Reloading the page
+spends no model call. Each answer the chain produces is logged once in Tiger
+Cloud (services.ai_log); a kept answer is not logged again and keeps the
+`logged` id of its row. An answer whose row was not written is kept for at most
+60 s, so a later one is logged.
 
 Keys come from the process environment, or from backend/.env when present
 (process environment wins). They are never logged or returned.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import math
 import os
 import re
+import time
 from typing import TYPE_CHECKING, Literal, Mapping, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+
+from services import ai_log
+from services.ai_log import Logged
+from services.clinical_store import ClinicalDataUnavailable, Grounding, get_clinical_json
 
 from services.llm_providers import (FAILURE_COOLDOWN_S, GEMINI_FALLBACK_MODEL, AnswerCache, GeminiProvider,
                                     GroqProvider, answer_ttl, attempt, chain_signature, env_value)
@@ -133,21 +150,50 @@ class ChainConfigError(ValueError):
     """AI_CHAIN or AI_OFFLINE names something the chain does not know."""
 
 
+class UnknownCase(KeyError):
+    """No femur model is published for this case_id."""
+
+
+class CaseDataUnavailable(RuntimeError):
+    """The femur model's manifest could not be read from the bucket nor from the bundled copy, or is malformed."""
+
+
+# The case ids whose femur model manifest services.clinical_store serves, and its catalogue name.
+FEMUR_CASES = {"Pat001": "pat001-femur-manifest"}
+ASSUMED_STRENGTH_MPA = 150.0  # services.fea_solver.ASSUMED_STRENGTH_MPA; the index is stress / strength x 100
+REQUIRED_NUMBERS = ("max_von_mises_stress_mpa", "average_youngs_modulus_gpa", "bone_volume_cm3",
+                    "fracture_risk_index_percent")
+
+
 class ExplainRequest(BaseModel):
-    """The SimulationResponse of one /api/simulate call. Numbers only reach a model: source_filename and
-    the mesh counts are accepted so a response can be posted as it is, and are never sent."""
+    """The SimulationResponse of one /api/simulate call, or a case_id whose numbers the API reads itself.
+    Numbers only reach a model: source_filename and the mesh counts are accepted so a response can be posted
+    as it is, and are never sent."""
 
     model_config = ConfigDict(extra="ignore", strict=True, allow_inf_nan=False)
 
-    max_von_mises_stress_mpa: float = Field(ge=0, le=1e6, description="Maximum Von Mises stress in MPa.")
-    average_youngs_modulus_gpa: float = Field(ge=0, le=1e4, description="Mean Young's modulus in GPa.")
-    bone_volume_cm3: float = Field(ge=0, le=1e5, description="Bone volume in cm³.")
-    fracture_risk_index_percent: float = Field(
-        ge=0, le=100, description="The simulation's illustrative index, 0 to 100 percent.")
+    max_von_mises_stress_mpa: Optional[float] = Field(default=None, ge=0, le=1e6,
+                                                      description="Maximum Von Mises stress in MPa.")
+    average_youngs_modulus_gpa: Optional[float] = Field(default=None, ge=0, le=1e4,
+                                                        description="Mean Young's modulus in GPa.")
+    bone_volume_cm3: Optional[float] = Field(default=None, ge=0, le=1e5, description="Bone volume in cm³.")
+    fracture_risk_index_percent: Optional[float] = Field(
+        default=None, ge=0, le=100, description="The simulation's illustrative index, 0 to 100 percent.")
     load_newtons: float = Field(default=800, ge=0, le=1e6, description="Applied compressive load.")
     mesh_vertices: Optional[int] = Field(default=None, ge=0, description="Not sent to any model.")
     mesh_faces: Optional[int] = Field(default=None, ge=0, description="Not sent to any model.")
     source_filename: Optional[str] = Field(default=None, max_length=512, description="Not sent to any model.")
+    case_id: Optional[str] = Field(
+        default=None, min_length=1, max_length=32,
+        description="A case whose femur model the API reads from object storage, such as Pat001. Its numbers are "
+                    "used instead of any sent with it.")
+
+    @model_validator(mode="after")
+    def _numbers_or_case(self) -> "ExplainRequest":
+        missing = [name for name in REQUIRED_NUMBERS if getattr(self, name) is None]
+        if self.case_id is None and missing:
+            raise ValueError("send case_id, or every one of " + ", ".join(missing))
+        return self
 
 
 class Fallback(BaseModel):
@@ -160,6 +206,10 @@ class ExplainResponse(BaseModel):
     provider: Literal["gemini", "groq", "template"]
     model: Optional[str]
     fallbacks: list[Fallback]
+    grounding: Optional[Grounding] = Field(default=None, description="Where the numbers were read from; null when "
+                                                                     "they came in the request.")
+    logged: Optional[Logged] = Field(default=None, description="The Tiger Cloud row of this answer; null when "
+                                                               "DATABASE_URL is unset or the write failed.")
 
 
 # ----------------------------------------------------------------------------- environment and order
@@ -204,6 +254,33 @@ def build_facts(request: ExplainRequest) -> dict[str, float]:
         "bone_volume_cm3": _r(request.bone_volume_cm3),
         "stress_to_strength_percent": _r(request.fracture_risk_index_percent),
     }
+
+
+def request_for_case(case_id: str, env: Mapping[str, str]) -> tuple[ExplainRequest, Grounding]:
+    """The numbers of `case_id`'s femur model, read from its manifest in the bucket (or the bundled copy), as the
+    dashboard sends them (frontend/lib/model.ts FEMUR_EXPLAIN_REQUEST): the nodal-averaged peak stress the 3D
+    colours show, and the index from it. Raises UnknownCase or CaseDataUnavailable."""
+    name = FEMUR_CASES.get(case_id)
+    if name is None:
+        raise UnknownCase(case_id)
+    try:
+        manifest, grounding = get_clinical_json(name, env)
+        if manifest["case_id"] != case_id:
+            raise ValueError("another case")
+        metrics = manifest["metrics"]
+        stress = float(metrics["max_nodal_von_mises_mpa"])
+        request = ExplainRequest(
+            load_newtons=float(metrics["load_newtons"]),
+            max_von_mises_stress_mpa=stress,
+            average_youngs_modulus_gpa=float(metrics["youngs_modulus_mpa"]) / 1000.0,
+            bone_volume_cm3=float(metrics["volume_cm3"]),
+            fracture_risk_index_percent=min(100.0, max(0.0, stress / ASSUMED_STRENGTH_MPA * 100.0)),
+        )
+    except ClinicalDataUnavailable:
+        raise CaseDataUnavailable(f"the femur model of {case_id} is not available") from None
+    except (KeyError, TypeError, ValueError, ValidationError) as exc:
+        raise CaseDataUnavailable(f"the femur model of {case_id} is not usable ({type(exc).__name__})") from None
+    return request, grounding
 
 
 def facts_json(facts: Mapping[str, float]) -> str:
@@ -325,14 +402,28 @@ async def explain(request: ExplainRequest, env: Optional[Mapping[str, str]] = No
                   providers: Optional[Mapping[str, list]] = None) -> ExplainResponse:
     """Word `request` with the first provider whose text passes check(); the template always does.
 
-    An answer is kept per facts and chain (see the module docstring), so an equal request reuses it."""
+    With a case_id the numbers are read from its femur model (`grounding`) instead of the request. An answer
+    is kept per case_id, store, facts and chain (see the module docstring), so an equal request reuses it."""
+    started = time.perf_counter()
     e = os.environ if env is None else env
     order = chain_order(e)
+    case_id, grounding = request.case_id, None
+    if case_id is not None:
+        request, grounding = await asyncio.to_thread(request_for_case, case_id, e)
     facts = build_facts(request)
     tiers = dict(providers) if providers is not None else build_providers(e, transport)
-    return await _answers.get_or_compute((facts_json(facts), chain_signature(order, tiers)),
-                                         lambda: _run_chain(order, facts, tiers),
-                                         lambda answer: answer_ttl(answer.provider))
+
+    async def produce() -> ExplainResponse:
+        answer = await _run_chain(order, facts, tiers)
+        logged = await ai_log.log_answer(e, "explain", case_id, answer, facts_json(facts), started, grounding)
+        return answer.model_copy(update={"grounding": grounding, "logged": logged})
+
+    # Kept per case and store too, so the ai_analyses row an answer points to records where its facts came from.
+    key = (case_id, grounding and grounding.store, facts_json(facts), chain_signature(order, tiers))
+    answer = await _answers.get_or_compute(
+        key, produce, lambda answer: ai_log.kept_for(answer_ttl(answer.provider), answer.logged, e))
+    # A kept answer shows this request's reason for a fallback (the store is the same, or it would not be kept).
+    return answer if answer.grounding == grounding else answer.model_copy(update={"grounding": grounding})
 
 
 async def _run_chain(order: tuple[str, ...], facts: Mapping[str, float], tiers: Mapping[str, list]) -> ExplainResponse:
