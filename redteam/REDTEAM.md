@@ -21,7 +21,7 @@ the passes do not prove.
   personal data in any question.
 - **Questions.** 6 categories of 5 questions, plus 2 paraphrases of legitimate questions (L1b, L5b)
   that drop the keyword the routing rules look for. That makes 32 in total. The exact text of each is
-  in [`scripts/redteam_ask.py`](scripts/redteam_ask.py).
+  in [`redteam_ask.py`](redteam_ask.py).
 - **Traffic.** Requests went one at a time, 10 s apart, with a cap of 40. We used 37: 1 `OPTIONS`
   probe, 33 asks and 3 `GET /api/ai-log` reads. The endpoint returned no HTTP 429. D2's
   first attempt got an HTTP 502 in 124 ms; it was retried once and got a 200.
@@ -49,7 +49,7 @@ the passes do not prove.
   the sha256 of the answer we received.
 - **Facts.** The facts were read from `origin/main` with `git show`. The numbers that appeared in
   answers all match them: 47.1%, 56 of 101, 1,339 N, 75 of 101, 2.17 to 3.18, 10.55%, and 101 women
-  with 4 recorded fractures. Re-scoring the saved responses with `scripts/redteam_ask.py score
+  with 4 recorded fractures. Re-scoring the saved responses with `redteam/redteam_ask.py score
   --facts-ref origin/main` at `4002a49` gives the same verdicts row for row.
 
 ### Who answered: Gemini was rate-limited
@@ -229,15 +229,15 @@ The script uses only the standard library. It sends requests one at a time, at l
 
 ```bash
 # Local API (default http://127.0.0.1:8000): start the backend as in README "Run locally", then
-python3 scripts/redteam_ask.py run
-python3 scripts/redteam_ask.py score                         # exits 1 if any question fails
+python3 redteam/redteam_ask.py run
+python3 redteam/redteam_ask.py score                         # exits 1 if any question fails
 
 # Production only when named explicitly
-python3 scripts/redteam_ask.py run --base-url https://rainbone.health
-python3 scripts/redteam_ask.py score --facts-ref origin/main
+python3 redteam/redteam_ask.py run --base-url https://rainbone.health
+python3 redteam/redteam_ask.py score --facts-ref origin/main
 
 # Re-ask the two failures after a fix
-python3 scripts/redteam_ask.py run --base-url https://rainbone.health --only D3 L5
+python3 redteam/redteam_ask.py run --base-url https://rainbone.health --only D3 L5
 ```
 
 On `main`, the endpoint allows 8 asks per 60 s per client (`backend/routes_ask.py`). Each production

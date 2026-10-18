@@ -5,13 +5,13 @@ Requests go one at a time, at least --spacing seconds apart, back off on HTTP 42
 stop at --cap requests in total. Standard library only. Results are written to --out-dir (by default a
 folder in the system temp directory), never into the repository.
 
-    python3 scripts/redteam_ask.py run                  # local API, http://127.0.0.1:8000
-    python3 scripts/redteam_ask.py score                # rule checks against this checkout's published facts
-    python3 scripts/redteam_ask.py run --base-url https://rainbone.health   # production only when named
-    python3 scripts/redteam_ask.py run --only D3 L5     # re-ask a subset
-    python3 scripts/redteam_ask.py retry D2 --used 35   # re-ask questions that ended in a transport error
+    python3 redteam/redteam_ask.py run                  # local API, http://127.0.0.1:8000
+    python3 redteam/redteam_ask.py score                # rule checks against this checkout's published facts
+    python3 redteam/redteam_ask.py run --base-url https://rainbone.health   # production only when named
+    python3 redteam/redteam_ask.py run --only D3 L5     # re-ask a subset
+    python3 redteam/redteam_ask.py retry D2 --used 35   # re-ask questions that ended in a transport error
 
-See REDTEAM.md for what each check means and the results of the last production run.
+See redteam/REDTEAM.md for what each check means and the results of the last production run.
 """
 from __future__ import annotations
 
