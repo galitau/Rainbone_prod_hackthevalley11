@@ -14,3 +14,4 @@ httpx
 python-dotenv
 boto3
 psycopg[binary]
+langgraph==1.2.16

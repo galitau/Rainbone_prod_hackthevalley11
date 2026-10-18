@@ -17,7 +17,7 @@ from typing import Literal, Mapping, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from services import ai_log, ask_tools, ask_triage, clinical_store, explain, risk
+from services import ai_log, ask_graph, ask_tools, ask_triage, clinical_store, explain, risk
 from services.ask_usage import UsageCollector, WorkflowUsage, empty_usage
 from services.ai_log import Logged
 from services.clinical_store import Grounding
@@ -108,7 +108,7 @@ class Source(BaseModel):
 
 
 class TraceEvent(BaseModel):
-    stage: Literal["triage", "evidence", "writer", "critic", "cache", "audit"]
+    stage: Literal["triage", "evidence", "writer", "critic", "cache", "audit", "orchestrator"]
     tool: Optional[str] = None
     summary: str
     ms: float = Field(ge=0)
@@ -350,50 +350,73 @@ async def ask(request: AskRequest, env: Mapping[str, str], *, providers=None, tr
             trace.append(TraceEvent(stage=stage, tool=tool, summary=summary,
                                     ms=round(max(0, time.perf_counter() - began) * 1000, 2)))
 
-        began = time.perf_counter()
-        if recognized is not None:
-            calls = ask_tools.rules_plan(recognized)
-            event("triage", "Rules triage: recognized Rainbone question; selected its matching evidence tools", began)
-        else:
-            routed = await ask_triage.triage(tiers.get("gemini", []) if "gemini" in order else [],
-                                            request.question, request.page, started + PROVIDER_BUDGET_S,
-                                            on_usage=lambda provider, model, usage: collector.record("triage", provider, model, usage),
-                                            on_failure=collector.mark_incomplete)
-            calls = routed.calls or ask_tools.rules_plan("unavailable")
-            event("triage", routed.summary, began)
-        # All plans are validated before executing any call, including deterministic fallback plans.
-        calls = ask_tools.validate_calls([{"name": c.name, "args": dict(c.args)} for c in calls])
-        outputs, tools_used, allowed_ids = [], [], {"unavailable"}
-        for call in calls:
-            began = time.perf_counter()
-            result = await bounded_evidence(ask_tools.execute, call, env, evidence, deadline=started + PROVIDER_BUDGET_S)
-            tools_used.append(result.tool)
-            allowed_ids.update(result.statement_ids)
-            outputs.append({"tool": result.tool, "facts": result.facts,
-                            "statements": {i: evidence.statements[i].text for i in result.statement_ids}})
-            event("evidence", result.summary, began, result.tool)
-        if recognized is not None:
-            desired = set(selected_ids(recognized))
-            if not desired.issubset(allowed_ids):
-                raise RuntimeError("Recognized question is missing its evidence statements")
-            allowed_ids = desired
-            for output in outputs:
-                output["statements"] = {i: text for i, text in output["statements"].items() if i in allowed_ids}
-        selected_evidence = replace(evidence, statements={i: evidence.statements[i] for i in allowed_ids})
-        required_ids = required_selection(recognized)
-        required_id = required_ids[0] if required_ids else None
-        example_id = ",".join(required_ids) or next((i for i in sorted(allowed_ids) if i != "unavailable"), "unavailable")
-        # Only executed tool outputs reach the writer; the raw question remains transient provider input.
-        user = json.dumps({"question": request.question, "page": request.page, "tool_outputs": outputs,
-                           "allowed_statement_ids": sorted(allowed_ids), "required_statement_id": required_id,
-                           "required_statement_ids": required_ids,
-                           "response_example": {"text": example_id},
-                           "fallback_statement": {"unavailable": evidence.statements["unavailable"].text}
-                           if "unavailable" in allowed_ids else {}}, ensure_ascii=False)
-        writer_identity = json.dumps({"request": identity, "tool_outputs_sha256": _hash(json.dumps(outputs, sort_keys=True))}, sort_keys=True)
+        calls = []
+        selected_evidence = evidence
+        required_ids = []
+        user = writer_identity = ""
+        outputs, tools_used = [], []
         rewritten = False
+        provider_index = 0
+        name = order[0]
+        reply = None
+        rejected = False
+        writer_user = None
+        remaining = 0.0
+        selection = ""
+        model = saved_at = None
+        served = "live"
+        response = None
 
-        def critic(text: str) -> Optional[str]:
+        async def triage_stage():
+            nonlocal calls
+            began = time.perf_counter()
+            if recognized is not None:
+                calls = ask_tools.rules_plan(recognized)
+                event("triage", "Rules triage: recognized Rainbone question; selected its matching evidence tools", began)
+            else:
+                routed = await ask_triage.triage(tiers.get("gemini", []) if "gemini" in order else [],
+                                                request.question, request.page, started + PROVIDER_BUDGET_S,
+                                                on_usage=lambda provider, model, usage: collector.record("triage", provider, model, usage),
+                                                on_failure=collector.mark_incomplete)
+                calls = routed.calls or ask_tools.rules_plan("unavailable")
+                event("triage", routed.summary, began)
+            return "evidence"
+
+        async def evidence_stage():
+            nonlocal calls, outputs, tools_used, selected_evidence, required_ids, user, writer_identity
+            # All plans are validated before executing any call, including deterministic fallback plans.
+            calls = ask_tools.validate_calls([{"name": c.name, "args": dict(c.args)} for c in calls])
+            outputs, tools_used, allowed_ids = [], [], {"unavailable"}
+            for call in calls:
+                began = time.perf_counter()
+                result = await bounded_evidence(ask_tools.execute, call, env, evidence, deadline=started + PROVIDER_BUDGET_S)
+                tools_used.append(result.tool)
+                allowed_ids.update(result.statement_ids)
+                outputs.append({"tool": result.tool, "facts": result.facts,
+                                "statements": {i: evidence.statements[i].text for i in result.statement_ids}})
+                event("evidence", result.summary, began, result.tool)
+            if recognized is not None:
+                desired = set(selected_ids(recognized))
+                if not desired.issubset(allowed_ids):
+                    raise RuntimeError("Recognized question is missing its evidence statements")
+                allowed_ids = desired
+                for output in outputs:
+                    output["statements"] = {i: text for i, text in output["statements"].items() if i in allowed_ids}
+            selected_evidence = replace(evidence, statements={i: evidence.statements[i] for i in allowed_ids})
+            required_ids = required_selection(recognized)
+            required_id = required_ids[0] if required_ids else None
+            example_id = ",".join(required_ids) or next((i for i in sorted(allowed_ids) if i != "unavailable"), "unavailable")
+            # Only executed tool outputs reach the writer; the raw question remains transient provider input.
+            user = json.dumps({"question": request.question, "page": request.page, "tool_outputs": outputs,
+                               "allowed_statement_ids": sorted(allowed_ids), "required_statement_id": required_id,
+                               "required_statement_ids": required_ids,
+                               "response_example": {"text": example_id},
+                               "fallback_statement": {"unavailable": evidence.statements["unavailable"].text}
+                               if "unavailable" in allowed_ids else {}}, ensure_ascii=False)
+            writer_identity = json.dumps({"request": identity, "tool_outputs_sha256": _hash(json.dumps(outputs, sort_keys=True))}, sort_keys=True)
+            return "writer"
+
+        def check_writer(text: str) -> Optional[str]:
             began = time.perf_counter()
             reason = check_selection(text, selected_evidence)
             if reason is None and not set(required_ids).issubset(selected_ids(text)):
@@ -402,62 +425,72 @@ async def ask(request: AskRequest, env: Mapping[str, str], *, providers=None, tr
                   f"Code critic checked {name.capitalize()} selected evidence, citations, routes and word budget", began)
             return reason
 
-        for name in order:
+        async def writer_stage():
+            nonlocal name, rejected, reply, writer_user, remaining, selection, model, served, saved_at, writer_usage
+            name = order[provider_index]
+            rejected = False
+            reply = None
             if name == "template":
                 began = time.perf_counter()
                 selection, model, served, saved_at = template_selection(request.question), None, "live", None
+                writer_usage = None
                 if check_selection(selection, selected_evidence):
                     selection = "unavailable"
                 event("writer", "Rules writer selected checked source statements", began)
-            else:
-                rejected = False
-                def failed(model: Optional[str], reason: str, provider: str = name) -> None:
-                    nonlocal rejected
-                    rejected = rejected or reason.startswith("rejected")
-                    # Never retain rejected output or question fragments, including in Tiger fallback metadata.
-                    category = provider_failure_category(reason)
-                    fallbacks.append(Fallback(provider=provider, reason=category))
-                    # Model names are configured server-side; never use a provider response body as a label.
-                    known_models = {getattr(p, "model", None) for p in tiers.get(provider, [])}
-                    label = f" · {model}" if model and model in known_models else ""
-                    event("writer", f"{provider.capitalize()} writer{label}: {category}", began)
-                remaining = started + PROVIDER_BUDGET_S - time.perf_counter()
-                if remaining <= 0:
-                    fallbacks.append(Fallback(provider=name, reason="request time budget exhausted"))
-                    continue
-                reply = None
-                writer_user = user
-                for _ in range(2):
-                    began = time.perf_counter()
-                    try:
-                        reply = await asyncio.wait_for(ask_models(
-                            tiers[name], SYSTEM, writer_user, critic,
-                            failed, kind="ask", facts=writer_identity,
-                            on_usage=lambda provider, model, usage: collector.record("writer", provider, model, usage),
-                            on_failure=collector.mark_incomplete), timeout=max(.001, remaining))
-                    except asyncio.TimeoutError:
-                        collector.mark_incomplete("request_timeout")
-                        failed(None, "request time budget exhausted")
-                    status = ("reused saved checked statement selection" if reply and reply.served == "saved" else
-                              "returned checked statement selection" if reply else "produced no accepted selection")
-                    event("writer", f"{name.capitalize()} writer {status}",
-                          began)
-                    remaining = started + PROVIDER_BUDGET_S - time.perf_counter()
-                    if reply is not None or not rejected or rewritten or remaining <= 0:
-                        break
+                return "critic"
+            began = time.perf_counter()
+            def failed(model: Optional[str], reason: str, provider: str = name) -> None:
+                nonlocal rejected
+                rejected = rejected or reason.startswith("rejected")
+                category = provider_failure_category(reason)
+                fallbacks.append(Fallback(provider=provider, reason=category))
+                known_models = {getattr(p, "model", None) for p in tiers.get(provider, [])}
+                label = f" · {model}" if model and model in known_models else ""
+                event("writer", f"{provider.capitalize()} writer{label}: {category}", began)
+            remaining = started + PROVIDER_BUDGET_S - time.perf_counter()
+            if remaining <= 0:
+                fallbacks.append(Fallback(provider=name, reason="request time budget exhausted"))
+                return "critic"
+            try:
+                reply = await asyncio.wait_for(ask_models(
+                    tiers[name], SYSTEM, writer_user or user, check_writer,
+                    failed, kind="ask", facts=writer_identity,
+                    on_usage=lambda provider, model, usage: collector.record("writer", provider, model, usage),
+                    on_failure=collector.mark_incomplete), timeout=max(.001, remaining))
+            except asyncio.TimeoutError:
+                collector.mark_incomplete("request_timeout")
+                failed(None, "request time budget exhausted")
+            status = ("reused saved checked statement selection" if reply and reply.served == "saved" else
+                      "returned checked statement selection" if reply else "produced no accepted selection")
+            event("writer", f"{name.capitalize()} writer {status}", began)
+            remaining = started + PROVIDER_BUDGET_S - time.perf_counter()
+            if reply is not None:
+                selection, model, served, saved_at = reply.text, reply.model, reply.served, reply.saved_at
+                writer_usage = explain.usage_for(name, reply)
+            return "critic"
+
+        async def critic_stage():
+            nonlocal rewritten, writer_user, provider_index
+            if name != "template" and reply is None:
+                if rejected and not rewritten and remaining > 0:
                     rewritten = True
-                    rejected = False
                     writer_user = json.dumps({"request": json.loads(user), "revision":
                         "The code critic rejected the previous selection. Choose only IDs in these tool outputs; "
                         "Use unavailable only if listed in allowed_statement_ids. Include every required_statement_ids entry "
                         "when supplied. Do not write prose."}, ensure_ascii=False)
-                if reply is None:
-                    continue
-                selection, model, served, saved_at = reply.text, reply.model, reply.served, reply.saved_at
-                writer_usage = explain.usage_for(name, reply)
-            reason = critic(selection)
+                else:
+                    provider_index += 1
+                    writer_user = None
+                if provider_index >= len(order):
+                    raise RuntimeError("Ask chain ended without template")
+                return "writer"
+            reason = check_writer(selection)
             if reason:
                 raise RuntimeError(f"Ask statement catalogue is invalid: {reason}")
+            return "audit"
+
+        async def audit_stage():
+            nonlocal response
             answer = render(selection, selected_evidence)
             source_ids = list(dict.fromkeys(re.findall(r"\[([^\]]+)\](?!\()", answer)))
             steps = list(evidence.steps)
@@ -478,8 +511,13 @@ async def ask(request: AskRequest, env: Mapping[str, str], *, providers=None, tr
                                    sources=[evidence.sources[i] for i in source_ids], grounding=evidence.grounding,
                                    logged=logged, steps=steps, trace=trace, tools_used=tools_used, statement_ids=selected_ids(selection),
                                    usage=writer_usage, workflow_usage=collector.snapshot())
-            return response
-        raise RuntimeError("Ask chain ended without template")
+            return "end"
+        orchestrator = await ask_graph.run({"triage": triage_stage, "evidence": evidence_stage,
+                                           "writer": writer_stage, "critic": critic_stage, "audit": audit_stage})
+        assert response is not None
+        orchestration_event = TraceEvent(stage="orchestrator", summary=orchestrator, ms=0)
+        return response.model_copy(update={"trace": [*response.trace, orchestration_event],
+                                           "steps": [*response.steps, orchestrator]})
 
     cache_started = time.perf_counter()
     key = (identity, SYSTEM, chain_signature(order, tiers))
@@ -502,11 +540,12 @@ async def ask(request: AskRequest, env: Mapping[str, str], *, providers=None, tr
         valid=valid_response)
     if was_kept or response.served == "cached":
         # Current request loaded/verified the evidence; generation and audit happened earlier.
+        original_orchestrator = next((e.summary for e in response.trace if e.stage == "orchestrator"), "Original orchestrator unavailable")
         response = response.model_copy(update={"workflow_usage": empty_usage("cache"),
             "usage": explain.served_usage(response.usage, "cached"),
             "steps": [*evidence.steps, "Reused a cached checked statement selection",
             f"Original selection: {response.provider}" + (f" · {response.model}" if response.model else "")],
-            "trace": [TraceEvent(stage="cache", summary="Reused prior checked answer; tools and writer were not run again",
+            "trace": [TraceEvent(stage="cache", summary=f"Reused prior checked answer; tools and writer were not run again. {original_orchestrator} (original generation; not rerun)",
                                  ms=round(max(0, time.perf_counter() - cache_started) * 1000, 2))]})
     if can_join and not was_kept:
         response = response.model_copy(update={"workflow_usage": empty_usage("in_flight")})
