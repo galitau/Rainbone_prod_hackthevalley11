@@ -15,7 +15,10 @@ out or is rejected falls through to the next, and the reason is reported in
 `fallbacks`. When GEMINI_MODEL answers with an HTTP error (such as 429) or is
 cooling down, gemini-3.5-flash-lite is tried before leaving Gemini. A model
 whose call failed is skipped for 60 s, or for 300 s after HTTP 429, by this
-route and /api/risk-analysis alike (services.llm_providers). The template is
+route and /api/risk-analysis alike (services.llm_providers). Each Gemini model
+is asked with every key in GEMINI_API_KEY and GEMINI_API_KEYS before the next
+one, and when none answers, the Gemini answer saved for the same facts is
+served (served="saved", with its model and saved_at) before Groq. The template is
 deterministic, needs no network and passes check() for every valid request.
 
 Answers are kept in memory per facts and chain: a Gemini answer for 1 h, a Groq
@@ -37,7 +40,7 @@ from typing import TYPE_CHECKING, Literal, Mapping, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 from services.llm_providers import (FAILURE_COOLDOWN_S, GEMINI_FALLBACK_MODEL, AnswerCache, GeminiProvider,
-                                    GroqProvider, answer_ttl, attempt, chain_signature, env_value)
+                                    GroqProvider, answer_ttl, ask_models, chain_signature, env_value)
 from services.llm_providers import reset_cooldowns as reset_provider_cooldowns
 from services.settings import runtime_env  # noqa: F401 - routes_explain depends on it from here
 
@@ -159,6 +162,11 @@ class ExplainResponse(BaseModel):
     text: str
     provider: Literal["gemini", "groq", "template"]
     model: Optional[str]
+    served: Literal["live", "cached", "saved"] = Field(
+        default="live", description="live: written for this request; cached: kept in memory from an earlier one; "
+                                    "saved: no Gemini model answered, so this is the Gemini answer saved earlier for "
+                                    "the same facts, written by `model` at `saved_at`.")
+    saved_at: Optional[str] = Field(default=None, description="When a saved answer was written (ISO 8601, UTC).")
     fallbacks: list[Fallback]
 
 
@@ -344,18 +352,15 @@ async def _run_chain(order: tuple[str, ...], facts: Mapping[str, float], tiers: 
             if reason:  # correct by construction; a failure here is a bug in template_text
                 raise RuntimeError(f"template failed the checker: {reason}")
             return ExplainResponse(text=_with_note(text), provider="template", model=None, fallbacks=fallbacks)
-        models = tiers[name]
-        if not models[0].configured:
-            fallbacks.append(Fallback(provider=name, reason=f"{models[0].key_name} not set"))
-            continue
-        for provider in models:
-            text, reason, try_next = await attempt(provider, SYSTEM_PROMPT, facts_json(facts),
-                                                   lambda t: check(t, facts))
-            if text is not None:
-                return ExplainResponse(text=_with_note(text), provider=name, model=provider.model,
-                                       fallbacks=fallbacks)
-            log.warning("explain: %s %s fell through: %s", name, provider.model, reason)
-            fallbacks.append(Fallback(provider=name, reason=f"{provider.model}: {reason}"))
-            if not try_next:
-                break
+
+        def fell_through(model: Optional[str], reason: str, name: str = name) -> None:
+            if model is not None:
+                log.warning("explain: %s %s fell through: %s", name, model, reason)
+            fallbacks.append(Fallback(provider=name, reason=reason if model is None else f"{model}: {reason}"))
+
+        answer = await ask_models(tiers[name], SYSTEM_PROMPT, facts_json(facts), lambda t: check(t, facts),
+                                  fell_through, kind="explain", facts=facts_json(facts))
+        if answer is not None:
+            return ExplainResponse(text=_with_note(answer.text), provider=name, model=answer.model,
+                                   served=answer.served, saved_at=answer.saved_at, fallbacks=fallbacks)
     raise RuntimeError("chain ended without the template")  # chain_order always appends it

@@ -8,6 +8,9 @@ build/
 .env*
 !.env.example
 
+# Saved Gemini answers (AI_ANSWER_STORE) and their temporary files while being written
+.ai-answers.json*
+
 # Python environments and caches
 .venv/
 venv/

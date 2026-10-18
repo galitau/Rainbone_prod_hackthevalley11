@@ -441,7 +441,8 @@ class TemplateTests(ExplainTestCase):
     def test_template_is_deterministic_offline_and_plain(self):
         a = run(SIM, {"AI_OFFLINE": "1"})
         b = run(SIM, {"AI_OFFLINE": "1"})
-        self.assertEqual(a, b)
+        self.assertEqual((a.served, b.served), ("live", "cached"))  # the second is kept from the first
+        self.assertEqual(a, b.model_copy(update={"served": "live"}))
         self.assertTrue(a.text.startswith("A bone carries load the way a bridge does"))
         for part in ["408 cm³ of bone", "800 newtons", "reached 42 MPa", "17.2 GPa",
                      "28% of the strength assumed for bone material: an illustrative stress-to-strength ratio", ex.NOTE]:
@@ -495,7 +496,8 @@ class AnswerCacheTests(ExplainTestCase):
                 self.assertEqual(first.provider, provider)
                 calls = len(mock.requests)
                 self.clock.now += llm_providers.OTHER_ANSWER_TTL_S - 1
-                self.assertIs(run(SIM, env, mock), first)
+                kept = run(SIM, env, mock)
+                self.assertEqual((kept.text, kept.provider, kept.served), (first.text, provider, "cached"))
                 self.clock.now += 2
                 self.assertIsNot(run(SIM, env, mock), first)
                 self.assertEqual(len(mock.requests), 2 * calls)
@@ -644,7 +646,7 @@ class RouteTests(ExplainTestCase):
         response = self.client({}).post("/api/explain", json=payload)
         self.assertEqual(response.status_code, 200)
         body = response.json()
-        self.assertEqual(set(body), {"text", "provider", "model", "fallbacks"})
+        self.assertEqual(set(body), {"text", "provider", "model", "served", "saved_at", "fallbacks"})
         self.assertEqual((body["provider"], body["model"]), ("template", None))
         self.assertEqual(body["fallbacks"][0], {"provider": "gemini", "reason": "GEMINI_API_KEY not set"})
 

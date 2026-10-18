@@ -1,11 +1,9 @@
 import { MessageSquareText } from "lucide-react";
+import { aiAnswerLabel } from "@/lib/ai-label";
 import type { Explanation, ExplanationState } from "@/lib/api";
 
-const PROVIDER_LABELS: Record<string, string> = { gemini: "Gemini", groq: "Groq" };
-
-function sourceLabel({ provider, model }: Explanation) {
-  if (provider === "template") return "Explained by the built-in template";
-  return `Explained by ${PROVIDER_LABELS[provider] ?? provider}${model ? ` · ${model}` : ""}`;
+function sourceLabel(explanation: Explanation) {
+  return aiAnswerLabel(explanation);
 }
 
 export function PlainExplanation({ state }: { state: ExplanationState }) {

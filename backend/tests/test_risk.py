@@ -291,7 +291,8 @@ class ChainTests(RiskTestCase):
         clock = Clock().patch(self)
         first = run({"case_id": "Pat001", "fe": FE}, {}, Mock())
         self.assertEqual(first.provider, "template")
-        self.assertIs(run({"case_id": "Pat001", "fe": FE}, {}, Mock()), first)
+        kept = run({"case_id": "Pat001", "fe": FE}, {}, Mock())
+        self.assertEqual((kept.text, kept.served), (first.text, "cached"))
         mock = Mock(gemini=gemini_reply(GOOD), groq=groq_reply(GOOD))
         answers = [run({"case_id": "Pat001", "fe": FE}, KEYS, mock) for _ in range(4)]
         self.assertEqual(mock.calls, [PRIMARY])  # keys set: another chain, so the template did not stop Gemini
@@ -430,7 +431,8 @@ class RouteTests(RiskTestCase):
         response = self.client({}).post("/api/risk-analysis", json={"case_id": "Pat001", "fe": FE})
         self.assertEqual(response.status_code, 200)
         body = response.json()
-        self.assertEqual(set(body), {"case_id", "facts", "text", "provider", "model", "fallbacks", "source"})
+        self.assertEqual(set(body), {"case_id", "facts", "text", "provider", "model", "served", "saved_at", "fallbacks",
+                                     "source"})
         self.assertEqual(set(body["facts"]), {
             "age", "arf0_percent", "arf0_higher_than", "cohort_n", "cohort_median_arf0_percent", "cohort_fractured",
             "fractured_arf0_min_percent", "fractured_arf0_max_percent", "msf_newtons", "msf_lower_than",
