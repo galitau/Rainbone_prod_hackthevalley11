@@ -8,9 +8,13 @@ so the browser fetches the files straight from the bucket without seeing any cre
 from __future__ import annotations
 
 import json
+import hashlib
 import logging
 import os
 import re
+import threading
+import time
+from concurrent.futures import Future
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 from urllib.parse import urlparse
@@ -22,6 +26,13 @@ ENV_VARS = ("VULTR_S3_ENDPOINT", "VULTR_S3_ACCESS_KEY", "VULTR_S3_SECRET_KEY", "
 BUCKET_PREFIX = "ctpelvic1k/"
 MANIFEST_KEY = BUCKET_PREFIX + "manifest.json"
 URL_TTL_SECONDS = 15 * 60
+# Avoid repeating storage reads and URL signing when a judge revisits the library.
+# Updated manifests become visible within this window; signed URLs retain their
+# original expiry. The cache is private to this process and never caches errors.
+MANIFEST_CACHE_SECONDS = 30
+_cache_lock = threading.Lock()
+_manifest_cache: Optional[tuple[bytes, float, "BonesResponse"]] = None
+_inflight: dict[bytes, Future] = {}
 # A manifest "path": relative, "/"-separated, no "." or ".." segments (same rule as pipeline.py).
 SAFE_PATH_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9._-]*(?:/[A-Za-z0-9_][A-Za-z0-9._-]*)*$")
 CONTENT_TYPES = {".nii.gz": "application/gzip", ".vtp": "application/xml", ".json": "application/json"}
@@ -107,10 +118,48 @@ def _client(settings: dict[str, str]):
 
 @router.get("/api/bones", response_model=BonesResponse)
 def list_bones() -> BonesResponse:
-    """Cases in the bucket manifest, each file with a pre-signed GET URL valid for 15 minutes."""
+    """Cases and signed URLs; repeated reads share a validated response for 30 seconds."""
+    global _manifest_cache
+    settings = _settings()
+    # Include credentials so rotation cannot return URLs signed by the old key.
+    # Only the digest is retained as the cache key; it is never logged.
+    key = hashlib.sha256(json.dumps(settings, sort_keys=True).encode()).digest()
+    # Share an in-flight read, including its failure, with existing waiters. Never
+    # hold the lock over storage I/O or make queued callers retry an outage serially.
+    with _cache_lock:
+        if _manifest_cache is not None:
+            cached_key, until, cached = _manifest_cache
+            remaining = int((cached.expires_at - datetime.now(timezone.utc)).total_seconds())
+            if cached_key == key and time.monotonic() < until and remaining > 0:
+                return cached.model_copy(deep=True, update={"expires_in_seconds": remaining})
+        # Discard expired/other-configuration data before attempting a fresh read.
+        _manifest_cache = None
+        pending = _inflight.get(key)
+        leader = pending is None
+        if leader:
+            pending = _inflight[key] = Future()
+    if not leader:
+        response = pending.result()
+        remaining = max(0, int((response.expires_at - datetime.now(timezone.utc)).total_seconds()))
+        return response.model_copy(deep=True, update={"expires_in_seconds": remaining})
+    try:
+        response = _read_bones(settings)
+        with _cache_lock:
+            _manifest_cache = (key, time.monotonic() + MANIFEST_CACHE_SECONDS, response)
+        pending.set_result(response)
+        return response.model_copy(deep=True)
+    except BaseException as exc:
+        pending.set_exception(exc)
+        raise
+    finally:
+        with _cache_lock:
+            _inflight.pop(key, None)
+
+
+def _read_bones(settings: dict[str, str]) -> BonesResponse:
+    """Fetch, sign and validate the manifest. Called only on a cache miss."""
     from botocore.exceptions import BotoCoreError, ClientError
 
-    settings = _settings()
     try:
         client = _client(settings)
     except ValueError as exc:  # botocore rejects the endpoint URL; its message is not echoed
