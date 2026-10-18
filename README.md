@@ -366,7 +366,7 @@ credentials, and checks each mesh's sha256 before drawing it.
 | Method and path | What it does |
 |---|---|
 | `GET /health` | Liveness: `{"status": "ok", "service": "rainbowbone-fea"}` |
-| `POST /api/simulate` | Multipart `file`, one `.nii` or `.nii.gz` of at most 512 MiB. Three admitted uploads per process, one solve at a time; HTTP 429 when busy. Returns execution UUID/hash and persistence state; identical contents reuse the execution |
+| `POST /api/simulate` | Multipart `file`, one `.nii` or `.nii.gz` of at most 512 MiB. Up to 8 uploads received at once (each must finish within 60 s, else 408); at most 3 uncached solves admitted per process, one running at a time; an already-solved file is answered from the cache and never refused; HTTP 429 with `Retry-After` when busy. Returns execution UUID/hash and persistence state; identical contents reuse the execution |
 | `POST /api/explain` | Plain-words explanation of simulation numbers, or of `case_id` `Pat001` read from `clinical/`. AI layer |
 | `POST /api/ask` | Cited reference-data and navigation answers from checked source statements; question length, rate and concurrency limits |
 | `POST /api/risk-analysis` | AI-worded fracture risk analysis of one HFValid subject (`case_id`, optional `fe`) from the published table in `clinical/`. AI layer |
@@ -507,8 +507,10 @@ optional FSL bone segmentation.
 
 ## Limitations
 
-- **A research prototype, not a medical device.** It gives no forecast and no
-  diagnosis, and nothing in it has been validated for clinical use.
+- **A research prototype, not a medical device.** The fracture-risk figure it surfaces early
+  (ARF0) is the HFValid authors' published model estimate for this femur, shown so a care team
+  can see where she stands among 101 women before a fall. Rainbone makes no forecast of its own
+  and no diagnosis, and nothing in it has been validated for clinical use.
 - **The fall numbers are published, not computed from a scan.** ARF0 and MSF are the
   HFValid authors' results for one case, Pat001. Importing a CT runs our standing-load
   solve; it does not produce an ARF0 or an MSF.
