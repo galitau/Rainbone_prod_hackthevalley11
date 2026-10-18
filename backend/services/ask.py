@@ -25,7 +25,7 @@ from services.explain import Fallback
 from services.llm_providers import AnswerCache, answer_ttl, ask_models, chain_signature
 
 PAGES = frozenset({"/dashboard", "/physics-simulations", "/lesion-progression", "/bones", "/datasets", "/preferences"})
-VERSION = "ask-tools-5"
+VERSION = "ask-tools-6"
 PROVIDER_BUDGET_S = 25.0  # includes time already spent gathering evidence; audit has its own short bound
 MAX_PENDING = 4  # computations remain bounded even when all original HTTP callers disconnect
 _evidence_workers = ThreadPoolExecutor(max_workers=MAX_PENDING, thread_name_prefix="ask-evidence")
@@ -204,6 +204,10 @@ def build_evidence(env: Mapping[str, str]) -> Evidence:
         "navigation": s("Use [Patient overview](/dashboard) for the bone view and Import scan, "
                         "[Physics simulations](/physics-simulations) for the press, and "
                         "[Secure datasets](/datasets) for data sources.", "Rainbone-guide"),
+        "stack": s("Vultr Compute runs Rainbone's FastAPI simulation engine. Vultr Object Storage holds "
+                   "research assets and SHA256-verified AI evidence, with a verified bundled backup when needed. "
+                   "Tiger Cloud stores simulation history and AI provenance when available. Writes are best effort; "
+                   "a saved or logged label requires confirmation, not just a configured database.", "Rainbone-guide"),
         "unavailable": s("I can only answer questions about Rainbone's data and pages: what the published ARF0 "
                          "means, why the stress index is not a fracture chance, or how to use Cut-away.", "Rainbone-guide"),
     }
@@ -254,8 +258,18 @@ def check_selection(text: str, evidence: Evidence) -> Optional[str]:
 def known_selection(question: str) -> Optional[str]:
     """Unambiguous product prompts route before native triage; unknown questions still use Gemini."""
     q = question.casefold()
+    # Personal identifiers and treatment requests outrank generic navigation/data keywords.
+    # 'live engine' is a product description, not a request for a person's residence.
+    personal = (r"\b(?:address|dob|date of birth|born|phone|health[ -]?card|email|hospital)\b"
+                r"|\b(?:her|his|their|patient(?:'s)?|woman(?:'s)?)\s+(?:full\s+)?name\b"
+                r"|\b(?:she|he|they|patient|woman)\b.*\b(?:live|lives|living)\b"
+                r"|\b(?:live|lives|living)\b.*\b(?:she|he|they|patient|woman)\b")
+    if re.search(personal, q) or re.search(r"\b(?:should (?:she|he|they)|dose|dosage|surgery|surgical)\b", q):
+        return "unavailable"
     if any(word in q for word in ("diagnos", "treat", "medicat", "my risk", "will i", "should i")):
         return "unavailable"
+    if re.search(r"\b(?:vultr|tiger|storage|audit|database)\b|where.{0,20}data.{0,20}stored|\blive engine\b", q):
+        return "stack"
     if re.search(r"(?<![\w.])(?:11|10\.55)(?![\w.])", q) or any(word in q for word in ("stress index", "stress ratio")):
         return "stress_index"
     if re.search(r"\b(?:cut(?:-?away)?|inside|slice)\b", q):

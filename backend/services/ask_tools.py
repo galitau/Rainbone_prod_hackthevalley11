@@ -12,14 +12,14 @@ TOOL_ARGS = {
     "get_patient_facts": {"case_id": ("Pat001",)},
     "compare_with_cohort": {"metric": ("arf0", "msf")},
     "get_fea_result": {},
-    "get_page_guide": {"topic": ("cut", "press", "upload", "preferences", "progression", "imaging", "navigation", "general")},
+    "get_page_guide": {"topic": ("cut", "press", "upload", "preferences", "progression", "imaging", "navigation", "stack", "general")},
     "get_dataset_info": {"name": ("HFValid", "CTPelvic1K")},
 }
 DESCRIPTIONS = {
     "get_patient_facts": "Read verified published Pat001 ARF0, modeled strength and fall-force ratio.",
     "compare_with_cohort": "Compare Pat001 ARF0 or MSF with the research cohort, using distinct ranks.",
     "get_fea_result": "Read the illustrative FEA manifest and explain the stress index, not fracture chance.",
-    "get_page_guide": "Read actual Rainbone routes and controls; general handles unsupported questions.",
+    "get_page_guide": "Read actual Rainbone routes, controls and stack infrastructure (Vultr Compute, verified Object Storage, Tiger Cloud best-effort provenance); general handles unsupported questions.",
     "get_dataset_info": "Read research dataset attribution and scope; no uploaded user files.",
 }
 DECLARATIONS = [{"name": name, "description": DESCRIPTIONS[name], **({
