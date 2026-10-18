@@ -49,6 +49,8 @@ export function PhysicsSimulations() {
   const damaged = frame && frame.max_damage > .05;
   const chart = model?.frames.map((item, index) => ({ stroke: item.stroke_mm, force: item.load_n / 1000, completed: index <= frameIndex ? item.load_n / 1000 : null }));
   function scrub(index: number) { setPlaying(false); setFrameIndex(index); }
+  function togglePlayback() { if (frameIndex === lastStep) setFrameIndex(0); setPlaying(value => !value); }
+  function restartPlayback() { setFrameIndex(0); setPlaying(true); }
 
   return <div className="p-5 md:p-8">
     <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
@@ -66,7 +68,7 @@ export function PhysicsSimulations() {
               <div><h3 className="text-sm font-medium">FEA compression</h3><p className="mt-1 text-xs text-muted">Step {frameIndex + 1} of {model.frames.length} · {frame.stroke_mm.toFixed(3)} mm applied displacement</p></div>
               <div className="flex items-center gap-2">
                 <button aria-label="Previous compression step" disabled={frameIndex === 0} onClick={() => scrub(frameIndex - 1)} className="rounded-lg border border-line p-2 text-muted disabled:opacity-30"><ChevronLeft size={16} /></button>
-                <button aria-label={playing ? "Pause compression" : "Run compression"} disabled={!viewerReady && !playing} onClick={() => { if (frameIndex === lastStep) setFrameIndex(0); setPlaying(value => !value); }} className="flex items-center gap-2 rounded-lg bg-cyan px-4 py-2 text-xs font-semibold text-canvas disabled:opacity-40">{playing ? <Pause size={15} /> : <Play size={15} />}{playing ? "Pause" : frameIndex === lastStep ? "Replay" : "Run press"}</button>
+                <button aria-label={playing ? "Pause compression" : "Run compression"} disabled={!viewerReady && !playing} onClick={togglePlayback} className="flex items-center gap-2 rounded-lg bg-cyan px-4 py-2 text-xs font-semibold text-canvas disabled:opacity-40">{playing ? <Pause size={15} /> : <Play size={15} />}{playing ? "Pause" : frameIndex === lastStep ? "Replay" : "Run press"}</button>
                 <button aria-label="Next compression step" disabled={frameIndex === lastStep} onClick={() => scrub(frameIndex + 1)} className="rounded-lg border border-line p-2 text-muted disabled:opacity-30"><ChevronRight size={16} /></button>
                 <button aria-label="Reset compression test" onClick={() => scrub(0)} className="rounded-lg border border-line p-2 text-muted"><RotateCcw size={15} /></button>
               </div>
@@ -78,7 +80,7 @@ export function PhysicsSimulations() {
             </div>
             {frameIndex === firstBreak - 1 && <p className="mt-3 text-[11px] leading-5 text-warning">Last solved step before a visible gap. In Failure proximity, red elements have reached the assumed strain limit that initiates damage. The gap develops between saved steps.</p>}
           </section>
-          <PressViewer model={model} frameIndex={frameIndex} field={field} scale={scale} edges={edges} onReady={onReady} />
+          <PressViewer model={model} frameIndex={frameIndex} field={field} scale={scale} edges={edges} playing={playing} onTogglePlayback={togglePlayback} onRestart={restartPlayback} onReady={onReady} />
         </div>
         <aside aria-label="Compression results and settings" className="space-y-4">
           <section className="rounded-xl border border-line bg-panel p-5">
