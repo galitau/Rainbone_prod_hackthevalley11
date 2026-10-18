@@ -25,7 +25,7 @@ from services.explain import Fallback
 from services.llm_providers import AnswerCache, answer_ttl, ask_models, chain_signature
 
 PAGES = frozenset({"/dashboard", "/physics-simulations", "/lesion-progression", "/bones", "/datasets", "/preferences"})
-VERSION = "ask-tools-6"
+VERSION = "ask-tools-7"
 PROVIDER_BUDGET_S = 25.0  # includes time already spent gathering evidence; audit has its own short bound
 MAX_PENDING = 4  # computations remain bounded even when all original HTTP callers disconnect
 _evidence_workers = ThreadPoolExecutor(max_workers=MAX_PENDING, thread_name_prefix="ask-evidence")
@@ -176,7 +176,7 @@ def build_evidence(env: Mapping[str, str]) -> Evidence:
                               "No fracture was recorded for Pat001 during the study follow-up.", "HFValid-Pat001"),
         "arf0_rank": s(f"Pat001's ARF0 is higher than {facts.arf0_higher_than} of the {facts.cohort_n} women "
                        "in the research cohort.", "HFValid-Pat001"),
-        "strength": s(f"Its minimum sidefall strength is {facts.msf_newtons:,} N in the study authors' model; "
+        "strength": s(f"Pat001's femur has a minimum sidefall strength of {facts.msf_newtons:,} N in the study authors' model; "
                       f"{facts.msf_lower_than} of the {facts.cohort_n} women had a stronger femur.", "HFValid-Pat001"),
         "fall_ratio": s(f"Published sideways-fall forces divided by Pat001's modeled strength give a ratio of "
                         f"{facts.factor_of_risk_low:g} to {facts.factor_of_risk_high:g}. [HFValid-Pat001]",
@@ -285,10 +285,12 @@ def known_selection(question: str) -> Optional[str]:
         return "arf0,arf0_rank"
     if any(word in q for word in ("2.2", "3.2", "ratio", "fall force")):
         return "fall_ratio,strength"
-    if re.search(r"\b(?:strength|strong|stronger|weaker|msf|rank)\b|compared with|other women", q):
+    if re.search(r"\b(?:strength|strong|stronger|weaker|msf)\b", q):
         return "strength"
     if re.search(r"\brisk\b", q):
         return "arf0,arf0_rank"
+    if re.search(r"\b(?:compare|compares|compared|comparison|cohort|rank)\b|other women", q):
+        return "arf0_rank,strength"
     if any(word in q for word in ("source", "data come", "dataset", "data from")):
         return "sources,imaging"
     if any(word in q for word in ("preference", "theme", "motion", "text size")):
@@ -304,7 +306,7 @@ def known_selection(question: str) -> Optional[str]:
 
 def required_selection(selection: Optional[str]) -> list[str]:
     ids = selected_ids(selection) if selection else []
-    return ids if "prediction_limit" in ids else ids[:1]
+    return ids if "prediction_limit" in ids or set(ids) == {"arf0_rank", "strength"} else ids[:1]
 
 
 def provider_failure_category(reason: str) -> str:
@@ -416,13 +418,15 @@ async def ask(request: AskRequest, env: Mapping[str, str], *, providers=None, tr
             writer_identity = json.dumps({"request": identity, "tool_outputs_sha256": _hash(json.dumps(outputs, sort_keys=True))}, sort_keys=True)
             return "writer"
 
-        def check_writer(text: str) -> Optional[str]:
+        def check_writer(text: str, *, emit_pass: bool = False) -> Optional[str]:
             began = time.perf_counter()
             reason = check_selection(text, selected_evidence)
             if reason is None and not set(required_ids).issubset(selected_ids(text)):
                 reason = "selection does not answer recognized question"
-            event("critic", f"Code critic rejected: {name.capitalize()} selection; {reason}" if reason else
-                  f"Code critic checked {name.capitalize()} selected evidence, citations, routes and word budget", began)
+            # The pre-save callback records rejection immediately; the graph critic records success once.
+            if reason or emit_pass:
+                event("critic", f"Code critic rejected: {name.capitalize()} selection; {reason}" if reason else
+                      f"Code critic checked {name.capitalize()} selected evidence, citations, routes and word budget", began)
             return reason
 
         async def writer_stage():
@@ -484,7 +488,7 @@ async def ask(request: AskRequest, env: Mapping[str, str], *, providers=None, tr
                 if provider_index >= len(order):
                     raise RuntimeError("Ask chain ended without template")
                 return "writer"
-            reason = check_writer(selection)
+            reason = check_writer(selection, emit_pass=True)
             if reason:
                 raise RuntimeError(f"Ask statement catalogue is invalid: {reason}")
             return "audit"

@@ -8,19 +8,34 @@ function timestamp(value: string) {
 // Exact run identity for current APIs, filename history for older deployments.
 type StressChartProps =
   | { runs: HistoryRun[]; name: string; hourly?: HistoryHour[]; activeMonth?: never; matchKind?: "run" | "filename"; sample?: boolean }
-  | { activeMonth: number; runs?: never; name?: never; hourly?: never };
+  | { activeMonth: number; timeline: Array<{ month: number; peakVonMisesMPa: number }>; runs?: never; name?: never; hourly?: never };
 
 export function StressChart(props: StressChartProps) {
-  if ("activeMonth" in props) {
-    const month = Math.max(0, Math.min(12, props.activeMonth ?? 0));
+  if ("timeline" in props) {
+    const frames = props.timeline.filter(frame => Number.isFinite(frame.month) && Number.isFinite(frame.peakVonMisesMPa) && frame.peakVonMisesMPa >= 0).slice().sort((a, b) => a.month - b.month);
+    if (!frames.length) return <p className="text-[12px] text-muted">Illustrative timeline values unavailable.</p>;
+    const start = frames[0].month;
+    const end = frames[frames.length - 1].month;
+    const month = Number.isFinite(props.activeMonth) ? Math.max(start, Math.min(end, props.activeMonth ?? start)) : start;
+    const current = frames.reduce((nearest, frame) => Math.abs(frame.month - month) < Math.abs(nearest.month - month) ? frame : nearest);
+    const ceiling = Math.max(5, Math.ceil(Math.max(...frames.map(frame => frame.peakVonMisesMPa)) / 5) * 5);
+    const x = (value: number) => end === start ? 50 : (value - start) / (end - start) * 100;
+    const y = (value: number) => 92 - value / ceiling * 84;
+    const points = frames.map(frame => `${x(frame.month)},${y(frame.peakVonMisesMPa)}`).join(" ");
     return (
-      <section aria-label="Progression stress timeline" className="rounded-2xl border border-line bg-surface p-5 shadow-card md:p-6">
-        <h2 className="text-[15px] font-semibold text-ink">Progression stress timeline</h2>
-        <p className="mt-1 text-[12px] text-muted">Illustrative interpolated stress across the 12-month timeline.</p>
-        <div className="relative mt-5 h-16 rounded-lg border border-line bg-sunken/40">
-          <div className="absolute inset-y-0 w-px bg-caution" style={{ left: `${(month / 12) * 100}%` }} aria-label={`Active month ${month}`} />
-          <div className="absolute inset-x-3 bottom-3 flex justify-between text-[10px] text-muted"><span>0 mo</span><span>12 mo</span></div>
+      <section aria-label="Illustrative stress timeline" className="rounded-2xl border border-line bg-surface p-5 shadow-card md:p-6">
+        <h2 className="text-[15px] font-semibold text-ink">Illustrative stress timeline</h2>
+        <p className="mt-1 text-[12px] leading-5 text-muted">Synthetic timeline values, not solver results or measured clinical stress.</p>
+        <p className="mt-3 text-[12px] text-body">Month {current.month}: <strong className="font-mono text-[18px] text-ink">{current.peakVonMisesMPa.toFixed(1)} MPa</strong> · illustrative</p>
+        <div className="relative mt-4 h-32">
+          {[ceiling, ceiling / 2, 0].map(value => <div key={value} className="absolute inset-x-0 flex -translate-y-1/2 items-center gap-2" style={{ top: `${y(value)}%` }}><span className="w-8 text-right font-mono text-[10px] text-muted">{value.toFixed(1)}</span><span className="h-px flex-1 bg-line" /></div>)}
+          <svg className="absolute inset-y-0 left-10 h-full w-[calc(100%-2.5rem)] overflow-visible" viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label={`Synthetic stress timeline in MPa, months ${start} to ${end}. Selected month ${current.month}: ${current.peakVonMisesMPa.toFixed(1)} MPa; not solved clinical stress.`}>
+            <polyline fill="none" points={points} stroke="rgb(var(--link))" strokeWidth="2" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+            <line x1={x(current.month)} x2={x(current.month)} y1="8" y2="92" stroke="rgb(var(--caution))" strokeWidth="2" strokeDasharray="4 3" vectorEffect="non-scaling-stroke" />
+            <line x1={Math.max(0, x(current.month) - 2)} x2={Math.min(100, x(current.month) + 2)} y1={y(current.peakVonMisesMPa)} y2={y(current.peakVonMisesMPa)} stroke="rgb(var(--ink))" strokeWidth="4" vectorEffect="non-scaling-stroke" />
+          </svg>
         </div>
+        <div className="ml-10 mt-2 flex justify-between gap-2 text-[10px] text-muted"><span>{start} mo</span><span>Illustrative MPa</span><span>{end} mo</span></div>
       </section>
     );
   }

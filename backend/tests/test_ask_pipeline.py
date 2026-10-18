@@ -202,7 +202,7 @@ class PipelineTests(unittest.TestCase):
         self.assertIn("1,339 N", result.answer)
         self.assertIn("75 of the 101", result.answer)
         self.assertEqual(ask_tools.rules_plan(ask.known_selection(question))[-1].args, {"metric": "msf"})
-        for phrasing in ("Which rank is she?", "Is this weaker than the other women?", "How strong is it?"):
+        for phrasing in ("Is this weaker than the other women?", "How strong is it?"):
             self.assertEqual(ask.known_selection(phrasing), "strength")
         self.assertEqual(ask_tools.rules_plan(ask.known_selection("What is the ARF0 rank compared with other women?"))[-1].args,
                          {"metric": "arf0"})

@@ -72,13 +72,11 @@ const VIEW_TITLES = {
 } as const;
 
 const isWorkspaceView = (view: keyof typeof VIEW_TITLES) => view === "datasets" || view === "preferences";
+const warmProgression = () => { void prefetchProgressionFrames(); };
 
 export function Dashboard(props: DashboardProps) {
   const view = "run" in props ? "overview" : props.view;
   const health = "run" in props ? props.health : undefined;
-  useEffect(() => {
-    void prefetchProgressionFrames();
-  }, []);
   // The patient overview, physics simulations and lesion progression fit the window from lg up: header, page header
   // and one row; no page scroll.
   const fit = view === "overview" || view === "physics" || view === "progression" || view === "imaging";
@@ -95,7 +93,7 @@ export function Dashboard(props: DashboardProps) {
             <NavItem active={view === "overview"} href="/dashboard" icon={<LayoutDashboard size={17} />} label="Patient overview" />
             <NavItem active={view === "physics"} href="/physics-simulations" icon={<Activity size={17} />} label="Physics simulations" />
             <NavItem active={view === "imaging"} href="/bones" icon={<FolderOpen size={17} />} label="Imaging library" />
-            <NavItem active={view === "progression"} href="/lesion-progression" icon={<ScanLine size={17} />} label="Lesion progression" />
+            <NavItem active={view === "progression"} href="/lesion-progression" icon={<ScanLine size={17} />} label="Lesion progression" onIntent={warmProgression} />
           </nav>
           <nav aria-label="Account" className="mt-8 space-y-1 px-3">
             <p className="px-3 pb-2 text-[11px] font-medium uppercase tracking-[0.08em] text-nav-muted">Workspace</p>
@@ -119,7 +117,7 @@ export function Dashboard(props: DashboardProps) {
                 <ChevronRight size={14} className="hidden shrink-0 sm:block" aria-hidden />
                 {!isWorkspaceView(view) && (
                   <>
-                    <span className="hidden sm:inline">{view === "imaging" ? "CTPelvic1K" : `${FEMUR_MODEL.dataset} ${FEMUR_MODEL.caseId}`}</span>
+                    <span className="hidden sm:inline">{view === "imaging" ? "CTPelvic1K" : view === "progression" ? "Case 006f52e910 (illustrative)" : `${FEMUR_MODEL.dataset} ${FEMUR_MODEL.caseId}`}</span>
                     <ChevronRight size={14} className="hidden shrink-0 sm:block" aria-hidden />
                   </>
                 )}
@@ -137,7 +135,7 @@ export function Dashboard(props: DashboardProps) {
               <MobileNavItem active={view === "overview"} href="/dashboard" label="Patient overview" />
               <MobileNavItem active={view === "physics"} href="/physics-simulations" label="Physics simulations" />
               <MobileNavItem active={view === "imaging"} href="/bones" label="Imaging library" />
-              <MobileNavItem active={view === "progression"} href="/lesion-progression" label="Lesion progression" />
+              <MobileNavItem active={view === "progression"} href="/lesion-progression" label="Lesion progression" onIntent={warmProgression} />
               <MobileNavItem active={view === "datasets"} href="/datasets" label="Secure datasets" />
               <MobileNavItem active={view === "preferences"} href="/preferences" label="Preferences" />
             </nav>
@@ -268,10 +266,10 @@ function RainboneMarkSmall() {
   return <span className="font-serif text-[15px] font-semibold text-ink">Rainbone</span>;
 }
 
-function NavItem({ active, icon, label, href }: { active?: boolean; icon: React.ReactNode; label: string; href?: string }) {
+function NavItem({ active, icon, label, href, onIntent }: { active?: boolean; icon: React.ReactNode; label: string; href?: string; onIntent?: () => void }) {
   const className = `relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-[13.5px] transition ${active ? "bg-white/[0.08] font-medium text-nav-ink" : "text-nav-muted hover:bg-white/[0.04] hover:text-nav-ink"}`;
   const content = <>{active && <span className="spectrum-line-v absolute inset-y-2 left-0 w-[3px] rounded-full" aria-hidden />}{icon}<span>{label}</span></>;
-  return href ? <Link href={href} aria-current={active ? "page" : undefined} className={className}>{content}</Link> : <div className={`${className} cursor-default`}>{content}</div>;
+  return href ? <Link href={href} onPointerEnter={onIntent} onFocus={onIntent} aria-current={active ? "page" : undefined} className={className}>{content}</Link> : <div className={`${className} cursor-default`}>{content}</div>;
 }
 
 // On a phone the strip scrolls sideways: bring the current page's item into view when it mounts. A module-level
@@ -281,6 +279,6 @@ function scrollIntoStrip(link: HTMLAnchorElement | null) {
   if (link && strip) strip.scrollLeft += link.getBoundingClientRect().left - strip.getBoundingClientRect().left - 16;
 }
 
-function MobileNavItem({ active, href, label }: { active?: boolean; href: string; label: string }) {
-  return <Link ref={active ? scrollIntoStrip : undefined} href={href} aria-current={active ? "page" : undefined} className={`shrink-0 rounded-md px-3 py-1.5 text-[13px] ${active ? "bg-primary text-white" : "text-body hover:bg-sunken"}`}>{label}</Link>;
+function MobileNavItem({ active, href, label, onIntent }: { active?: boolean; href: string; label: string; onIntent?: () => void }) {
+  return <Link ref={active ? scrollIntoStrip : undefined} href={href} onPointerEnter={onIntent} onFocus={onIntent} aria-current={active ? "page" : undefined} className={`shrink-0 rounded-md px-3 py-1.5 text-[13px] ${active ? "bg-primary text-white" : "text-body hover:bg-sunken"}`}>{label}</Link>;
 }

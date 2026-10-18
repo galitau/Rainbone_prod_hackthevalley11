@@ -95,7 +95,8 @@ export function ProgressionViewer({ frame, active = true }: { frame: Progression
         const camera = renderer.getActiveCamera();
         const center = frame.point;
         camera.setFocalPoint(...center);
-        camera.setPosition(center[0] + diagonal * 0.28, center[1] - diagonal * 0.28, center[2] + diagonal * 0.18);
+        // Pull back along the same sightline to show the surrounding anatomy.
+        camera.setPosition(center[0] + diagonal * 0.77, center[1] - diagonal * 0.77, center[2] + diagonal * 0.495);
         camera.setViewUp(0, 0, 1);
         renderer.resetCameraClippingRange();
         renderWindow.getRenderWindow().render();

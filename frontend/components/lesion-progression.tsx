@@ -76,10 +76,10 @@ export function LesionProgression() {
         <PanelSplitter width={layout.panelWidth} panelsId="progression-panels" rowRef={rowRef} onResize={layout.setPanelWidth} />
         <div id="progression-panels" className="flex min-w-0 flex-col gap-6 lg:min-h-0 lg:w-[var(--panel-w)] lg:max-w-[calc(100%-416px)] lg:shrink-0 lg:gap-4 lg:overflow-y-auto lg:overscroll-contain lg:pb-1 lg:pr-1">
           {panel("timeline", "Lesion progression playback", playback, "hidden lg:block")}
-          {panel("stress", "Progression stress timeline", <StressChart activeMonth={frame.month} />)}
+          {panel("stress", "Progression stress timeline", <StressChart activeMonth={frame.month} timeline={timeline} />)}
           {panel("values", "Illustrative demo values", <aside aria-label="Illustrative progression values" className="h-fit overflow-hidden rounded-2xl border border-line bg-surface shadow-card">
             <div className="border-b border-line px-5 py-4"><h2 className="text-[15px] font-semibold text-ink">Illustrative demo values</h2><p className="mt-0.5 text-[12px] text-muted">Synthetic placeholders · not measured</p></div>
-            <Metric label="Peak von Mises" value={frame.peakVonMisesMPa} unit="MPa" icon={<Waves size={15} />} />
+            <Metric label="Illustrative stress" value={frame.peakVonMisesMPa} unit="MPa" icon={<Waves size={15} />} />
             <Metric label="Illustrative score" value={frame.fractureRiskPercent} unit="/ 100" icon={<ShieldAlert size={15} />} />
             <Metric label="Cortical thickness" value={frame.corticalThicknessMm} unit="mm" icon={<Ruler size={15} />} />
             <Metric label="Lesion volume" value={frame.lesionVolumeCm3} unit="cm³" icon={<Ruler size={15} />} />
