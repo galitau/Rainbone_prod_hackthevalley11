@@ -1,0 +1,27 @@
+{
+  "source": {
+    "citation": "Test fixture: synthetic values in the hfvalid-risk.json schema, not HFValid data.",
+    "doi": "10.0000/test-fixture",
+    "license": "CC BY 4.0",
+    "url": "https://example.org/test-fixture",
+    "arf0_definition": "Test fixture.",
+    "msf_definition": "Test fixture.",
+    "follow_up": "Test fixture."
+  },
+  "fall_force": {"low_newtons": 2900, "high_newtons": 4260, "citation": "van den Kroonenberg et al. 1995, PubMed 8618384"},
+  "cohort": {
+    "n": 7,
+    "fractured": 2,
+    "arf0_percent": {"min": 20.0, "q1": 30.0, "median": 44.0, "q3": 60.24, "max": 72.0},
+    "msf_newtons": {"min": 900.0, "q1": 1000.0, "median": 1450.0, "q3": 2000.0, "max": 2500.0}
+  },
+  "subjects": {
+    "T001": {"age": 78, "height_cm": 150, "weight_kg": 55, "side": "R", "arf0_percent": 47.1074, "msf_newtons": 1450.2, "fractured_within_followup": false, "days_ct_to_fracture": null},
+    "T002": {"age": 70, "height_cm": 160, "weight_kg": 60, "side": "L", "arf0_percent": 30.0, "msf_newtons": 2000.0, "fractured_within_followup": false, "days_ct_to_fracture": null},
+    "T003": {"age": 81, "height_cm": 155, "weight_kg": 50, "side": "R", "arf0_percent": 60.24, "msf_newtons": 1000.0, "fractured_within_followup": true, "days_ct_to_fracture": 700},
+    "T004": {"age": 66, "height_cm": 165, "weight_kg": 70, "side": "R", "arf0_percent": 20.0, "msf_newtons": 2500.0, "fractured_within_followup": false, "days_ct_to_fracture": null},
+    "T005": {"age": 85, "height_cm": 150, "weight_kg": 45, "side": "L", "arf0_percent": 72.0, "msf_newtons": 900.0, "fractured_within_followup": true, "days_ct_to_fracture": 1200},
+    "T006": {"age": 74, "height_cm": 158, "weight_kg": 62, "side": "R", "arf0_percent": 44.0, "msf_newtons": 1600.0, "fractured_within_followup": false, "days_ct_to_fracture": null},
+    "T007": {"age": 90, "height_cm": 152, "weight_kg": 48, "side": "L", "arf0_percent": 39.0, "msf_newtons": 1300.0, "fractured_within_followup": false, "days_ct_to_fracture": null}
+  }
+}
