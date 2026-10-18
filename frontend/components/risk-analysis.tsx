@@ -2,6 +2,7 @@ import { ArrowDownToLine, Gauge, Info, Shield, Sparkles } from "lucide-react";
 import { aiAnswerLabel } from "@/lib/ai-label";
 import type { RiskAnalysis, RiskAnalysisState, RiskFacts } from "@/lib/api";
 import { formatNumber } from "@/lib/format";
+import { GroundingLine } from "@/components/grounding-line";
 import { ASSUMED_STRENGTH_MPA, FEMUR_AUTHORS, FEMUR_FALL_RISK, FEMUR_INDEX_PERCENT, FEMUR_MODEL } from "@/lib/model";
 
 // van den Kroonenberg et al. 1995: peak trochanter impact force of a sideways fall, 5th to 95th percentile woman.
@@ -102,6 +103,7 @@ export function FractureRiskAnalysis({ state }: { state: RiskAnalysisState }) {
 
           <div className="space-y-1 border-t border-line bg-sunken/60 px-5 py-3 text-[11.5px] leading-5 text-muted">
             <p>{providerLabel(analysis)} · every number checked against the published data</p>
+            <GroundingLine grounding={analysis.grounding} logged={analysis.logged} />
             <p>
               ARF0 (absolute risk of fracture at time 0) and MSF (minimum sidefall strength) are the HFValid authors&apos; finite-element results,{" "}
               <a href={doiUrl(analysis.source?.doi)} target="_blank" rel="noreferrer" title={analysis.source?.citation} className="font-medium text-link hover:underline">{FEMUR_AUTHORS}</a>

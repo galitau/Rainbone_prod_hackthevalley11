@@ -641,12 +641,14 @@ class RouteTests(ExplainTestCase):
     def test_a_simulate_response_is_accepted_as_is(self):
         from main import SimulationResponse
 
-        self.assertEqual(set(ExplainRequest.model_fields), set(SimulationResponse.model_fields))
+        self.assertEqual(set(ExplainRequest.model_fields) - {"case_id"}, set(SimulationResponse.model_fields))
         payload = SimulationResponse(**SIM).model_dump()
         response = self.client({}).post("/api/explain", json=payload)
         self.assertEqual(response.status_code, 200)
         body = response.json()
-        self.assertEqual(set(body), {"text", "provider", "model", "served", "saved_at", "fallbacks"})
+        self.assertEqual(set(body), {"text", "provider", "model", "served", "saved_at", "fallbacks", "grounding",
+                                     "logged"})
+        self.assertEqual((body["grounding"], body["logged"]), (None, None))  # numbers from the request, no database
         self.assertEqual((body["provider"], body["model"]), ("template", None))
         self.assertEqual(body["fallbacks"][0], {"provider": "gemini", "reason": "GEMINI_API_KEY not set"})
 
