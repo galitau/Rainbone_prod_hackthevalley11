@@ -78,7 +78,7 @@ export function Dashboard({ metrics, simulationStatus, explanation }: { metrics:
                 <BoneViewer />
                 <StressChart />
               </div>
-              <div className="min-w-0 space-y-5">
+              <div className="min-w-0 space-y-5 [&>section:only-child]:h-full">
                 <ClinicalMetrics metrics={metrics} simulationStatus={simulationStatus} />
                 <PlainExplanation state={explanation} />
               </div>
