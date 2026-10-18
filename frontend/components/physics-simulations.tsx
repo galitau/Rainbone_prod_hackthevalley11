@@ -95,7 +95,7 @@ export function PhysicsSimulations() {
         <span className="flex items-center gap-2 rounded-full border border-caution/25 bg-caution/[0.07] px-3 py-1.5 text-[11px] text-caution"><FlaskConical size={14} /> Research demonstration</span>
       </div>
     </div>
-    <p className="mb-5 rounded-lg border border-line bg-surface px-4 py-3 text-xs leading-5 text-muted lg:mb-0 lg:mt-3 lg:shrink-0 lg:py-2">Research demonstration with assumed material and failure properties — not a validated clinical test. Its damage visualization is exploratory.</p>
+    <p className="mb-5 rounded-lg border border-line bg-surface px-4 py-3 text-xs leading-5 text-muted lg:mb-0 lg:mt-3 lg:shrink-0 lg:py-2">Research demonstration on a real femur, with standard assumed material and failure properties. Clinical validation is the next step.</p>
     {error && <div role="alert" className="rounded-xl border border-caution/30 bg-surface p-6 text-sm lg:mt-3"><p>{error}</p><button className="mt-3 text-link underline" onClick={() => setAttempt(value => value + 1)}>Retry simulation</button></div>}
     {!model && !error && <div role="status" className="flex h-96 items-center justify-center rounded-2xl border border-line bg-surface shadow-card text-sm text-muted lg:mt-3">Loading compression test…</div>}
     {model && frame && <div ref={rowRef} style={{ "--panel-w": `${layout.panelWidth}px` } as React.CSSProperties} className="grid gap-5 lg:mt-3 lg:flex lg:min-h-0 lg:flex-1 lg:gap-0">

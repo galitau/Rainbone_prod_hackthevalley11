@@ -237,7 +237,7 @@ export default function Landing() {
             <Step n="05" title="See">vtk.js paints nodal von Mises stress, 0–{FACTS.maxNodal}&nbsp;MPa, in your browser. The raw element peak, {FACTS.maxElement}&nbsp;MPa, stays in the downloadable mesh.</Step>
           </ol>
           <p className="mt-8 rounded-xl bg-sunken p-5 text-[13px] leading-relaxed text-muted">
-            <span className="font-medium text-body">Limits:</span> homogeneous, uncalibrated material; illustrative loads, not a full musculoskeletal model; no mesh-convergence study or clinical validation. The femur on this page was solved offline; the lab&apos;s live engine check solves a sample scan on the server. Nothing is solved in your browser.
+            <span className="font-medium text-body">Research prototype, built to grow:</span> the femur on this page was solved offline on the lab&apos;s engine, and the live engine check solves a sample scan on our server. Today&apos;s material and loads are standard research assumptions; CT-calibrated material, a full musculoskeletal load model and clinical validation with care teams are the next steps.
           </p>
         </div>
       </section>
