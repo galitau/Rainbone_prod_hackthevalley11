@@ -1,6 +1,11 @@
 // What the 3D viewer shows, read from the model's own manifest so every label matches the files it loads.
 import manifest from "@/public/models/hfvalid-femur/manifest.json";
 
+// The strength the API divides by (backend: fracture_risk_index_percent = stress / 150 MPa x 100).
+export const ASSUMED_STRENGTH_MPA = 150;
+
+const metrics = manifest.metrics;
+
 export const FEMUR_MODEL = {
   dataset: manifest.dataset, // "HFValid"
   caseId: manifest.case_id, // "Pat001"
@@ -8,8 +13,31 @@ export const FEMUR_MODEL = {
   license: manifest.license, // "CC BY 4.0"
   attribution: manifest.attribution,
   sourceUrl: manifest.source_url,
-  solver: manifest.metrics.solver, // "SfePy"
-  loadNewtons: manifest.metrics.load_newtons,
+  solver: metrics.solver, // "SfePy"
+  loadNewtons: metrics.load_newtons, // 800
+  // The top of the viewer's stress colour scale: volume-weighted nodal averages of the element stress.
+  shownStressMpa: metrics.max_nodal_von_mises_mpa, // 15.83
+  // The single highest element stress before averaging (kept in the downloadable VTU).
+  elementStressMpa: metrics.max_von_mises_mpa, // 41.98
+  maxDisplacementMm: metrics.max_displacement_mm, // 3.93, the top of the displacement colour scale
+  volumeCm3: metrics.volume_cm3, // 408.09
+  youngsModulusGpa: metrics.youngs_modulus_mpa / 1000, // 10, one uniform assumed value
+  poissonRatio: metrics.poisson_ratio,
+  elements: metrics.elements,
+  nodes: metrics.nodes,
+  supportDepthMm: metrics.support_depth_mm, // 15
+};
+
+// The same illustrative index the API reports, computed from the stress the 3D colours show.
+export const FEMUR_INDEX_PERCENT = (FEMUR_MODEL.shownStressMpa / ASSUMED_STRENGTH_MPA) * 100; // 10.55
+
+// The femur's numbers in the shape POST /api/explain accepts (the fields of a /api/simulate response).
+export const FEMUR_EXPLAIN_REQUEST = {
+  load_newtons: FEMUR_MODEL.loadNewtons,
+  max_von_mises_stress_mpa: FEMUR_MODEL.shownStressMpa,
+  average_youngs_modulus_gpa: FEMUR_MODEL.youngsModulusGpa,
+  bone_volume_cm3: FEMUR_MODEL.volumeCm3,
+  fracture_risk_index_percent: FEMUR_INDEX_PERCENT,
 };
 
 // "Aldieri, La Mattina, … (2025). HFValid collection. University of Bologna. DOI:…"

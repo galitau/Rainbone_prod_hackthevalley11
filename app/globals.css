@@ -13,10 +13,6 @@
   --muted: 92 102 119; /* #5C6677 secondary text, 5.2:1 on the page */
   --cyan: 13 118 110; /* #0D766E primary accent (teal), 5.5:1 on white */
   --accent-soft: 230 244 241; /* #E6F4F1 */
-  --violet: 76 91 212; /* #4C5BD4 */
-  --violet-soft: 237 239 252;
-  --heat: 194 65 12; /* #C2410C the warm end of the stress scale */
-  --heat-soft: 252 238 230;
   --warning: 180 83 9; /* #B45309 */
   --warning-soft: 253 243 231;
   --ok: 21 128 61; /* #15803D */
@@ -30,13 +26,18 @@
   --ink: 231 238 245;
   --muted: 125 145 164; /* 5.8:1 on the viewer background */
   --cyan: 79 219 209;
-  --violet: 137 119 244;
   --warning: 248 189 114;
   color: rgb(var(--ink));
 }
 
 * {
   box-sizing: border-box;
+}
+
+/* Keep focused and scrolled-to elements clear of the sticky header and footer (WCAG 2.4.11). */
+html {
+  scroll-padding-top: 4.5rem;
+  scroll-padding-bottom: 4.5rem;
 }
 
 body {
