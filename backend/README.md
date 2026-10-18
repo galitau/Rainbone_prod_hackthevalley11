@@ -519,9 +519,12 @@ travel over HTTPS. Nothing more is claimed about their storage.
 `POST /api/ask` accepts `{"question":"What does the 47% mean?","case_id":"Pat001","page":"/dashboard"}`.
 Only `question` is required (1–500 characters); unknown cases/pages and extra fields are rejected.
 It combines the verified Pat001 risk table, verified FEA manifest and a fixed code-derived page guide.
-Gemini native function calls choose up to four allowlisted read-only evidence tools. A rules router
-is explicitly labeled when native triage fails. The writer receives only those tool outputs and
-selects approved statement IDs; a code critic allows one bounded rewrite. Python renders exact cited statements,
+Known chips, follow-ups and clear data/navigation intents use explicitly labeled rules routing;
+other questions use Gemini native function calls. At most four allowlisted read-only evidence tools
+run in either path. Rules also handle native triage failure. The writer receives only those tool outputs and
+selects approved statement IDs from an explicit ID list and request-specific example. A code critic
+requires the primary statement for recognized intents, reports safe fixed rejection categories and
+allows one bounded rewrite. Python renders exact cited statements,
 never arbitrary model prose, within 120 words. The offline fallback handles common data/navigation
 questions; unsupported questions receive bounded site help. No uploaded scan is included.
 

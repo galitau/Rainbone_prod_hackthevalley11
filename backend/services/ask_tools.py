@@ -12,7 +12,7 @@ TOOL_ARGS = {
     "get_patient_facts": {"case_id": ("Pat001",)},
     "compare_with_cohort": {"metric": ("arf0", "msf")},
     "get_fea_result": {},
-    "get_page_guide": {"topic": ("cut", "press", "upload", "preferences", "progression", "imaging", "general")},
+    "get_page_guide": {"topic": ("cut", "press", "upload", "preferences", "progression", "imaging", "navigation", "general")},
     "get_dataset_info": {"name": ("HFValid", "CTPelvic1K")},
 }
 DESCRIPTIONS = {

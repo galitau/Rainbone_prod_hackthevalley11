@@ -125,7 +125,7 @@ class AskTests(unittest.TestCase):
         self.store.write_text(json.dumps(data))
         ask._answers.clear()
         llm_providers.reset_cooldowns()
-        result = self.run_ask(question, KeyMock(gemini=httpx.Response(503), groq=groq_reply("unavailable")))
+        result = self.run_ask(question, KeyMock(gemini=httpx.Response(503), groq=groq_reply("arf0")))
         self.assertEqual(result.provider, "groq")
 
     def test_audit_contains_hashes_not_question_or_answer_text(self):
