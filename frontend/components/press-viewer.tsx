@@ -257,13 +257,17 @@ export function PressViewer({ model, frameIndex, field, scale, edges, playing, o
     </div>
     <div className={`shrink-0 border-t border-line bg-surface text-muted ${isFullscreen ? "grid grid-cols-1 items-center gap-x-10 gap-y-4 px-8 py-5 text-xs md:grid-cols-[1fr_minmax(0,560px)_1fr]" : "flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-[10px]"}`}>
       <p>Precomputed SfePy steps · displacement-controlled test</p>
-      {field !== "anatomy" && <div className={isFullscreen ? "w-full" : "w-72 max-w-full"}>
-        <p className={isFullscreen ? "mb-2 text-center font-medium text-ink" : ""}>{field === "failure_index" ? "Failure proximity · peak principal strain / assumed limit" : field === "stress_mpa" ? "Nodal von Mises stress · MPa" : field === "damage" ? "Damage · 0 intact / 1 fully degraded" : "Displacement magnitude · mm"}</p>
-        <div className={`relative mt-1.5 w-full rounded-full ${isFullscreen ? "h-2.5" : "h-1.5"} ${field === "failure_index" ? "bg-[linear-gradient(to_right,#2f4fd8_0%,#12a0c4_50%,#f0b429_75%,#f0b429_100%)]" : "bg-[linear-gradient(to_right,#2f4fd8,#12a0c4,#3baa6e,#f0b429,#d9412b)]"}`}>{field === "failure_index" && <span className={`absolute right-0 rounded-r-full bg-spectrum-red ${isFullscreen ? "h-2.5 w-2" : "h-1.5 w-1.5"}`} />}</div>
-        <div className="mt-1 grid grid-cols-3 font-mono"><span>0</span><span className="text-center">{field === "failure_index" ? "0.5" : ""}</span><span className="text-right">{field === "failure_index" ? "≥ 1" : `${field === "stress_mpa" ? "≥ " : ""}${maximum.toFixed(field === "damage" ? 1 : 2)}`}</span></div>
-        {field === "failure_index" && <div className="flex justify-between"><span>Below limit</span><span className="text-critical">Limit reached</span></div>}
-        {field === "stress_mpa" && <p className={isFullscreen ? "mt-2 text-center" : "mt-1"}>Fixed 99th-percentile cap · red is not a failure threshold</p>}
-        {field === "failure_index" && !isFullscreen && <><p className="mt-2 flex items-center gap-1.5"><span className="h-2 w-2 rounded-sm bg-[#737d8c]" />Gray: failure disabled near fixtures</p><p className="mt-1">Same element criterion as the damage model.<br />Records loading history, not fracture probability.</p></>}
+      {/* From lg up (not fullscreen) the failure notes sit beside the color bar instead of under it, so the footer is
+          shorter and the viewer above it taller. Below lg they stack as one column. */}
+      {field !== "anatomy" && <div className={isFullscreen ? "w-full" : "w-72 max-w-full lg:flex lg:w-auto lg:items-start lg:gap-x-5"}>
+        <div className={isFullscreen ? "" : "lg:w-72"}>
+          <p className={isFullscreen ? "mb-2 text-center font-medium text-ink" : ""}>{field === "failure_index" ? "Failure proximity · peak principal strain / assumed limit" : field === "stress_mpa" ? "Nodal von Mises stress · MPa" : field === "damage" ? "Damage · 0 intact / 1 fully degraded" : "Displacement magnitude · mm"}</p>
+          <div className={`relative mt-1.5 w-full rounded-full ${isFullscreen ? "h-2.5" : "h-1.5"} ${field === "failure_index" ? "bg-[linear-gradient(to_right,#2f4fd8_0%,#12a0c4_50%,#f0b429_75%,#f0b429_100%)]" : "bg-[linear-gradient(to_right,#2f4fd8,#12a0c4,#3baa6e,#f0b429,#d9412b)]"}`}>{field === "failure_index" && <span className={`absolute right-0 rounded-r-full bg-spectrum-red ${isFullscreen ? "h-2.5 w-2" : "h-1.5 w-1.5"}`} />}</div>
+          <div className="mt-1 grid grid-cols-3 font-mono"><span>0</span><span className="text-center">{field === "failure_index" ? "0.5" : ""}</span><span className="text-right">{field === "failure_index" ? "≥ 1" : `${field === "stress_mpa" ? "≥ " : ""}${maximum.toFixed(field === "damage" ? 1 : 2)}`}</span></div>
+          {field === "failure_index" && <div className="flex justify-between"><span>Below limit</span><span className="text-critical">Limit reached</span></div>}
+          {field === "stress_mpa" && <p className={isFullscreen ? "mt-2 text-center" : "mt-1"}>Fixed 99th-percentile cap · red is not a failure threshold</p>}
+        </div>
+        {field === "failure_index" && !isFullscreen && <div><p className="mt-2 flex items-center gap-1.5 lg:mt-0"><span className="h-2 w-2 rounded-sm bg-[#737d8c]" />Gray: failure disabled near fixtures</p><p className="mt-1">Same element criterion as the damage model.<br />Records loading history, not fracture probability.</p></div>}
       </div>}
       {isFullscreen && field === "failure_index" && <div className="space-y-1.5 md:justify-self-end md:text-right"><p className="flex items-center gap-1.5 md:justify-end"><span className="h-2.5 w-2.5 rounded-sm bg-[#737d8c]" />Gray: failure disabled near fixtures</p><p>Same element criterion as the damage model.</p><p>Records loading history, not fracture probability.</p></div>}
     </div>
