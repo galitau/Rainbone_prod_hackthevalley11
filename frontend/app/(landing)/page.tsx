@@ -85,7 +85,7 @@ export default function Landing() {
             <div className="rb-rise relative z-10 mt-6 flex flex-col gap-4 lg:mt-9 lg:flex-row lg:items-center lg:gap-6" style={{ animationDelay: "380ms" }}>
               <Link
                 href="/enter"
-                className={`group relative inline-flex h-[52px] w-full items-center justify-center gap-3 rounded-xl bg-white px-6 text-[16px] font-semibold text-ink shadow-[0_12px_40px_-12px_rgb(var(--spectrum-cyan)/0.55)] transition hover:bg-white/95 lg:h-14 lg:w-auto lg:min-w-[232px] ${FOCUS_DARK}`}
+                className={`group relative inline-flex h-[52px] w-full items-center justify-center gap-3 rounded-xl bg-white px-6 text-[16px] font-semibold text-[#14212e] shadow-[0_12px_40px_-12px_rgb(var(--spectrum-cyan)/0.55)] transition hover:bg-white/95 lg:h-14 lg:w-auto lg:min-w-[232px] ${FOCUS_DARK}`}
               >
                 Enter the lab
                 <kbd aria-hidden className="rounded-md border border-line px-1.5 font-mono text-[12px] font-normal text-muted">↵</kbd>

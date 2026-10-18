@@ -1,5 +1,6 @@
 import { MessageSquareText } from "lucide-react";
 import type { Explanation, ExplanationState } from "@/lib/api";
+import { GroundingLine } from "@/components/grounding-line";
 
 const PROVIDER_LABELS: Record<string, string> = { gemini: "Gemini", groq: "Groq" };
 
@@ -22,9 +23,10 @@ export function PlainExplanation({ state }: { state: ExplanationState }) {
         {state.status === "ready" && <p className="text-[13.5px] leading-6 text-body">{state.explanation.text}</p>}
       </div>
       {state.status === "ready" && (
-        <p className="border-t border-line bg-sunken/60 px-5 py-3 text-[11.5px] leading-5 text-muted">
-          {sourceLabel(state.explanation)} · every number in it was checked against the femur&apos;s solved values
-        </p>
+        <div className="space-y-1 border-t border-line bg-sunken/60 px-5 py-3 text-[11.5px] leading-5 text-muted">
+          <p>{sourceLabel(state.explanation)} · every number in it was checked against the femur&apos;s solved values</p>
+          <GroundingLine grounding={state.explanation.grounding} logged={state.explanation.logged} />
+        </div>
       )}
     </section>
   );

@@ -13,7 +13,7 @@ uvicorn main:app --reload
 ```
 
 The API exposes `GET /health`, `POST /api/simulate`, `POST /api/explain`,
-`POST /api/risk-analysis` and `GET /api/history`. The simulation endpoint
+`POST /api/risk-analysis`, `GET /api/history` and `GET /api/ai-log`. The simulation endpoint
 accepts a multipart form upload named `file` containing a `.nii` or `.nii.gz`
 NIfTI volume. The dashboard posts `frontend/public/sample_bone.nii.gz` to
 `http://127.0.0.1:8000/api/simulate`, uvicorn's default port.
@@ -260,7 +260,10 @@ one, and a checker rejects any text that uses a number which was not supplied.
 
 ### Request
 
-The `/api/simulate` response, posted as it is (JSON):
+The `/api/simulate` response, posted as it is (JSON), or `{"case_id": "Pat001"}`:
+the API then reads the femur model's numbers from Vultr Object Storage itself
+(see [Where the AI facts come from](#where-the-ai-facts-come-from-vultr-object-storage)),
+and the four required fields below are not needed.
 
 | Field | Required | Sent to a model as |
 |---|---|---|
@@ -280,8 +283,13 @@ sent.
 ### Response
 
 ```json
-{"text": "...", "provider": "gemini", "model": "gemini-3.8-flash", "fallbacks": []}
+{"text": "...", "provider": "gemini", "model": "gemini-3.8-flash", "fallbacks": [],
+ "grounding": null, "logged": null}
 ```
+
+`grounding` is null when the numbers came in the request, and says where they
+were read from with a `case_id`; `logged` is the
+[AI audit log](#ai-audit-log-tiger-cloud) row, or null.
 
 `provider` is `gemini`, `groq` or `template`; `model` is null for the
 template. `fallbacks` lists, in order, every model that did not answer and why
@@ -381,8 +389,10 @@ network: provider calls go to `httpx.MockTransport`.
 ## AI fracture risk analysis
 
 `POST /api/risk-analysis` explains how likely one HFValid femur is to break,
-from the dataset authors' published numbers. It reads
-`frontend/public/models/hfvalid-risk.json` from the repository: per subject, the
+from the dataset authors' published numbers. It reads the HFValid table from
+Vultr Object Storage (`clinical/hfvalid/hfvalid-risk.json`), with
+`frontend/public/models/hfvalid-risk.json` as the bundled backup copy (see
+[Where the AI facts come from](#where-the-ai-facts-come-from-vultr-object-storage)): per subject, the
 Absolute Risk of Fracture at time 0 (ARF0) and the Minimum Sidefall Strength
 (MSF) computed with the authors' finite-element model, and whether
 a hip fracture was recorded in the follow-up (HFValid collection, Aldieri,
@@ -395,7 +405,8 @@ Request: `{"case_id": "Pat001", "fe": {"peak_stress_mpa": 15.83,
 "load_newtons": 800, "stress_index_percent": 10.55}}`; `fe` (our own
 standing-load solve) is optional. It is echoed in `facts.fe` but never sent
 to a model, and its numbers may not appear in `text`. An unknown `case_id`
-returns 404, a bad body 422, and a missing or unreadable data file 503.
+returns 404, a bad body 422, and data that neither the bucket nor the
+bundled copy can give 503.
 
 The code computes every number in `facts` from the published values (the
 table keeps the CSV's precision): the subject's age, ARF0 (1 decimal) and how
@@ -403,8 +414,10 @@ many subjects had a lower ARF0, the cohort size, median ARF0, fractured count
 and the fractured subjects' ARF0 range, the MSF (whole newtons) and how many
 subjects had a higher MSF, the strongest MSF in the cohort, and the factor of
 risk, fall force / MSF, for both fall forces (2 decimals). The response is
-`{"case_id", "facts", "text", "provider", "model", "fallbacks", "source"}`,
-with `source` the dataset's citation, DOI and licence.
+`{"case_id", "facts", "text", "provider", "model", "fallbacks", "source",
+"grounding", "logged"}`, with `source` the dataset's citation, DOI and
+licence, `grounding` where the table was read from, and `logged` the
+[AI audit log](#ai-audit-log-tiger-cloud) row (or null).
 
 `text` comes from the same provider chain, settings and fallback reasons as
 `/api/explain`, with its own prompt (2 or 3 sentences) and checker. The
@@ -431,6 +444,90 @@ an AI one.
 `tests/test_risk.py` reads the committed `frontend/public/models/hfvalid-risk.json`
 (Pat001's facts, a fractured subject, the template for all 101 subjects) and
 needs no network.
+
+## Where the AI facts come from (Vultr Object Storage)
+
+Both AI endpoints word facts read from private objects in the Vultr Object
+Storage bucket named by `VULTR_S3_BUCKET` (with `VULTR_S3_ENDPOINT`,
+`VULTR_S3_ACCESS_KEY` and `VULTR_S3_SECRET_KEY`, from the shell or
+`backend/.env`):
+
+| Endpoint | Object | Bundled backup copy |
+|---|---|---|
+| `POST /api/risk-analysis` | `clinical/hfvalid/hfvalid-risk.json` | `frontend/public/models/hfvalid-risk.json` |
+| `POST /api/explain` with `{"case_id": "Pat001"}` | `clinical/hfvalid/pat001-femur-manifest.json` | `frontend/public/models/hfvalid-femur/manifest.json` |
+
+This is de-identified public research data (the HFValid collection, CC BY
+4.0), not patient records.
+[`scripts/vultr_pipeline/publish_clinical.py`](../scripts/vultr_pipeline/README.md#research-data-for-the-ai-endpoints-clinical)
+uploads it, with `clinical/index.json` listing each file's key, sha256, size,
+licence, citation and DOI.
+
+`services/clinical_store.py` uses an object only when its sha256, the sha256
+the index lists for it, and the sha256 pinned in this repository next to the
+bundled copy (`<file>.sha256`, in `sha256sum` format) all agree, so a changed
+bucket cannot change the facts without a commit here. Anything else (no
+`VULTR_S3_*`, no network, 403 or 404, a mismatch, bad JSON) falls back to the
+bundled copy. Each response says which in `grounding`:
+
+```json
+{"store": "vultr-object-storage", "key": "clinical/hfvalid/hfvalid-risk.json",
+ "sha256": "884f5875...", "verified": true, "reason": null}
+{"store": "local-backup", "key": "clinical/hfvalid/hfvalid-risk.json",
+ "sha256": "884f5875...", "verified": true,
+ "reason": "object storage not configured (VULTR_S3_* not set)"}
+```
+
+For the backup, `verified` says whether the bundled copy matches its pin. A
+bucket read is kept in memory for 10 minutes and a fallback for 1 minute,
+concurrent requests share one read, and each object gets one attempt that gives
+up after 1 s to connect or 1.5 s to read, so an outage costs one request about
+1.5 s, not every request. A reason names an HTTP status
+and error code only, never a key, the endpoint, the bucket name or a URL. The
+checkers are unchanged: the facts are the same bytes either way.
+
+With `case_id`, `POST /api/explain` uses the femur model's own numbers, as the
+dashboard shows them (`frontend/lib/model.ts`): the nodal-averaged peak stress
+`max_nodal_von_mises_mpa` (the top of the 3D colour scale), the load, the
+volume, the uniform Young's modulus, and the index from that stress over the
+assumed 150 MPa strength. Numbers sent with a `case_id` are not used. An
+unknown `case_id` returns 404. Without `case_id` the request's numbers are
+used as before and `grounding` is null.
+
+The objects are private (no public URL; read with the bucket's keys) and
+travel over HTTPS. Nothing more is claimed about their storage.
+
+## AI audit log (Tiger Cloud)
+
+Every answer `POST /api/risk-analysis` or `POST /api/explain` produces (from a
+model or the template) is logged as one row of the `ai_analyses` TimescaleDB
+hypertable (`migrations/002_ai_analyses.sql`), in the database `DATABASE_URL`
+names (see [Simulation history](#simulation-history-timescaledb)). The same
+`python -m services.history migrate` creates it, since it applies every
+migration file in order. A row holds the time, an `id`, the endpoint, the
+`case_id`, the provider and model, the fallbacks taken before it, the latency,
+the grounding store, and the sha256 of the facts and of the text. The text and
+the facts themselves are not stored, nor are keys or URLs, and a fallback's
+reason is stored without the fragment a rejection quotes (`rejected: blocked
+wording`, not the word).
+
+The response's `logged` is `{"id": "<uuid>", "store": "tiger"}` once the row is
+written, and null when `DATABASE_URL` is unset or the write fails (logged as a
+warning with the password masked; the answer is unaffected). The write is
+bounded: 2 s to connect, a 1.5 s statement timeout, 2.5 s in all; after a
+failure the log is skipped for 60 s, so a slow database costs one answer that
+wait. An answer the API kept and serves again (the answer cache above, keyed
+by case, grounding store, facts and chain) is not logged a second time: it
+carries the `id` of the row written when it was produced. An answer whose row
+was not written is kept for at most 60 s, so a later one is logged.
+
+`GET /api/ai-log?limit=N` (1 to 200, default 20) returns the latest rows,
+newest first, without text. It answers 503 when `DATABASE_URL` is unset, the
+database is unreachable, or the migration has not been run.
+
+`tests/test_ai_log.py` uses a fake connection, `tests/test_clinical_store.py`
+uses moto in place of the bucket, and `tests/test_history_timescale.py` also
+applies `002` to its throwaway container and reads a logged row back.
 
 ## Simulation history (TimescaleDB)
 
