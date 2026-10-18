@@ -17,7 +17,7 @@ export function ClinicalMetrics() {
   const band = riskBand(percent);
   const position = Math.min(100, Math.max(0, percent));
   const rows = [
-    { label: "Max von Mises stress", value: formatNumber(m.shownStressMpa, 1), unit: "MPa", icon: <Zap size={15} /> },
+    { label: "Peak stress (nodal average)", value: formatNumber(m.shownStressMpa, 1), unit: "MPa", icon: <Zap size={15} /> },
     { label: "Young’s modulus (assumed)", value: formatNumber(m.youngsModulusGpa, 1), unit: "GPa", icon: <Scale size={15} /> },
     { label: "Bone volume", value: formatNumber(m.volumeCm3, 1), unit: "cm³", icon: <Ruler size={15} /> },
   ];
@@ -32,7 +32,7 @@ export function ClinicalMetrics() {
         <p className="flex items-center gap-2 text-[17px] font-semibold text-ink"><Gauge size={20} className="text-muted" aria-hidden /> Fracture risk index</p>
         <div className="mt-4 flex items-end justify-between gap-3">
           <p className="font-mono text-[96px] font-semibold leading-[0.85] tracking-tighter text-ink tabular-nums">{Math.round(percent)}<span className="ml-1 text-[40px] text-muted">%</span></p>
-          <p className={`pb-1 text-[19px] font-semibold ${band.className}`}>{band.label} risk</p>
+          <p className={`pb-1 text-[19px] font-semibold ${band.className}`}>{band.label} band</p>
         </div>
         <div className="relative mt-6">
           <div className="spectrum-ramp h-3.5 rounded-full" />
@@ -55,7 +55,7 @@ export function ClinicalMetrics() {
         ))}
       </dl>
 
-      <p className="flex gap-2 border-t border-line bg-sunken/60 px-5 py-3.5 text-[11.5px] leading-5 text-muted"><Info size={14} className="mt-0.5 shrink-0" aria-hidden />The most loaded spot of this femur ({formatNumber(m.shownStressMpa, 1)} MPa) against an assumed bone strength of {ASSUMED_STRENGTH_MPA} MPa. Bands at 30% and 60% are display thresholds. Research index, not a diagnosis.</p>
+      <p className="flex gap-2 border-t border-line bg-sunken/60 px-5 py-3.5 text-[11.5px] leading-5 text-muted"><Info size={14} className="mt-0.5 shrink-0" aria-hidden />The highest nodal-averaged stress of this femur ({formatNumber(m.shownStressMpa, 1)} MPa, the top of the colour scale; single-element peak {formatNumber(m.elementStressMpa, 1)} MPa) against an assumed bone strength of {ASSUMED_STRENGTH_MPA} MPa. Bands at 30% and 60% are display thresholds. Research index, not a diagnosis.</p>
     </aside>
   );
 }
