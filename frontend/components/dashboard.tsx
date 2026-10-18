@@ -176,16 +176,19 @@ function Overview({ run, explanation, risk, history, onRunSample, onUpload }: Ov
   const rowRef = useRef<HTMLDivElement>(null);
   // The same element on every render, so resizing the panels does not re-render the viewer (it follows its container).
   const viewer = useMemo(() => <BoneViewer />, []);
-  const panel = (id: PanelId, title: string, card: React.ReactNode) => (
-    <CollapsiblePanel id={id} title={title} collapsed={layout.collapsed[id]} onCollapsedChange={collapsed => layout.setCollapsed(id, collapsed)}>{card}</CollapsiblePanel>
+  const panel = (id: PanelId, title: string, card: React.ReactNode, className?: string) => (
+    <CollapsiblePanel id={id} title={title} collapsed={layout.collapsed[id]} onCollapsedChange={collapsed => layout.setCollapsed(id, collapsed)} className={className}>{card}</CollapsiblePanel>
   );
+  // Below lg the saved runs stay under the viewer, as before; from lg up they are the last panel.
+  const stressChart = runs.length > 0 && <StressChart runs={runs} name={run.input.name} hourly={history.status === "ready" ? history.hourly : undefined} />;
 
   return (
     <div className="mx-auto max-w-[1440px] p-5 md:p-8 lg:flex lg:min-h-0 lg:w-full lg:max-w-none lg:flex-1 lg:flex-col lg:px-6 lg:pb-3 lg:pt-4">
       <PatientHeader importing={run.status === "loading"} onImport={importScan} onResetLayout={layout.reset} />
       <div ref={rowRef} style={{ "--panel-w": `${layout.panelWidth}px` } as React.CSSProperties} className="mt-6 grid gap-6 lg:mt-4 lg:flex lg:min-h-0 lg:flex-1 lg:gap-0">
-        <div className="min-w-0 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col lg:[&>section]:flex lg:[&>section]:min-h-0 lg:[&>section]:flex-1 lg:[&>section]:flex-col lg:[&>section]:overflow-y-auto lg:[&>section>div.relative]:min-h-[240px] lg:[&>section>div.relative+div>span]:min-w-48">
+        <div className="min-w-0 space-y-6 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col lg:[&>section]:flex lg:[&>section]:min-h-0 lg:[&>section]:flex-1 lg:[&>section]:flex-col lg:[&>section]:overflow-y-auto lg:[&>section>div.relative]:min-h-[240px] lg:[&>section>div.relative+div>span]:min-w-48">
           {viewer}
+          {stressChart && <div className="lg:hidden">{stressChart}</div>}
         </div>
         <PanelSplitter width={layout.panelWidth} rowRef={rowRef} onResize={layout.setPanelWidth} />
         <div id="overview-panels" className="flex min-w-0 flex-col gap-6 lg:min-h-0 lg:w-[var(--panel-w)] lg:max-w-[calc(100%-416px)] lg:shrink-0 lg:gap-4 lg:overflow-y-auto lg:overscroll-contain lg:pb-1 lg:pr-1 lg:[&_#all-numbers]:scroll-mt-0">
@@ -193,7 +196,7 @@ function Overview({ run, explanation, risk, history, onRunSample, onUpload }: Ov
           {panel("risk", "AI fracture risk analysis", <FractureRiskAnalysis state={risk} />)}
           {panel("plain", "In plain words", <PlainExplanation state={explanation} />)}
           {panel("numbers", "All numbers and method", <LiveRun run={run} history={history} onRunSample={onRunSample} onUpload={onUpload} />)}
-          {runs.length > 0 && panel("history", "Saved simulation runs", <StressChart runs={runs} name={run.input.name} hourly={history.status === "ready" ? history.hourly : undefined} />)}
+          {stressChart && panel("history", "Saved simulation runs", stressChart, "hidden lg:block")}
         </div>
       </div>
       <p className="mt-8 border-t border-line pt-5 text-[11px] leading-5 text-muted lg:mt-3 lg:shrink-0 lg:border-t-0 lg:pt-0 lg:leading-4">Rainbone is a research prototype. Simulations use assumed material properties and are not validated for clinical diagnosis or treatment decisions.</p>
