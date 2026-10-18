@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Box, Download, Maximize2, RotateCcw } from "lucide-react";
 import type vtkPolyData from "@kitware/vtk.js/Common/DataModel/PolyData";
+import { parseTetMesh, sliceTets, type TetMesh } from "@/lib/vtu-cut";
 
 type Field = "stress" | "displacement" | "anatomy";
 type ModelInfo = {
@@ -17,16 +18,24 @@ type ModelInfo = {
     max_von_mises_mpa: number; max_nodal_von_mises_mpa: number; max_displacement_mm: number;
   };
 };
-type Controls = { reset: () => void; update: (field: Field, edges: boolean, clip: number) => void };
+type Controls = {
+  reset: () => void;
+  update: (field: Field, edges: boolean) => void;
+  // Cut through the bone at the view centre, facing the camera; depth is -100..100 % of the extent along the view.
+  aim: (cut: boolean, depth: number) => Promise<void>;
+};
 const MODEL_PATH = "/models/hfvalid-femur";
 
 export function BoneViewer() {
   const sectionRef = useRef<HTMLElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const controlsRef = useRef<Controls | null>(null);
+  const cutRef = useRef(false);
+  const depthRef = useRef(0);
   const [field, setField] = useState<Field>("anatomy");
   const [edges, setEdges] = useState(false);
-  const [clip, setClip] = useState(0);
+  const [cut, setCut] = useState(false);
+  const [depth, setDepth] = useState(0);
   const [model, setModel] = useState<ModelInfo | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [error, setError] = useState<string | null>(null);
@@ -43,13 +52,18 @@ export function BoneViewer() {
       try {
         await import("@kitware/vtk.js/Rendering/Profiles/Geometry");
         const [{ default: GenericRenderWindow }, { default: Actor }, { default: Mapper },
-          { default: Reader }, { default: ColorTransferFunction }, { default: Plane }] = await Promise.all([
+          { default: Reader }, { default: ColorTransferFunction }, { default: Plane }, { default: PolyData },
+          { default: Points }, { default: CellArray }, { default: DataArray }] = await Promise.all([
           import("@kitware/vtk.js/Rendering/Misc/GenericRenderWindow"),
           import("@kitware/vtk.js/Rendering/Core/Actor"),
           import("@kitware/vtk.js/Rendering/Core/Mapper"),
           import("@kitware/vtk.js/IO/XML/XMLPolyDataReader"),
           import("@kitware/vtk.js/Rendering/Core/ColorTransferFunction"),
           import("@kitware/vtk.js/Common/DataModel/Plane"),
+          import("@kitware/vtk.js/Common/DataModel/PolyData"),
+          import("@kitware/vtk.js/Common/Core/Points"),
+          import("@kitware/vtk.js/Common/Core/CellArray"),
+          import("@kitware/vtk.js/Common/Core/DataArray"),
         ]);
         const [infoResponse, meshResponse] = await Promise.all([
           fetch(`${MODEL_PATH}/manifest.json`, { signal: abort.signal }),
@@ -70,7 +84,14 @@ export function BoneViewer() {
         const actor = Actor.newInstance();
         const mapper = Mapper.newInstance();
         const colors = ColorTransferFunction.newInstance();
-        const plane = Plane.newInstance({ normal: [-1, 0, 0] });
+        const plane = Plane.newInstance({ normal: [0, 1, 0] });
+        const capActor = Actor.newInstance();
+        const capMapper = Mapper.newInstance();
+        const capData = PolyData.newInstance();
+        let tetMesh: Promise<TetMesh> | null = null;
+        let aimToken = 0;
+        let currentField: Field = "anatomy";
+        let endInteraction: { unsubscribe: () => void } | undefined;
         const observer = new ResizeObserver(() => {
           view.resize();
           // Refit to the new aspect ratio while preserving the viewing angle.
@@ -80,7 +101,9 @@ export function BoneViewer() {
         });
         cleanup = () => {
           observer.disconnect();
+          endInteraction?.unsubscribe();
           view.delete(); actor.delete(); mapper.delete(); colors.delete(); plane.delete(); reader.delete();
+          capActor.delete(); capMapper.delete(); capData.delete();
         };
         view.setContainer(containerRef.current);
         mapper.setInputData(data);
@@ -94,8 +117,19 @@ export function BoneViewer() {
         actor.getProperty().setInterpolationToPhong();
         actor.getProperty().setEdgeColor(0.08, 0.13, 0.19);
         actor.getProperty().setColor(0.9, 0.88, 0.82);
+        // The cut face is a flat-shaded cap sliced from the solved tetrahedra, so stress inside the bone is real FEA output.
+        capMapper.setInputData(capData);
+        capMapper.setLookupTable(colors);
+        capMapper.setColorModeToMapScalars();
+        capActor.setMapper(capMapper);
+        capActor.getProperty().setAmbient(1);
+        capActor.getProperty().setDiffuse(0);
+        capActor.getProperty().setSpecular(0);
+        capActor.getProperty().setColor(0.86, 0.78, 0.64);
+        capActor.setVisibility(false);
         const renderer = view.getRenderer();
         renderer.addActor(actor);
+        renderer.addActor(capActor);
         const bounds = data.getBounds();
         const center = [(bounds[0] + bounds[1]) / 2, (bounds[2] + bounds[3]) / 2, (bounds[4] + bounds[5]) / 2];
         const reset = () => {
@@ -108,7 +142,59 @@ export function BoneViewer() {
           renderer.resetCameraClippingRange();
           view.getRenderWindow().render();
         };
-        const update: Controls["update"] = (nextField, nextEdges, nextClip) => {
+        const half = [(bounds[1] - bounds[0]) / 2, (bounds[3] - bounds[2]) / 2, (bounds[5] - bounds[4]) / 2];
+        const loadTets = () => tetMesh ??= fetch(`${MODEL_PATH}/bone-fea.vtu`, { signal: abort.signal })
+          .then(response => { if (!response.ok) throw new Error("The volume mesh needed for the cut-away could not be loaded."); return response.text(); })
+          .then(parseTetMesh)
+          .catch(cause => { tetMesh = null; throw cause; });
+        const aim: Controls["aim"] = async (on, nextDepth) => {
+          const token = ++aimToken;
+          if (!on) {
+            mapper.removeAllClippingPlanes();
+            capActor.setVisibility(false);
+            view.getRenderWindow().render();
+            return;
+          }
+          // Plane faces the viewer: the near half is removed and the camera looks into the cut face.
+          const camera = renderer.getActiveCamera();
+          const focal = camera.getFocalPoint(), position = camera.getPosition();
+          const length = Math.hypot(focal[0] - position[0], focal[1] - position[1], focal[2] - position[2]) || 1;
+          const normal = [0, 1, 2].map(i => (focal[i] - position[i]) / length);
+          const extent = Math.abs(normal[0]) * half[0] + Math.abs(normal[1]) * half[1] + Math.abs(normal[2]) * half[2];
+          const origin = [0, 1, 2].map(i => center[i] + normal[i] * extent * nextDepth / 100);
+          const mesh = await loadTets();
+          if (disposed || token !== aimToken) return;
+          plane.setNormal(normal[0], normal[1], normal[2]);
+          plane.setOrigin(origin[0], origin[1], origin[2]);
+          mapper.removeAllClippingPlanes();
+          mapper.addClippingPlane(plane);
+          const cap = sliceTets(mesh, origin, normal);
+          const polys = new Uint32Array(cap.triangles.length / 3 * 4);
+          for (let i = 0, j = 0; i < cap.triangles.length; i += 3, j += 4) {
+            polys[j] = 3; polys[j + 1] = cap.triangles[i]; polys[j + 2] = cap.triangles[i + 1]; polys[j + 3] = cap.triangles[i + 2];
+          }
+          const capPoints = Points.newInstance();
+          capPoints.setData(cap.points, 3);
+          capData.setPoints(capPoints);
+          capData.setPolys(CellArray.newInstance({ values: polys }));
+          const pointData = capData.getPointData();
+          pointData.removeAllArrays();
+          pointData.addArray(DataArray.newInstance({ name: "von_mises_nodal_mpa", values: cap.stress, numberOfComponents: 1 }));
+          pointData.addArray(DataArray.newInstance({ name: "displacement_mm", values: cap.displacement, numberOfComponents: 1 }));
+          capData.modified();
+          paintCap(currentField);
+          capActor.setVisibility(cap.triangles.length > 0);
+          view.getRenderWindow().render();
+        };
+        const paintCap = (nextField: Field) => {
+          capMapper.setScalarVisibility(nextField !== "anatomy");
+          if (nextField === "anatomy") return;
+          capMapper.setScalarRange(0, nextField === "stress" ? info.metrics.max_nodal_von_mises_mpa : info.metrics.max_displacement_mm);
+          capMapper.setScalarModeToUsePointFieldData();
+          capMapper.setColorByArrayName(nextField === "stress" ? "von_mises_nodal_mpa" : "displacement_mm");
+        };
+        const update: Controls["update"] = (nextField, nextEdges) => {
+          currentField = nextField;
           actor.getProperty().setEdgeVisibility(nextEdges);
           mapper.setScalarVisibility(nextField !== "anatomy");
           const max = nextField === "stress" ? info.metrics.max_nodal_von_mises_mpa : info.metrics.max_displacement_mm;
@@ -126,14 +212,16 @@ export function BoneViewer() {
             mapper.setScalarModeToUsePointFieldData();
             mapper.setColorByArrayName("displacement_mm");
           }
-          mapper.removeAllClippingPlanes();
-          if (nextClip > 0) {
-            plane.setOrigin(bounds[1] - (bounds[1] - bounds[0]) * nextClip / 100, center[1], center[2]);
-            mapper.addClippingPlane(plane);
-          }
+          paintCap(nextField);
           view.getRenderWindow().render();
         };
-        controlsRef.current = { reset, update };
+        controlsRef.current = { reset, update, aim };
+        // Re-aim after each drag so the cut keeps facing the camera. Callbacks outlive renders, so read refs, not state.
+        // vtk.js typings declare onEndInteractionEvent, but the runtime method is onEndInteraction.
+        const interactor = view.getInteractor() as unknown as { onEndInteraction: (callback: () => void) => { unsubscribe: () => void } };
+        endInteraction = interactor.onEndInteraction(() => {
+          if (cutRef.current) void aim(true, depthRef.current).catch(() => undefined);
+        });
         observer.observe(containerRef.current);
         view.resize();
         reset();
@@ -152,8 +240,17 @@ export function BoneViewer() {
   }, [attempt]);
 
   useEffect(() => {
-    if (status === "ready") controlsRef.current?.update(field, edges, clip);
-  }, [field, edges, clip, status]);
+    if (status === "ready") controlsRef.current?.update(field, edges);
+  }, [field, edges, status]);
+
+  useEffect(() => {
+    cutRef.current = cut; depthRef.current = depth;
+    if (status !== "ready") return;
+    controlsRef.current?.aim(cut, depth).catch(cause => {
+      setCut(false);
+      setError(cause instanceof Error ? cause.message : "The cut-away could not be created.");
+    });
+  }, [cut, depth, status]);
 
   async function maximize() {
     try {
@@ -170,7 +267,7 @@ export function BoneViewer() {
         <div><h3 className="flex items-center gap-2 text-sm font-medium"><Box size={16} className="text-cyan" /> Femur · finite element analysis</h3><p className="mt-1 text-[10px] text-muted">{model ? `${model.dataset} ${model.case_id} · ${model.anatomy}` : "Loading the complete femur"}</p></div>
         <div className="flex items-center gap-2">
           <select aria-label="Displayed FEA field" value={field} disabled={status !== "ready"} onChange={event => setField(event.target.value as Field)} className={`${buttonClass} max-w-[170px]`}><option value="anatomy">Bone surface</option><option value="stress">FEA · von Mises stress</option><option value="displacement">FEA · displacement</option></select>
-          <button disabled={status !== "ready"} onClick={() => { controlsRef.current?.reset(); setClip(0); }} className={buttonClass} aria-label="Reset bone view"><RotateCcw size={15} /></button>
+          <button disabled={status !== "ready"} onClick={() => { controlsRef.current?.reset(); setDepth(0); if (cutRef.current) void controlsRef.current?.aim(true, 0).catch(() => undefined); }} className={buttonClass} aria-label="Reset bone view"><RotateCcw size={15} /></button>
           <button onClick={maximize} className={buttonClass} aria-label="Toggle viewer fullscreen"><Maximize2 size={15} /></button>
         </div>
       </div>
@@ -188,7 +285,9 @@ export function BoneViewer() {
       </div>}
       <div className="flex flex-wrap items-center gap-4 border-t border-line px-4 py-3">
         <label className="flex items-center gap-2 text-xs text-muted"><input type="checkbox" checked={edges} disabled={status !== "ready"} onChange={event => setEdges(event.target.checked)} className="accent-cyan" /> Show mesh</label>
-        <label className="flex min-w-44 flex-1 items-center gap-3 text-xs text-muted">Clip<input type="range" min="0" max="95" value={clip} disabled={status !== "ready"} onChange={event => setClip(Number(event.target.value))} aria-label="Bone clipping percentage" className="min-w-16 flex-1 accent-cyan" /><span className="w-7 font-mono text-[10px]">{clip}%</span></label>
+        <label className="flex items-center gap-2 text-xs text-muted"><input type="checkbox" checked={cut} disabled={status !== "ready"} onChange={event => setCut(event.target.checked)} className="accent-cyan" /> Cut-away</label>
+        {cut ? <label className="flex min-w-44 flex-1 items-center gap-3 text-xs text-muted">Depth<input type="range" min="-100" max="100" value={depth} onChange={event => setDepth(Number(event.target.value))} aria-label="Cut depth along the viewing direction" className="min-w-16 flex-1 accent-cyan" /><span className="w-9 font-mono text-[10px]">{depth}%</span></label>
+          : <span className="text-[10px] text-muted">Drag to rotate · scroll to zoom into the cut face</span>}
         {model && <a className="flex items-center gap-1.5 text-xs text-cyan hover:underline" href={`${MODEL_PATH}/bone-fea.vtu`} download><Download size={14} /> FEA mesh</a>}
       </div>
       {model && <details className="border-t border-line px-4 py-3 text-[11px] text-muted">
