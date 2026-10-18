@@ -190,8 +190,10 @@ def sphere_mask(shape=(40, 40, 20), spacing=(0.8, 0.8, 2.0), centre=(20, 20, 10)
 # Key sets of the manifest that the data run wrote to rb-data/ctpelvic1k/processed/manifest.json
 # (the format both the pipeline and backend/routes_bones.py use).
 MANIFEST_KEYS = {"generated_utc", "dataset", "segmentation_tool", "mesh_method", "cases"}
-DATASET_KEYS = {"name", "zenodo_record", "doi", "license", "creators", "citation", "citation_preprint", "repository",
-                "expert_label_map", "expert_label_map_source", "description", "source_archives", "acquisition_note"}
+# The dataset record also has license_url and changes (CC BY 4.0 s.3(a)(1)(B)-(C)), which that run predates.
+DATASET_KEYS = {"name", "zenodo_record", "doi", "license", "license_url", "changes", "creators", "citation",
+                "citation_preprint", "repository", "expert_label_map", "expert_label_map_source", "description",
+                "source_archives", "acquisition_note"}
 TOOL_KEYS = {"name", "version", "license", "citation", "also_cite", "repository", "disclaimer"}
 CASE_KEYS = {"case_id", "source_file", "expert_mask_file", "bones", "files", "segmentation", "validation"}
 SOURCE_FILE_KEYS = {"archive", "archive_member", "bytes", "sha256", "shape_ijk", "spacing_mm", "orientation"}
@@ -478,6 +480,26 @@ class CommandLineTests(TempDirTest):
         self.assertEqual(code, 2)
         self.assertIn("inside the repository", err.getvalue())
 
+    def test_case_variant_of_the_repository_path_is_refused(self):
+        variant = Path(str(pipeline.REPO_ROOT / "public" / "scans").swapcase())
+        if not variant.parent.exists():
+            self.skipTest("case-sensitive file system: the case variant is a different folder")
+        self.assertTrue(pipeline._inside_repo(variant))
+        self.assertFalse(pipeline._inside_repo(self.work))
+        with contextlib.redirect_stderr(io.StringIO()) as err:
+            code = pipeline.main(["--from-processed", str(variant), "--skip-upload"])
+        self.assertEqual(code, 2)
+        self.assertIn("inside the repository", err.getvalue())
+
+    def test_rerun_with_fewer_cases_publishes_only_this_runs_cases(self):
+        code, _, err = self.main("--cases", "2", "--skip-upload")
+        self.assertEqual(code, 0, err)
+        code, _, err = self.main("--cases", "1", "--skip-upload")
+        self.assertEqual(code, 0, err)
+        manifest = json.loads((self.work / "processed" / "manifest.json").read_text())
+        self.assertEqual([c["case_id"] for c in manifest["cases"]], ["dataset6_CLINIC_0060"])
+        self.assertEqual(len(list((self.work / "cases").glob("*.json"))), 2)  # kept on disk, not published
+
     def test_work_dir_and_from_processed_are_exclusive(self):
         for argv in ([], ["--work-dir", str(self.work), "--from-processed", str(self.tmp)]):
             with contextlib.redirect_stderr(io.StringIO()) as err, self.assertRaises(SystemExit) as caught:
@@ -527,18 +549,21 @@ class CommandLineTests(TempDirTest):
         self.assertEqual(set(manifest["dataset"]), DATASET_KEYS)
         self.assertEqual(set(manifest["segmentation_tool"]), TOOL_KEYS)
         self.assertEqual(manifest["dataset"]["license"], "cc-by-4.0")
+        self.assertEqual(manifest["dataset"]["license_url"], "https://creativecommons.org/licenses/by/4.0/")
+        self.assertIn("not the dataset's own annotations", manifest["dataset"]["changes"])
         self.assertEqual(set(manifest["dataset"]["source_archives"]), {DATA, MASKS})
         self.assertIn("stopped after the first 2 CT member(s)", manifest["dataset"]["acquisition_note"])
         self.assertIn("ryai.230024", manifest["segmentation_tool"]["citation"])
         self.assertEqual(manifest["segmentation_tool"]["version"], "2.18.0")
         self.assertIn("vtkFlyingEdges3D", manifest["mesh_method"])
-        self.assertEqual([c["case_id"] for c in manifest["cases"]], ["dataset6_CLINIC_0007", "dataset6_CLINIC_0060"])
+        # Archive order, as in rb-data/ctpelvic1k/processed/manifest.json.
+        self.assertEqual([c["case_id"] for c in manifest["cases"]], ["dataset6_CLINIC_0060", "dataset6_CLINIC_0007"])
 
         case = manifest["cases"][0]
         self.assertEqual(set(case), CASE_KEYS)
         self.assertEqual(set(case["source_file"]), SOURCE_FILE_KEYS)
         self.assertEqual(set(case["expert_mask_file"]), EXPERT_FILE_KEYS)
-        self.assertEqual(case["expert_mask_file"]["archive_member"], "ipcai2021_dataset6_Anonymized/dataset6_CLINIC_0007_mask_4label.nii.gz")
+        self.assertEqual(case["expert_mask_file"]["archive_member"], "ipcai2021_dataset6_Anonymized/dataset6_CLINIC_0060_mask_4label.nii.gz")
         self.assertEqual(set(case["segmentation"]), SEGMENTATION_KEYS)
         self.assertEqual(case["segmentation"]["roi_subset"], ROI)
         self.assertEqual((case["segmentation"]["device"], case["segmentation"]["nnunetv2_version"]), ("cpu", "fake"))
@@ -638,6 +663,19 @@ class CommandLineTests(TempDirTest):
         manifest["cases"][0]["note"] = str(processed.resolve() / "x")
         manifest_path.write_text(json.dumps(manifest))
         code, _, err = self.publish(processed, "--skip-upload")
+        self.assertEqual(code, 2)
+        self.assertIn("contains a local path", err)
+
+    def test_from_processed_refuses_a_windows_home_path(self):
+        # JSON escapes "\", so the check must look at parsed values, not the text.
+        processed = self.processed()
+        manifest_path = processed / "manifest.json"
+        manifest = json.loads(manifest_path.read_text())
+        manifest["cases"][0]["source_file"]["local_copy"] = "C:\\Users\\Student\\data\\ct.nii.gz"
+        manifest_path.write_text(json.dumps(manifest))
+        self.assertNotIn("C:\\Users\\Student", manifest_path.read_text())
+        with mock.patch.object(pipeline.Path, "home", return_value=Path("C:\\Users\\Student")):
+            code, _, err = self.publish(processed, "--skip-upload")
         self.assertEqual(code, 2)
         self.assertIn("contains a local path", err)
 

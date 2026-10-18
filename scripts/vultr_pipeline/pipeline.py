@@ -104,6 +104,14 @@ DATASET_NOTES = {
         " Sub-dataset 6 (CLINIC) is preoperative pelvic-fracture CT without metal artifacts per the dataset README."
     ),
 }
+# Zenodo licence id -> licence text URL (CC BY 4.0 section 3(a)(1)(C) asks for a URI or hyperlink to it).
+LICENSE_URLS = {"cc-by-4.0": "https://creativecommons.org/licenses/by/4.0/"}
+# CC BY 4.0 section 3(a)(1)(B): say what was changed.
+DERIVED_DATA_NOTE = (
+    "The masks and meshes are derived from the CTPelvic1K CT volumes by automatic segmentation "
+    "(TotalSegmentator) and surface meshing; they are not the dataset's own annotations and were not "
+    "reviewed by a clinician. CT volumes, when included, are unmodified members of the source archive."
+)
 # TotalSegmentator attribution, from its README (github.com/wasserth/TotalSegmentator).
 TOTALSEGMENTATOR = {
     "name": "TotalSegmentator",
@@ -842,6 +850,8 @@ def dataset_record(
         "zenodo_record": attribution["zenodo_record"],
         "doi": attribution["doi"],
         "license": attribution["license"],
+        "license_url": LICENSE_URLS.get(attribution["license"] or ""),
+        "changes": DERIVED_DATA_NOTE,
         "creators": attribution["creators"],
         "citation": attribution["citation"],
         "citation_preprint": CTPELVIC1K_PREPRINT,
@@ -858,9 +868,11 @@ def dataset_record(
     }
 
 
-def write_manifest(work_dir: Path, dataset: dict[str, Any], ts_version: str) -> Path:
-    """Merge every case record in work_dir/cases into processed/manifest.json."""
-    cases = [json.loads(p.read_text()) for p in sorted((work_dir / "cases").glob("*.json"))]
+def write_manifest(work_dir: Path, dataset: dict[str, Any], ts_version: str, cases: list[dict[str, Any]]) -> Path:
+    """Write processed/manifest.json with this run's case records only.
+
+    Records left in work_dir/cases by earlier runs (other --cases or --bones) are not published.
+    """
     tool = {"name": TOTALSEGMENTATOR["name"], "version": ts_version,
             **{k: v for k, v in TOTALSEGMENTATOR.items() if k != "name"}}
     manifest = {
@@ -876,6 +888,32 @@ def write_manifest(work_dir: Path, dataset: dict[str, Any], ts_version: str) -> 
     return path
 
 
+def _comparable(path: str) -> str:
+    # normcase lowercases on Windows; "/" vs "\" is unified so either spelling of a path matches.
+    return os.path.normcase(path).replace("\\", "/")
+
+
+def _holds_local_path(value: Any, local_dirs: Iterable[Path]) -> bool:
+    """True if any key or string value in the parsed manifest contains one of these directories.
+
+    Checked on parsed values, not the JSON text: JSON escapes "\\", so a Windows path never appears
+    literally in the text.
+    """
+    needles = {_comparable(str(d)).rstrip("/") for d in local_dirs if d.parent != d}  # never a bare root
+
+    def walk(node: Any) -> bool:
+        if isinstance(node, str):
+            text = _comparable(node)
+            return any(n in text for n in needles)
+        if isinstance(node, dict):
+            return any(walk(k) or walk(v) for k, v in node.items())
+        if isinstance(node, list):
+            return any(walk(v) for v in node)
+        return False
+
+    return walk(value)
+
+
 def load_processed(processed_dir: Path) -> tuple[dict[str, Any], list[UploadItem]]:
     """Check a processed/ folder against its manifest.json and list what to upload.
 
@@ -885,17 +923,15 @@ def load_processed(processed_dir: Path) -> tuple[dict[str, Any], list[UploadItem
     manifest_path = processed_dir / "manifest.json"
     if not manifest_path.is_file():
         raise ConfigError(f"{manifest_path} does not exist.")
-    text = manifest_path.read_text(encoding="utf-8")
-    for local in {str(processed_dir.resolve()), str(processed_dir.absolute()), str(Path.home())}:
-        if len(local) > 1 and local in text:
-            raise ConfigError("manifest.json contains a local path. It is served to browsers; remove local paths first.")
     try:
-        manifest = json.loads(text)
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         cases = manifest["cases"]
         if not isinstance(cases, list) or not all(isinstance(c, dict) for c in cases):
             raise TypeError("cases must be a list of objects")
     except (ValueError, KeyError, TypeError) as exc:
         raise ConfigError(f"{manifest_path} is not a bone manifest: {exc}") from exc
+    if _holds_local_path(manifest, [processed_dir.resolve(), processed_dir.absolute(), Path.home()]):
+        raise ConfigError("manifest.json contains a local path. It is served to browsers; remove local paths first.")
     items: list[UploadItem] = []
     problems: list[str] = []
     for case in cases:
@@ -1066,11 +1102,19 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def _inside_repo(path: Path) -> bool:
-    try:
-        path.resolve().relative_to(REPO_ROOT)
-        return True
-    except ValueError:
-        return False
+    """True if path is the repository or under it, compared by file identity.
+
+    A string comparison misses case variants of the same folder on case-insensitive file
+    systems (macOS, Windows), so every existing ancestor is compared with os.path.samefile.
+    """
+    resolved = path.expanduser().resolve()
+    for candidate in (resolved, *resolved.parents):
+        try:
+            if os.path.samefile(candidate, REPO_ROOT):
+                return True
+        except OSError:  # this ancestor does not exist yet
+            continue
+    return False
 
 
 def run_from_processed(args: argparse.Namespace, upload: bool) -> dict[str, Any]:
@@ -1141,6 +1185,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
 
     processed_dir = work_dir / "processed"
     (work_dir / "cases").mkdir(parents=True, exist_ok=True)
+    records: list[dict[str, Any]] = []
     for case in extraction["cases"]:
         case_id = case["case_id"]
         log(f"Case {case_id}")
@@ -1152,8 +1197,9 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             references.get(case_id), args.include_ct, data_remote, mask_remote,
         )
         (work_dir / "cases" / f"{case_id}.json").write_text(json.dumps(record, indent=2))
+        records.append(record)
     dataset = dataset_record(attribution, data_remote, mask_remote, extraction)
-    write_manifest(work_dir, dataset, version)
+    write_manifest(work_dir, dataset, version, records)
     manifest, items = load_processed(processed_dir)
     summary: dict[str, Any] = {
         "manifest": str(processed_dir / "manifest.json"),
