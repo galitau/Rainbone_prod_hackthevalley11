@@ -49,6 +49,33 @@ switches in PowerShell; otherwise decimal arguments can be split.
 Only the generated VTP, VTU, segmentation, provenance and manifests need to be
 served. The full CT and TetGen intermediate files need not be committed.
 
+## Optional native surface extraction
+
+`solve.py` can use a small C++17 kernel for boundary-face extraction, including
+the live API's solver. It preserves NumPy's face order, orientation and owning
+tetrahedron exactly; the material model and SfePy solve are unchanged.
+
+At module import, one background thread builds the repository's C++ source with
+`c++`, `g++` or `clang++` and caches it under `.native/` by source hash and platform.
+Startup and requests never wait for compilation. Until ready, or if the compiler,
+build directory or shared library is unavailable, the original NumPy path runs.
+Set `RAINBONE_NATIVE_SURFACE=0` before starting Python to disable it. No native
+binary or additional Python build dependency is required in the repository.
+
+```sh
+python scripts/bone_fea/native_surface.py
+python scripts/bone_fea/benchmark_surface.py
+RAINBONE_REQUIRE_NATIVE_SURFACE=1 PYTHONPATH=backend python -m unittest backend.tests.test_native_surface
+```
+
+The benchmark checks exact faces and owners on the bundled HFValid mesh, then
+reports two warm-ups and the median of seven runs, including Python wrapper
+validation. Optional positional VTU paths benchmark additional tetrahedral meshes.
+This is a surface-extraction benchmark; it excludes file loading, compilation,
+FEA solving and network latency. API logs record the path actually used per solve
+(`cpp` or `numpy`). On macOS, a mismatched local SDK may require `SDKROOT` to point
+to an installed compatible SDK; otherwise the NumPy fallback still works.
+
 ## STL for 3D printing
 
 The dashboard viewer provides **3D print bone · STL**. The download converts the intact,

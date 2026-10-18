@@ -27,6 +27,7 @@ htmlcov/
 
 # SfePy output that scripts/bone_fea/test_solve.py writes to the working directory
 domain.vtk
+scripts/bone_fea/.native/
 
 # Local tooling and OS files
 .DS_Store

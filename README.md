@@ -565,6 +565,7 @@ optional FSL bone segmentation.
   the solver from `scripts/bone_fea/`), install `backend/requirements.txt`, and run
   `uvicorn main:app` from `backend/` behind an HTTPS proxy. Production runs on Vultr Compute
   with Caddy.
+- **Optional C++ acceleration:** boundary-face extraction measured **6.1× faster** on the 60,819-tetrahedron HFValid mesh (119.2 → 19.6 ms, median of seven local runs); Python/NumPy remains the fallback. This measures one stage, not the whole solve; [benchmark and setup](scripts/bone_fea/README.md#optional-native-surface-extraction).
 - **Data:** `scripts/vultr_pipeline/pipeline.py` uploads the CTPelvic1K meshes under
   `ctpelvic1k/` and `scripts/vultr_pipeline/publish_clinical.py` uploads `clinical/`;
   `backend/scripts/materialize_progression.py` uploads the cached lesion frames.

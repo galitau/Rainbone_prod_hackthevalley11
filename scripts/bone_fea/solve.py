@@ -7,6 +7,16 @@ from __future__ import annotations
 
 import numpy as np
 from scipy import ndimage
+import importlib.util
+from pathlib import Path
+
+# The API loads this script by path, so its optional helper is loaded the same way.
+try:
+    _native_spec = importlib.util.spec_from_file_location("rainbone_native_surface", Path(__file__).with_name("native_surface.py"))
+    _native_surface = importlib.util.module_from_spec(_native_spec)
+    _native_spec.loader.exec_module(_native_surface)
+except (ImportError, OSError, AttributeError, RuntimeError):
+    _native_surface = None
 
 
 def tetrahedralize(mask: np.ndarray, affine: np.ndarray):
@@ -33,10 +43,21 @@ def tetrahedralize(mask: np.ndarray, affine: np.ndarray):
 
 
 def surface_faces(points, tets):
+    faces, owners, _ = _surface_faces(points, tets)
+    return faces, owners
+
+
+def _surface_faces(points, tets):
+    selected = _native_surface.boundary_face_indices(tets) if _native_surface is not None else None
+    if selected is not None:
+        pattern = np.array([[1, 2, 3], [0, 3, 2], [0, 1, 3], [0, 2, 1]])
+        owners = selected // 4
+        faces = tets[owners[:, None], pattern[selected % 4]]
+        return faces, owners, "cpp"
     faces = tets[:, [[1, 2, 3], [0, 3, 2], [0, 1, 3], [0, 2, 1]]].reshape(-1, 3)
     _, first, counts = np.unique(np.sort(faces, axis=1), axis=0, return_index=True, return_counts=True)
     selected = first[counts == 1]
-    return faces[selected], selected // 4
+    return faces[selected], selected // 4, "numpy"
 
 
 def solve_elasticity(points, tets, load_newtons=800.0, youngs_modulus_mpa=10000.0,
@@ -70,7 +91,7 @@ def solve_elasticity(points, tets, load_newtons=800.0, youngs_modulus_mpa=10000.
         if (element_youngs_modulus_mpa.shape != (len(tets),)
                 or not np.all(np.isfinite(element_youngs_modulus_mpa) & (element_youngs_modulus_mpa > 0))):
             raise ValueError("Supply one finite, positive Young's modulus per tetrahedron.")
-    faces, owners = surface_faces(points, tets)
+    faces, owners, surface_backend = _surface_faces(points, tets)
     zmin, zmax = points[:, 2].min(), points[:, 2].max()
     def fixed_vertices(coordinates, domain=None):
         return np.where(coordinates[:, 2] < zmin + support_depth_mm)[0]
@@ -143,6 +164,7 @@ def solve_elasticity(points, tets, load_newtons=800.0, youngs_modulus_mpa=10000.
         'faces': faces, 'owners': owners, 'top_faces': top, 'bottom_faces': bottom,
         'metrics': {
             'solver': 'SfePy', 'element_type': '4-node linear tetrahedron',
+            'surface_extraction_backend': surface_backend,
             'nodes': len(points), 'elements': len(tets),
             'load_newtons': load_newtons, 'youngs_modulus_mpa': youngs_modulus_mpa,
             'poisson_ratio': poisson_ratio, 'loaded_area_mm2': float(area),
