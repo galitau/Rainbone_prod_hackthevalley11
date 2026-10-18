@@ -83,7 +83,7 @@ def stress_color_scale(output, frames):
 
 def main(output, max_iterations, checkpoint=None):
     root = Path(__file__).resolve().parents[2]
-    source = root / 'public/models/hfvalid-femur/bone-fea.vtu'
+    source = root / 'frontend/public/models/hfvalid-femur/bone-fea.vtu'
     signature = hashlib.sha256(source.read_bytes() + Path(__file__).read_bytes()
         + Path(__file__).with_name('press_solver.py').read_bytes()).hexdigest()
     mesh = meshio.read(source)
@@ -207,8 +207,8 @@ def main(output, max_iterations, checkpoint=None):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--output', type=Path, default=Path(__file__).resolve().parents[2] / 'public/models/femur-press')
+    parser.add_argument('--output', type=Path, default=Path(__file__).resolve().parents[2] / 'frontend/public/models/femur-press')
     parser.add_argument('--max-iterations', type=int, default=200)
-    parser.add_argument('--checkpoint', type=Path, help='Optional local checkpoint outside public/ for resuming this exact model')
+    parser.add_argument('--checkpoint', type=Path, help='Optional local checkpoint outside frontend/public/ for resuming this exact model')
     args = parser.parse_args()
     main(args.output, args.max_iterations, args.checkpoint)

@@ -1,18 +1,27 @@
 # RainbowBone FEA backend
 
+`GET /api/bones` (CTPelvic1K bone meshes and masks from Vultr Object Storage, `routes_bones.py`)
+is documented in [`scripts/vultr_pipeline/README.md`](../scripts/vultr_pipeline/README.md#get-apibones).
+
 ## Run locally
 
 ```bash
 cd backend
 python -m pip install -r requirements.txt
+python -m pip install -r requirements-dev.txt   # only to run the tests (moto)
 uvicorn main:app --reload
 ```
 
-The API exposes `GET /health`, `POST /api/simulate`, `POST /api/explain` and
-`GET /api/history`. The simulation endpoint
+The API exposes `GET /health`, `POST /api/simulate`, `POST /api/explain`,
+`POST /api/risk-analysis` and `GET /api/history`. The simulation endpoint
 accepts a multipart form upload named `file` containing a `.nii` or `.nii.gz`
-NIfTI volume. The dashboard posts `public/sample_bone.nii.gz` to
+NIfTI volume. The dashboard posts `frontend/public/sample_bone.nii.gz` to
 `http://127.0.0.1:8000/api/simulate`, uvicorn's default port.
+
+Browsers may call the API from `http://localhost:3000`, `https://rainbone.health`
+and `https://www.rainbone.health`. `CORS_ALLOW_ORIGINS` (comma list, replaces
+those) and `CORS_ALLOW_ORIGIN_REGEX` (e.g. for Vercel preview URLs) change
+that; see `.env.example`.
 
 The solver is imported from `scripts/bone_fea/solve.py`, so run the backend
 from a full checkout of the repository. `python-multipart` is needed for the
@@ -153,7 +162,7 @@ each:
 
 | Volume | Bone voxels kept | Same mask as numpy/scipy | FSL | numpy/scipy |
 |---|---|---|---|---|
-| `public/sample_bone.nii.gz` | 3,048 | yes | 0.04–0.08 s | under 0.01 s |
+| `frontend/public/sample_bone.nii.gz` | 3,048 | yes | 0.04–0.08 s | under 0.01 s |
 | Femur-shaped volume (see Example response), 256 × 331 × 220 | 413,475 | yes | 1.14–1.20 s | 0.29–0.31 s |
 | Public pelvic CT (CTPelvic1K), 512 × 512 × 350, int32 | 1,905,792 | yes | 6.66–7.17 s | 2.09–2.19 s |
 
@@ -189,7 +198,7 @@ Without `FSLDIR` those tests are skipped with the reason.
 
 ## Bundled sample
 
-`public/sample_bone.nii.gz` is a synthetic 32 × 32 × 32 float32 volume with
+`frontend/public/sample_bone.nii.gz` is a synthetic 32 × 32 × 32 float32 volume with
 1 mm voxels: an ellipsoid with semi-axes of 10, 6 and 12 mm (3,048 voxels) at
 750 HU in −1000 HU. It is not anatomy.
 
@@ -205,7 +214,7 @@ to 1 (`scl_inter` stays 0). Both values mean no scaling.
 ## Example response
 
 From a real run of
-`curl -F "file=@public/sample_bone.nii.gz" http://127.0.0.1:8000/api/simulate`
+`curl -F "file=@frontend/public/sample_bone.nii.gz" http://127.0.0.1:8000/api/simulate`
 (port changed for the run):
 
 ```json
@@ -229,12 +238,12 @@ Measured request times (curl `time_total`) on one development laptop:
 
 | Input | Bone voxels | Coarsening | FE voxels | Time |
 |---|---|---|---|---|
-| `public/sample_bone.nii.gz` | 3,048 | none, 1 mm | 3,048 | 1.81 s first request (includes importing SfePy), 1.30 s after |
+| `frontend/public/sample_bone.nii.gz` | 3,048 | none, 1 mm | 3,048 | 1.81 s first request (includes importing SfePy), 1.30 s after |
 | Solid 40 mm cube (test case) | 64,000 | 2 × 2 × 2, 2 mm | 8,000 | 5.56 s, 5.81 s |
 | Femur-shaped volume, 256 × 331 × 220 voxels of 0.703 × 0.703 × 2 mm¹ | 413,475 | 6 × 6 × 2, 4.22 × 4.22 × 4 mm | 7,553 | 2.42 s, 2.39 s |
 
 ¹ The HFValid Pat001 right-femur labelmap already in this repository
-(`public/models/hfvalid-femur/bone.seg.nrrd`; source and CC BY 4.0
+(`frontend/public/models/hfvalid-femur/bone.seg.nrrd`; source and CC BY 4.0
 attribution in `scripts/bone_fea/README.md`), with every femur voxel set to
 700 HU and the rest to −1000 HU. These are not the scan's real HU values, so
 the modulus is uniform. Its response: 12.61 MPa, 22.35 GPa, 408.83 cm³,
@@ -369,6 +378,60 @@ with `AI_OFFLINE=1`:
 `tests/test_explain.py` runs with the backend tests above and needs no
 network: provider calls go to `httpx.MockTransport`.
 
+## AI fracture risk analysis
+
+`POST /api/risk-analysis` explains how likely one HFValid femur is to break,
+from the dataset authors' published numbers. It reads
+`frontend/public/models/hfvalid-risk.json` from the repository: per subject, the
+Absolute Risk of Fracture at time 0 (ARF0) and the Minimum Sidefall Strength
+(MSF) computed with the authors' finite-element model, and whether
+a hip fracture was recorded in the follow-up (HFValid collection, Aldieri,
+La Mattina, Szyszko, Baruffaldi, Viceconti 2025, University of Bologna,
+DOI 10.6092/unibo/amsacta/8431, CC BY 4.0). Sideways-fall forces of 2,900 N
+to 4,260 N on the hip are from van den Kroonenberg et al. 1995
+(PubMed 8618384).
+
+Request: `{"case_id": "Pat001", "fe": {"peak_stress_mpa": 15.83,
+"load_newtons": 800, "stress_index_percent": 10.55}}`; `fe` (our own
+standing-load solve) is optional. It is echoed in `facts.fe` but never sent
+to a model, and its numbers may not appear in `text`. An unknown `case_id`
+returns 404, a bad body 422, and a missing or unreadable data file 503.
+
+The code computes every number in `facts` from the published values (the
+table keeps the CSV's precision): the subject's age, ARF0 (1 decimal) and how
+many subjects had a lower ARF0, the cohort size, median ARF0, fractured count
+and the fractured subjects' ARF0 range, the MSF (whole newtons) and how many
+subjects had a higher MSF, the strongest MSF in the cohort, and the factor of
+risk, fall force / MSF, for both fall forces (2 decimals). The response is
+`{"case_id", "facts", "text", "provider", "model", "fallbacks", "source"}`,
+with `source` the dataset's citation, DOI and licence.
+
+`text` comes from the same provider chain, settings and fallback reasons as
+`/api/explain`, with its own prompt (2 or 3 sentences) and checker. The
+checker accepts a number only when it is a fact or a fact rounded to fewer
+decimals, and only as its own kind of quantity: a percent must be an ARF0
+value, newtons the MSF or a fall force, "times" a factor of risk, and a count
+of women a rank, the fractured count or the cohort size, so the age cannot
+become "a 78% risk" nor a rank a fracture risk. "Its ARF0 is ...%" must be
+this subject's ARF0. A number with a time unit is allowed only as her age
+("78-year-old", "aged 78") or the recorded days to her fracture. It rejects
+a rank stated in the wrong direction ("stronger than 75 women" when 75 women
+had a stronger femur), spelled-out quantities, time horizons ("next year",
+"within", "later", "lifetime", "in her eighties"), "chance", "probability",
+"likelihood" and certainty ("will", "going to", "sure to"), diagnosis and
+disease names, treatment, drugs, screening, referrals, prevention, advice
+and "you". Fracture, risk, break and fall are allowed. A rejected text falls
+through to the next provider and finally to a deterministic template built
+only from the facts. Every `text` ends with "Published research data, not a
+diagnosis or medical advice." An AI answer is kept in memory per case, facts
+and chain order (up to 256), so reloading the page does not spend another
+model call; a template answer is not kept, so a later request can still get
+an AI one.
+
+`tests/test_risk.py` reads the committed `frontend/public/models/hfvalid-risk.json`
+(Pat001's facts, a fractured subject, the template for all 101 subjects) and
+needs no network.
+
 ## Simulation history (TimescaleDB)
 
 Each successful `POST /api/simulate` is also saved as one row of the
@@ -420,7 +483,7 @@ in its own transaction. Every file is idempotent, so re-running is safe.
 ### `GET /api/history?limit=N`
 
 `N` is 1–500 (default 10). Response to `?limit=1` from a local TimescaleDB
-container after four uploads with curl (`public/sample_bone.nii.gz` three
+container after four uploads with curl (`frontend/public/sample_bone.nii.gz` three
 times, the femur-shaped volume once), with FSL making the bone mask:
 
 ```json
@@ -465,7 +528,7 @@ times, the femur-shaped volume once), with FSL making the bone mask:
 }
 ```
 
-- `series` has the shape of `mockStressSeries` in `lib/mock-data.ts`: one
+- `series` has the shape of `mockStressSeries` in `frontend/lib/mock-data.ts`: one
   point per run, `value` = `max_von_mises_stress_mpa`, `label` = run time in
   UTC.
 - `runs` are the same runs with every stored column; `hourly` holds the latest

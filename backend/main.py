@@ -10,26 +10,44 @@ import anyio.to_thread
 from fastapi import BackgroundTasks, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+from routes_bones import router as bones_router
 
 from routes_explain import router as explain_router
 from routes_history import router as history_router
 from routes_progression import router as progression_router
+from routes_risk import router as risk_router
 from services.fea_solver import MAX_UPLOAD_BYTES, FEASolverError, simulate_fea
 from services.fsl_segmentation import segmentation_tool
 from services.history import save_simulation_run
+from services.settings import runtime_env
 
 # One solve at a time: a full CT can hold several GB while it is segmented.
 SOLVE_LIMITER = anyio.CapacityLimiter(1)
+
+# Browser origins allowed to call the API: the local dev server and the production site.
+CORS_ORIGINS_ENV = "CORS_ALLOW_ORIGINS"
+CORS_ORIGIN_REGEX_ENV = "CORS_ALLOW_ORIGIN_REGEX"
+DEFAULT_CORS_ORIGINS = ("http://localhost:3000", "https://rainbone.health", "https://www.rainbone.health")
+
+
+def cors_origins(env: dict[str, str]) -> dict[str, object]:
+    """allow_origins from CORS_ALLOW_ORIGINS (comma list; blank means the defaults) and
+    allow_origin_regex from CORS_ALLOW_ORIGIN_REGEX (blank means none)."""
+    origins = [o.strip().rstrip("/") for o in env.get(CORS_ORIGINS_ENV, "").split(",") if o.strip()]
+    regex = env.get(CORS_ORIGIN_REGEX_ENV, "").strip()
+    return {"allow_origins": origins or list(DEFAULT_CORS_ORIGINS), "allow_origin_regex": regex or None}
+
 
 app = FastAPI(
     title="RainbowBone FEA Engine",
     version="0.1.0",
     description="NIfTI bone segmentation and finite-element biomechanics API.",
 )
+app.include_router(bones_router)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    **cors_origins(runtime_env()),
     allow_credentials=True,
     allow_methods=["POST", "GET"],
     allow_headers=["*"],
@@ -37,6 +55,7 @@ app.add_middleware(
 app.include_router(explain_router)
 app.include_router(history_router)
 app.include_router(progression_router)
+app.include_router(risk_router)
 # Printed by uvicorn's default logging, so the console says whether FSL makes the bone mask.
 logging.getLogger("uvicorn.error").info("Bone segmentation: %s", segmentation_tool())
 
