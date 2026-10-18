@@ -425,12 +425,25 @@ def _wrong_direction(scan: str, facts: RiskFacts) -> Optional[str]:
     return None
 
 
+# A JSON field name written into the answer ("4 cohort_fractured"): any identifier with an underscore, or one of the
+# field names that never occur in plain English read aloud with spaces ("the msf newtons"). Names that read as English
+# ("ARF0 higher than", "cohort fractured", "factor of risk") are left to the number checks.
+_IDENTIFIER = re.compile(r"\b[A-Za-z][A-Za-z0-9]*_[A-Za-z0-9_]+\b")
+_ECHOED_FIELDS = re.compile(r"\b(?:" + "|".join(name.replace("_", r"\s+") for name in (
+    "cohort_median_arf0_percent", "fractured_arf0_min_percent", "fractured_arf0_max_percent", "cohort_msf_max_newtons",
+    "fall_force_low_newtons", "fall_force_high_newtons", "days_ct_to_fracture", "msf_newtons", "cohort_n")) + r")\b",
+                            re.IGNORECASE)
+
+
 def check(text: str, facts: RiskFacts) -> Optional[str]:
     """None when `text` may be shown, else the reason it is rejected."""
     if not text.strip():
         return "empty text"
     if len(text) > MAX_CHARS:
         return f"over {MAX_CHARS} characters"
+    hit = _IDENTIFIER.search(text) or _ECHOED_FIELDS.search(text)
+    if hit:
+        return f"field name: {hit.group(0)!r}"
     scan = _NAMED_TERMS.sub(lambda m: re.sub(r"\d", "", m.group(0)), text)
     allowed, pools = allowed_numbers(facts), _kind_pools(facts)
     scan = _count_words_as_digits(scan, facts)  # "four women" is checked as "4 women"

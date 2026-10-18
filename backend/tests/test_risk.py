@@ -200,6 +200,15 @@ class CheckerTests(unittest.TestCase):
             with self.subTest(text=text):
                 self.assertEqual(check(text, self.facts), f"blocked wording: {hit!r}")
 
+    def test_echoed_field_names_fail(self):
+        # Seen live: Gemini wrote a facts field name into the answer.
+        for text in ["The cohort of 101 women included 4 cohort_fractured with ARF0 from 53.7 to 73.2 percent.",
+                     "Its arf0_percent is 47.1%.", "The msf newtons of this femur is 1,339.",
+                     "The days ct to fracture are not recorded."]:
+            with self.subTest(text=text):
+                self.assertRegex(check(text, self.facts) or "", r"^field name: ")
+        self.assertIsNone(check("Its ARF0 is 47.1%, higher than 56 of the 101 women.", self.facts))
+
     def test_hip_fracture_claims_fail(self):
         # HFValid records that a woman fractured, not where, so "hip fracture" is not a fact.
         for text in ["Four of the 101 women had a hip fracture.", "Four women in the study broke a hip.",
