@@ -281,9 +281,9 @@ export function CloudBones() {
         <div className="space-y-1"><p>{listError}</p><p className="text-xs text-muted">The meshes come from a private Vultr bucket through the backend&apos;s GET /api/bones, which needs the VULTR_S3_* keys (they are not in the repo). Without them, run the front end against the live backend: NEXT_PUBLIC_API_BASE_URL=https://api.rainbone.health npm run dev</p></div><button className={buttonClass} onClick={() => void refresh()}>Retry</button>
       </div>}
 
-      {data && selected && <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
-        <section aria-label="Interactive pelvic bone meshes" className="flex flex-col overflow-hidden rounded-xl border border-line bg-viewport">
-          <div className="relative min-h-[440px] flex-1 sm:min-h-[520px]">
+      {data && selected && <div className="grid gap-4 lg:h-[calc(100dvh-14rem)] lg:min-h-[460px] lg:grid-cols-[1fr_320px]">
+        <section aria-label="Interactive pelvic bone meshes" className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-line bg-viewport">
+          <div className="relative min-h-[360px] flex-1 sm:min-h-[440px] lg:min-h-0">
             <div ref={containerRef} role="img" aria-label={`Bone meshes of ${selected.case_id}, anterior view`} className="absolute inset-0 touch-none" />
             {status === "ready" && <p className="pointer-events-none absolute bottom-3 left-3 right-3 text-center text-[10px] text-viewport-ink">Anterior view · drag to rotate · scroll to zoom · shift + drag to pan</p>}
             {status === "loading" && <div role="status" className="absolute inset-0 flex items-center justify-center text-sm text-viewport-ink"><span className="mr-3 h-3 w-3 animate-pulse rounded-full bg-spectrum-cyan" />Downloading meshes from object storage…</div>}
@@ -300,7 +300,7 @@ export function CloudBones() {
           </div>
         </section>
 
-        <aside className="space-y-4">
+        <aside className="space-y-4 lg:min-h-0 lg:overflow-y-auto lg:pr-1">
           <section aria-label="Bones" className="rounded-xl border border-line bg-surface shadow-card p-4">
             <h2 className="text-sm font-medium">Bones</h2>
             <p className="mt-1 text-[11px] text-muted">Dice: overlap with the CTPelvic1K expert mask (1 = identical).</p>
