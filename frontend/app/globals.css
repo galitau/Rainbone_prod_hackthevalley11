@@ -131,6 +131,78 @@ select {
   }
 }
 
+/* Preferences > Reduce motion > Always reduce (lib/preferences.ts): the same, whatever the device says. */
+html.pref-reduce-motion *,
+html.pref-reduce-motion *::before,
+html.pref-reduce-motion *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}
+
+/* Preferences > Text size > Large (lib/preferences.ts): rem-based sizes and spacing follow the root font size,
+   and the fixed pixel sizes below are raised by the same 12.5%. */
+html.pref-text-large {
+  font-size: 112.5%;
+}
+
+html.pref-text-large .text-\[9px\] {
+  font-size: calc(10.5px * 1.125);
+}
+
+html.pref-text-large .text-\[10px\] {
+  font-size: calc(11.5px * 1.125);
+}
+
+html.pref-text-large .text-\[10\.5px\] {
+  font-size: calc(12px * 1.125);
+}
+
+html.pref-text-large .text-\[11px\] {
+  font-size: calc(12.5px * 1.125);
+}
+
+html.pref-text-large .text-\[11\.5px\] {
+  font-size: calc(13px * 1.125);
+}
+
+html.pref-text-large .text-\[12px\] {
+  font-size: calc(13.5px * 1.125);
+}
+
+html.pref-text-large .text-\[12\.5px\] {
+  font-size: calc(14px * 1.125);
+}
+
+html.pref-text-large .text-\[13px\] {
+  font-size: calc(14.5px * 1.125);
+}
+
+html.pref-text-large .text-\[13\.5px\] {
+  font-size: calc(15px * 1.125);
+}
+
+html.pref-text-large .text-\[15px\] {
+  font-size: calc(17px * 1.125);
+}
+
+html.pref-text-large .text-\[17px\] {
+  font-size: calc(19px * 1.125);
+}
+
+html.pref-text-large .text-\[19px\] {
+  font-size: calc(21px * 1.125);
+}
+
+html.pref-text-large .text-\[22px\] {
+  font-size: calc(25px * 1.125);
+}
+
+html.pref-text-large .text-\[28px\] {
+  font-size: calc(31px * 1.125);
+}
+
 /* Every font about 12% bigger, in proportion: tailwind.config.ts raises the text-* sizes and these raise
    the fixed pixel sizes the components use. */
 .text-\[9px\] {
