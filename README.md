@@ -185,6 +185,8 @@ optional FSL bone segmentation.
   `vercel deploy --prod` from inside `frontend/`. A Git-linked Vercel project needs its
   Root Directory set to `frontend`. `NEXT_PUBLIC_API_BASE_URL` points the browser at the
   API and is fixed at build time.
+  `NEXT_PUBLIC_GOOGLE_CLIENT_ID` (optional, also fixed at build time) turns on "Sign in with
+  Google" on `/enter`; list the site's origins as Authorized JavaScript origins on that client.
 - **Back end:** any Linux host with Python 3.12. Clone the whole repository (the API imports
   the solver from `scripts/bone_fea/`), install `backend/requirements.txt`, and run
   `uvicorn main:app` from `backend/` behind an HTTPS proxy. Production runs on Vultr Compute

@@ -23,6 +23,7 @@ import femurManifest from "@/public/models/hfvalid-femur/manifest.json";
 import riskTable from "@/public/models/hfvalid-risk.json";
 import { API_HOST, apiUrl, checkHealth } from "@/lib/api";
 import { formatNumber } from "@/lib/format";
+import { GOOGLE_CLIENT_ID } from "@/lib/google-identity";
 import { FEMUR_MODEL } from "@/lib/model";
 
 // Every statement on this page restates what a file in the repository does or holds; the comment above each card
@@ -61,7 +62,7 @@ export function SecureDatasets() {
 
       <p role="note" className="mt-6 flex gap-3 rounded-xl border border-caution/25 bg-caution/[0.06] px-4 py-3 text-[12.5px] leading-5 text-ink">
         <Info size={16} className="mt-0.5 shrink-0 text-caution" aria-hidden />
-        <span><strong className="font-semibold">Research prototype — not a medical device.</strong> The HFValid femur and CTPelvic1K pelvic scans come from public research datasets, and the sample the overview runs is a synthetic test volume. There are no real patient accounts: the clinician in the header is a demo profile. Only import scans you are allowed to share.</span>
+        <span><strong className="font-semibold">Research prototype — not a medical device.</strong> The HFValid femur and CTPelvic1K pelvic scans come from public research datasets, and the sample the overview runs is a synthetic test volume. There are no real patient accounts: {GOOGLE_CLIENT_ID ? "the clinician in the header is the Dr. Rowan demo profile, or your own Google name and photo if you used Sign in with Google on /enter; those stay in this browser and are never sent to the API, and Google's button sets its own g_state cookie" : "the clinician in the header is a demo profile"}. Only import scans you are allowed to share.</span>
       </p>
 
       <div className="mt-6 grid gap-6 xl:grid-cols-2">
