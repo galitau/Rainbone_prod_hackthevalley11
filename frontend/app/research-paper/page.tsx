@@ -462,8 +462,8 @@ export default function ResearchPaperPage() {
           <h2 id="significance-title">Significance for care teams</h2>
           <p>
             By the time a resident falls and breaks a bone, it is already an emergency. Rainbone gives the whole care team (nurses, CNAs,
-            wellness directors and doctors) an earlier, clearer picture of bone health: a 3D view of where a femur carries load, where its
-            published fall results sit among 101 women, and a plain-words explanation from AI agents that anyone on the team can read and
+            wellness directors and doctors) an earlier, clearer picture of bone health: a 3D view of where a femur carries load, how it
+            compares with a published research cohort, and a plain-words explanation from AI agents that anyone on the team can read and
             share. Every number is computed by code and checked before it is shown, so the team can trust what it brings to a clinician, a
             resident or a family, and it can 3D-print the simulated break as a hands-on teaching model. The prototype runs on a published
             research femur today; bringing it to residents comes next, with consent and PHIPA-compliant agreements in place first. Research
