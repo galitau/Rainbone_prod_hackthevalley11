@@ -1,4 +1,6 @@
 import { apiUrl, type Grounding, type Logged } from "@/lib/api";
+import { parseAskWriterUsage, parseWorkflowUsage, type WorkflowUsage } from "@/lib/ask-usage";
+import type { AiUsage } from "@/lib/ai-usage";
 import type { AiAnswerSource } from "@/lib/ai-label";
 
 export const ASK_EVENT = "rainbone:ask";
@@ -9,6 +11,7 @@ export function openAskRainbone(question = "") {
 export type AskSource = { id: string; label: string; kind: string; url?: string };
 export type AskTrace = { stage: string; tool?: string; summary: string; ms: number };
 export type AskAnswer = AiAnswerSource & {
+  usage?: AiUsage; workflow_usage?: WorkflowUsage;
   answer: string; sources: AskSource[]; steps: string[]; trace?: AskTrace[]; tools_used?: string[]; grounding: Grounding | null; logged: Logged | null;
 };
 
@@ -52,7 +55,7 @@ export function parseAskAnswer(value: unknown): AskAnswer {
   const logged = v.logged as Record<string, unknown> | null;
   if (logged && (typeof logged !== "object" || logged.store !== "tiger" || typeof logged.id !== "string"))
     throw new Error("Rainbone returned invalid save details.");
-  return { ...v, sources, ...(trace === undefined ? {} : { trace }), grounding: grounding ?? null, logged: logged ?? null } as AskAnswer;
+  return { ...v, usage: parseAskWriterUsage(v.usage), workflow_usage: parseWorkflowUsage(v.workflow_usage), sources, ...(trace === undefined ? {} : { trace }), grounding: grounding ?? null, logged: logged ?? null } as AskAnswer;
 }
 
 export async function askRainbone(question: string, page: string, signal: AbortSignal): Promise<AskAnswer> {

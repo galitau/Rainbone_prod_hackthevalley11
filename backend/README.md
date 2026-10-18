@@ -530,8 +530,15 @@ prediction questions require the no-prediction statement, recorded follow-up and
 never arbitrary model prose, within 120 words. The offline fallback handles common data/navigation
 questions; unsupported questions receive bounded site help. No uploaded scan is included.
 
-Response: `answer`, `provider`, `model`, `served`, `saved_at`, `sources`, `grounding`, `logged`, `steps`, `trace`, `tools_used`.
+Response: `answer`, `provider`, `model`, `served`, `saved_at`, `sources`, `grounding`, `logged`, `steps`, `trace`, `tools_used`, `usage`, `workflow_usage`.
 `trace` contains actual stage/tool/summary/ms events returned on completion, not streamed progress.
+`usage` retains the accepted writer's original provider-reported counts. `workflow_usage` contains
+stage/provider/model reports for returned generations in this request, including rejected selections;
+the code critic uses no model tokens. Optional observers run before code checking and do not run for
+saved lookup. Missing reports or unreturned failures mark totals incomplete. Cache and coalesced
+request copies report zero additional initiated work, without changing the original producer's counts.
+A saved writer may follow fresh triage usage. Thinking is already included in output; it is never added
+twice. The minimal observer does not count every provider-internal key retry or establish billing totals.
 The drawer reuses provider and provenance footers. Sources and routes are allowlisted. Questions go
 to the configured provider transiently, but only hashes are used in cache/audit identities; saved
 Gemini entries contain approved IDs, not question text. The Tiger row uses endpoint `ask`.

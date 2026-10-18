@@ -228,7 +228,7 @@ class AskRouteTests(unittest.TestCase):
     def test_route_response_and_validation(self):
         body = self.client.post("/api/ask", json={"question": "How do I cut the bone open?", "page": "/dashboard"})
         self.assertEqual(body.status_code, 200)
-        self.assertEqual(set(body.json()), {"answer", "provider", "model", "served", "saved_at", "sources", "grounding", "logged", "steps", "trace", "tools_used"})
+        self.assertEqual(set(body.json()), {"answer", "provider", "model", "served", "saved_at", "sources", "grounding", "logged", "steps", "trace", "tools_used", "usage", "workflow_usage"})
         for fields in ({"question": " "}, {"question": "x" * 501}, {"question": "hi", "case_id": "Pat004"},
                        {"question": "hi", "page": "https://evil.test"}, {"question": "hi", "user_file": "secret"}):
             with self.subTest(fields=fields):

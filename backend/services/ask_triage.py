@@ -29,7 +29,7 @@ class TriageResult:
     summary: str
 
 
-async def triage(models: list, question: str, page: Optional[str], deadline: float) -> TriageResult:
+async def triage(models: list, question: str, page: Optional[str], deadline: float, *, on_usage=None, on_failure=None) -> TriageResult:
     """Reuse configured Gemini models, key cooldowns and 429 cooldown; never persist raw questions."""
     deadline = min(deadline, time.perf_counter() + TRIAGE_BUDGET_S)
     failures: list[str] = []
@@ -56,10 +56,13 @@ async def triage(models: list, question: str, page: Optional[str], deadline: flo
                     "tools": [{"functionDeclarations": DECLARATIONS}],
                     "toolConfig": {"functionCallingConfig": {"mode": "ANY", "allowedFunctionNames": [d["name"] for d in DECLARATIONS]}},
                     "generationConfig": {"maxOutputTokens": 512}}
+            received = False
             try:
                 data = await asyncio.wait_for(llm._post_json(
                     f"{llm.GEMINI_BASE_URL}/models/{provider.model}:generateContent", body,
                     {"x-goog-api-key": key}, min(provider.timeout, remaining), provider._transport), timeout=remaining)
+                received = True
+                llm.notify_observer(on_usage, "gemini", provider.model, llm.gemini_usage(data))
                 candidate = data["candidates"][0]
                 if candidate.get("finishReason") not in (None, "STOP"):
                     raise ValueError("incomplete function calls")
@@ -69,6 +72,7 @@ async def triage(models: list, question: str, page: Optional[str], deadline: flo
                                         for part in parts if "functionCall" in part and not part.get("thought")])
                 return TriageResult(calls, provider.model, f"Gemini native function-call triage · {provider.model}")
             except llm.ProviderError as exc:
+                llm.notify_observer(on_failure, "request_timeout" if "timed out" in exc.reason else "failed_attempt")
                 category = f"HTTP {exc.status}" if exc.status is not None else "provider request failed"
                 failures.append(f"{provider.model}: {category}")
                 if exc.status in (401, 403):
@@ -79,9 +83,12 @@ async def triage(models: list, question: str, page: Optional[str], deadline: flo
                 # Unsupported tools/arguments (400) do not invalidate a key or disable the normal writer.
                 break
             except asyncio.TimeoutError:
+                llm.notify_observer(on_failure, "request_timeout")
                 failures.append(f"{provider.model}: native request timed out")
                 break
             except (ValueError, KeyError, IndexError, TypeError, AttributeError):
+                if not received:
+                    llm.notify_observer(on_failure, "invalid_provider_output")
                 failures.append(f"{provider.model}: invalid native tool response")
                 break
     detail = "; ".join(dict.fromkeys(failures)) or "no native Gemini provider in this chain"

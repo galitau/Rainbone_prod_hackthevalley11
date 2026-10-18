@@ -7,6 +7,7 @@ import { Compass, Database, FileCheck, PenLine, ShieldCheck, Sparkles, Send, X }
 import { useReducedMotion } from "@/lib/preferences";
 import { aiAnswerLabel } from "@/lib/ai-label";
 import { ASK_EVENT, askRainbone, checkedAskUrl, type AskAnswer } from "@/lib/ask-rainbone";
+import { AskUsageLine } from "@/components/ask-usage-line";
 import { GroundingLine } from "@/components/grounding-line";
 
 const SUGGESTIONS = ["What does the 47% mean?", "Why isn't the 11% a fracture chance?", "How do I cut the bone open?"];
@@ -188,7 +189,7 @@ export function AskRainbone() {
             {exchange.answer && <div className="ask-answer-content space-y-3" data-reduced={reduced}>
               <AnswerText answer={exchange.answer} />
               <div className="flex flex-wrap gap-2">{exchange.answer.sources.map(source => source.url ? <a key={source.id} href={source.url} {...(source.url.startsWith("https:") ? {target:"_blank",rel:"noreferrer noopener"} : {})} title={source.label} className="rounded-md border border-line bg-sunken px-2 py-1 text-[11px] text-link underline underline-offset-2">[{source.id}]</a> : <span key={source.id} className="rounded-md border border-line px-2 py-1 text-[11px] text-muted">[{source.id}]</span>)}</div>
-              <footer className="space-y-1 border-t border-line pt-3 text-[11px] leading-5 text-muted"><p>{aiAnswerLabel(exchange.answer)}</p><p>{exchange.answer.provider === "template" ? "Summary uses checked source statements." : "AI selects from checked source statements."}</p><GroundingLine grounding={exchange.answer.grounding} logged={exchange.answer.logged} /></footer>
+              <footer className="space-y-1 border-t border-line pt-3 text-[11px] leading-5 text-muted"><p>{aiAnswerLabel(exchange.answer)}</p><p>{exchange.answer.provider === "template" ? "Summary uses checked source statements." : "AI selects from checked source statements."}</p><GroundingLine grounding={exchange.answer.grounding} logged={exchange.answer.logged} /><AskUsageLine workflowUsage={exchange.answer.workflow_usage} writerUsage={exchange.answer.usage} /></footer>
             </div>}
             {exchange.error && <div role="alert" className="rounded-lg border border-caution/40 bg-sunken p-3 text-sm text-caution"><p>{exchange.error}</p><button type="button" onClick={() => {setQuestion(exchange.question); input.current?.focus();}} className="mt-2 text-link underline">Use this question again</button></div>}
           </div>)}
