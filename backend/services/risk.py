@@ -144,8 +144,10 @@ SYSTEM_PROMPT = (
     "the fall forces, 'times' only for the factors of risk, and counts of women only for arf0_higher_than, "
     "msf_lower_than, cohort_fractured and cohort_n. Do not calculate any new number: no differences, shares "
     "of the cohort, or unit conversions such as kN. Never write a number as a word, and do not use words for "
-    "quantities or multiples (such as one, two, half, twice, double). Write ARF0 as ARF0 and do not expand "
-    "it. Do not call ARF0 a chance, probability, odds or likelihood, do not attach a time period to it, and "
+    "quantities or multiples (such as one, two, half, twice, double). Spell out each name the first time "
+    "it appears, exactly as 'MSF (minimum sidefall strength)' and 'ARF0 (absolute risk of fracture at time "
+    "0)', and write MSF and ARF0 after that. Do not call ARF0 a chance, probability, odds or likelihood, do "
+    "not attach a time period to it, and "
     "do not predict when or whether a fracture will happen (no will, within, later, soon, eventually, "
     "lifetime); the follow-up is a record of what happened. Do not diagnose or name a disease, and do not "
     "give advice, treatment, medication, exercise, screening, referrals or prevention (no should, need, "
@@ -432,10 +434,10 @@ def template_text(facts: RiskFacts) -> str:
         compare = "Such a fall would about reach its strength"
     parts = [
         f"A sideways fall would load this femur {_dec(f.factor_of_risk_low, 2)} to {_dec(f.factor_of_risk_high, 2)} "
-        f"times its strength (MSF, {f.msf_newtons:,} N) in the study authors' model.",
+        f"times its minimum sidefall strength (MSF, {f.msf_newtons:,} N) in the study authors' model.",
         f"{compare}; {f.msf_lower_than} of the {f.cohort_n} women had a stronger femur.",
-        f"Its published fracture risk (ARF0) is {_dec(f.arf0_percent)}%, higher than {f.arf0_higher_than} of the "
-        f"{f.cohort_n} women.",
+        f"Its published absolute risk of fracture at time 0 (ARF0) is {_dec(f.arf0_percent)}%, higher than "
+        f"{f.arf0_higher_than} of the {f.cohort_n} women.",
     ]
     if not f.fractured_within_followup:
         parts.append("No hip fracture was recorded for this woman during the study's follow-up.")
