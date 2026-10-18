@@ -322,7 +322,7 @@ flowchart TD
   groq["Groq openai/gpt-oss-120b"]
   tmpl["Template built from the facts"]
   log["INSERT INTO ai_analyses<br/>hashes, provider, model, latency, fallbacks<br/>waits at most 2.5 s"]
-  resp["Response: text, facts, provider, model, served,<br/>fallbacks, grounding, logged"]
+  resp["Response: text, provider, model, served,<br/>fallbacks, grounding, logged, usage"]
 
   req --> bucket
   bucket -->|"verified"| facts
@@ -345,7 +345,9 @@ flowchart TD
   log --> resp
 ```
 
-A provider without a key is skipped with the reason in `fallbacks`. Kept answers live in memory
+A provider without a key is skipped with the reason in `fallbacks`. Each model answer also returns
+`usage`, the token counts the provider reported for the call that wrote it (null for the template);
+tokens are not written to the audit log. Kept answers live in memory
 (Gemini 1 h; Groq and template 60 s; at most 60 s when `DATABASE_URL` is set but the Tiger row was
 not written), and
 concurrent equal requests share one chain run.
@@ -388,7 +390,7 @@ sequenceDiagram
     end
     A->>G: writer: question, tool outputs and allowed IDs, gemini-3.8-flash then gemini-3.5-flash-lite
     G-->>A: 1 to 3 statement IDs
-    Note over A: code critic checks IDs, required ID, citations, links, 120 words,<br/>one bounded rewrite after a rejection
+    Note over A: code critic checks IDs, required IDs, citations, links, 120 words,<br/>one bounded rewrite after a rejection
     opt no Gemini selection passed
       Note over A: saved Gemini selection for the same inputs, if it passes the critic
     end
@@ -567,8 +569,10 @@ All state below is in memory and belongs to one API process.
   "likelihood" and certainty wording, advice and treatment terms, wording that places the recorded fracture at the
   hip (the follow-up does not record where), and text over 600 characters.
 - **Ask critic** (`services/ask.py`): 1 to 3 distinct IDs in the expected format, each from the
-  executed tools; `unavailable` only on its own; the required ID for a recognised intent; at most
-  120 rendered words; citations and page links only from the fixed catalogue.
+  executed tools; `unavailable` only on its own; the required IDs for a recognised intent (a question
+  about whether she will fracture must include the research-limitation statement, the recorded
+  follow-up outcome and ARF0); at most 120 rendered words; citations and page links only from the
+  fixed catalogue.
 - **Cut-off replies:** a Gemini reply that ends for any reason other than `STOP` (including the token
   limit) and a Groq reply cut at its length limit are rejected, so partial text is never shown.
 - **Kept answers** are checked again against the current checker before reuse.
@@ -582,7 +586,7 @@ clinical validation, and accepted text still needs human review.
 |---|---|---|
 | Uploaded scan bytes | Held by the API for the request (the multipart parser may spool a large body to a temporary file; FSL, when used, works in a temporary folder that is removed) | Not saved. The result numbers are kept in memory by sha256 |
 | Simulation result | Tiger `simulation_runs`: file name as sent, numbers, solver versions, input sha256, timing | Until deleted by hand |
-| AI card facts and text | Sent to the provider (facts only) and returned to the browser. Tiger keeps sha256 hashes, provider, model, latency, grounding store, fallback categories | Hashes until deleted. Checked Gemini text and its facts in the saved-answer file, at most 500 entries |
+| AI card facts and text | Sent to the provider (facts only) and returned to the browser with token usage. Tiger keeps sha256 hashes, provider, model, latency, grounding store, fallbacks; no text and no token counts | Hashes until deleted. Checked Gemini text, its facts and token usage in the saved-answer file, at most 500 entries |
 | Ask question | Sent to Gemini (triage and writer) and, as a fallback, Groq. The server keeps only its hash in cache keys and audit rows | Saved-answer file keeps selected statement IDs under hashed identities |
 | Google identity | Decoded in the browser, stored in `localStorage` | Until sign-out; never sent to the API |
 | Preferences, layout | `localStorage` | Per browser |
@@ -593,8 +597,9 @@ clinical validation, and accepted text still needs human review.
 - **Pinned facts.** A changed or tampered `clinical/` object cannot change what the AI layer says: it
   must match the sha256 committed in this repository, or the API falls back to the bundled copy with
   the same pin.
-- **Hashes only in the AI log.** Rejection reasons are stored as categories without the quoted
-  fragment, and Ask fallbacks never keep model output or question fragments.
+- **Hashes only in the AI log.** Rejection reasons are stored without the quoted fragment, and Ask
+  fallbacks are reduced to fixed categories (such as `rate-limited (HTTP 429)` or `request timeout`),
+  so they never keep model output or question fragments.
 - **Secrets.** Keys come from the environment or a `.env` file (gitignored) and are never logged or
   returned. Gemini keys travel in a header and appear in reasons only as "key 1", "key 2"; cooldowns
   are keyed by a hash of the key. The database password is masked in log lines, and storage errors
