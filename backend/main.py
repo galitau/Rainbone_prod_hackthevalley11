@@ -17,6 +17,7 @@ from starlette.responses import JSONResponse
 from routes_bones import router as bones_router
 
 from routes_ai_log import router as ai_log_router
+from routes_ask import router as ask_router
 from routes_explain import router as explain_router
 from routes_history import router as history_router
 from routes_progression import router as progression_router
@@ -119,6 +120,7 @@ app.include_router(history_router)
 app.include_router(progression_router)
 app.include_router(risk_router)
 app.include_router(ai_log_router)
+app.include_router(ask_router)
 # Printed by uvicorn's default logging, so the console says whether FSL makes the bone mask.
 logging.getLogger("uvicorn.error").info("Bone segmentation: %s", segmentation_tool())
 

@@ -13,7 +13,7 @@ uvicorn main:app --reload
 ```
 
 The API exposes `GET /health`, `POST /api/simulate`, `POST /api/explain`,
-`POST /api/risk-analysis`, `GET /api/history` and `GET /api/ai-log`. The simulation endpoint
+`POST /api/risk-analysis`, `POST /api/ask`, `GET /api/history` and `GET /api/ai-log`. The simulation endpoint
 accepts a multipart form upload named `file` containing a `.nii` or `.nii.gz`
 NIfTI volume. The dashboard posts `frontend/public/sample_bone.nii.gz` to
 `http://127.0.0.1:8000/api/simulate`, uvicorn's default port.
@@ -514,10 +514,32 @@ used as before and `grounding` is null.
 The objects are private (no public URL; read with the bucket's keys) and
 travel over HTTPS. Nothing more is claimed about their storage.
 
+## Ask Rainbone
+
+`POST /api/ask` accepts `{"question":"What does the 47% mean?","case_id":"Pat001","page":"/dashboard"}`.
+Only `question` is required (1–500 characters); unknown cases/pages and extra fields are rejected.
+It combines the verified Pat001 risk table, verified FEA manifest and a fixed code-derived page guide.
+The existing provider chain selects approved statement IDs; Python renders exact cited statements,
+never arbitrary model prose, within 120 words. The offline fallback handles common data/navigation
+questions; unsupported questions receive bounded site help. No uploaded scan is included.
+
+Response: `answer`, `provider`, `model`, `served`, `saved_at`, `sources`, `grounding`, `logged`, `steps`.
+The drawer reuses provider and provenance footers. Sources and routes are allowlisted. Questions go
+to the configured provider transiently, but only hashes are used in cache/audit identities; saved
+Gemini entries contain approved IDs, not question text. The Tiger row uses endpoint `ask`.
+
+Process-local limits: 8 requests/minute per transport peer, 4 active HTTP requests, 4 pending
+computations, 128 cached answers. Reverse-proxy trust configuration determines peer fairness;
+caller-supplied forwarding headers are not read directly. `429` includes `Retry-After`; invalid
+verified evidence yields `503`. Generation budget is 25 seconds including elapsed evidence load;
+audit logging has its own existing 2.5-second cap. Configure the same `AI_CHAIN`, `AI_OFFLINE`,
+Gemini/Groq keys, `AI_ANSWER_STORE`, `VULTR_S3_*` and `DATABASE_URL` as the other explanation endpoints.
+No schema migration or new dependency is required. Tests: `python -m unittest tests.test_ask`.
+
 ## AI audit log (Tiger Cloud)
 
-Every answer `POST /api/risk-analysis` or `POST /api/explain` produces (from a
-model or the template) is logged as one row of the `ai_analyses` TimescaleDB
+Each newly produced answer from `POST /api/risk-analysis`, `POST /api/explain` or
+`POST /api/ask` attempts a best-effort write of one row of the `ai_analyses` TimescaleDB
 hypertable (`migrations/002_ai_analyses.sql`), in the database `DATABASE_URL`
 names (see [Simulation history](#simulation-history-timescaledb)). The same
 `python -m services.history migrate` creates it, since it applies every

@@ -44,6 +44,13 @@ export default function PrivacyPage() {
           fingerprints (SHA-256 hashes) of its input facts and its text. None of these records says who ran them.
         </p>
 
+        <p>
+          Ask Rainbone sends your question and this site&apos;s published reference facts to the configured AI provider
+          (Gemini, or Groq as a fallback); it does not include uploaded scans, keeps the conversation in this page&apos;s
+          memory, and stores only hashes and processing metadata in its database audit log, with checked source-statement
+          selections cached separately for reuse. Please do not include personal or medical information in questions.
+        </p>
+
         <h2 className="font-serif text-xl font-semibold text-white">Data in the app</h2>
         <p>
           The scans and measurements shown come from published research datasets, listed with their licences on the{" "}
