@@ -14,6 +14,11 @@ accepts a multipart form upload named `file` containing a `.nii` or `.nii.gz`
 NIfTI volume. The dashboard posts `public/sample_bone.nii.gz` to
 `http://127.0.0.1:8000/api/simulate`, uvicorn's default port.
 
+Browsers may call the API from `http://localhost:3000`, `https://rainbone.health`
+and `https://www.rainbone.health`. `CORS_ALLOW_ORIGINS` (comma list, replaces
+those) and `CORS_ALLOW_ORIGIN_REGEX` (e.g. for Vercel preview URLs) change
+that; see `.env.example`.
+
 The solver is imported from `scripts/bone_fea/solve.py`, so run the backend
 from a full checkout of the repository. `python-multipart` is needed for the
 upload form; `httpx2` is only used by the tests (Starlette's test client).

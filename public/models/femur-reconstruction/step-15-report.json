@@ -1,0 +1,110 @@
+{
+  "frame_index": 14,
+  "step": 15,
+  "stroke_mm": 3.8688973262832254,
+  "units": "mm",
+  "scale": 1,
+  "coordinate_state": "original undeformed geometry",
+  "translation_mm": [
+    -95.0153636932373,
+    12.129846572875977,
+    428.8161315917969
+  ],
+  "clearance_mm": 0,
+  "source_mesh_sha256": "e012cddb9bb49ac570d9ff405944b0edce244669a7c3c324b3a1d2fd5d90f235",
+  "source_frame_sha256": "b27349f4b7e46d30c02a84345e5bfe940667f736f2a3ed4d764b265217bd8b9a",
+  "raw_removed_elements": 1692,
+  "raw_removed_volume_mm3": 8773.571702905287,
+  "raw_eroded_volume_percent": 2.149900992583504,
+  "print_insert_volume_mm3": 8800.550683102512,
+  "repair_added_elements": [
+    637,
+    1021,
+    23998,
+    27471,
+    27509,
+    27702,
+    28553,
+    29383,
+    29423,
+    34014,
+    37792,
+    40306,
+    56169,
+    59368
+  ],
+  "repair_added_volume_mm3": 26.978980197225205,
+  "repair_iterations": 2,
+  "source_volume_mm3": 408091.89507662936,
+  "minimum_remaining_fragment_mm3": 5.0,
+  "checks": {
+    "saved_boundary_reproduced": true,
+    "recorded_eroded_volume_matched": true,
+    "complementary_partition": true,
+    "stl_roundtrip": true
+  },
+  "parts": [
+    {
+      "triangles": 1002,
+      "dimensions_mm": [
+        30.56334686279297,
+        34.58487319946289,
+        35.131378173828125
+      ],
+      "volume_mm3": 8800.549436313499,
+      "connected_components": 1,
+      "boundary_edges": 0,
+      "nonmanifold_edges": 0,
+      "file": "step-15-missing-1.stl",
+      "sha256": "0a7eb69fc01c0f907d0852011d4b263515ebcbc9d3a06a961ddd91c1ce6acb86",
+      "bytes": 50184,
+      "nonmanifold_vertices": 0,
+      "kind": "missing",
+      "label": "Missing region 1",
+      "elements": 1706
+    },
+    {
+      "triangles": 17604,
+      "dimensions_mm": [
+        77.10830307006836,
+        61.15019989013672,
+        304.8048095705156
+      ],
+      "volume_mm3": 274906.1420365546,
+      "connected_components": 1,
+      "boundary_edges": 0,
+      "nonmanifold_edges": 0,
+      "file": "step-15-remaining-1.stl",
+      "sha256": "8e561d78ea6c946a84f684265782c8265bdddc6d58d79c13ed8eea062a750d1b",
+      "bytes": 880284,
+      "nonmanifold_vertices": 0,
+      "kind": "remaining",
+      "label": "Remaining femur 1",
+      "elements": 38268
+    },
+    {
+      "triangles": 10478,
+      "dimensions_mm": [
+        81.94892120361328,
+        60.95859718322754,
+        94.3360595703125
+      ],
+      "volume_mm3": 124385.20364284843,
+      "connected_components": 1,
+      "boundary_edges": 0,
+      "nonmanifold_edges": 0,
+      "file": "step-15-remaining-2.stl",
+      "sha256": "67fbcf1d36268e1ebc93effae171d51d976dfbce26fee131399862a606d19937",
+      "bytes": 523984,
+      "nonmanifold_vertices": 0,
+      "kind": "remaining",
+      "label": "Remaining femur 2",
+      "elements": 20845
+    }
+  ],
+  "report_file": "step-15-report.json",
+  "bundle_file": "step-15-reconstruction.zip",
+  "source_url": "https://amsacta.unibo.it/id/eprint/8431/",
+  "license": "CC BY 4.0",
+  "attribution": "Aldieri, La Mattina, Szyszko, Baruffaldi, Viceconti (2025). HFValid collection. University of Bologna. DOI:10.6092/unibo/amsacta/8431"
+}
