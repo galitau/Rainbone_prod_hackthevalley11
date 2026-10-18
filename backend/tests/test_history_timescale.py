@@ -129,7 +129,7 @@ class TimescaleHistoryTests(unittest.TestCase):
         latest = body["runs"][-1]
         self.assertEqual({name: latest[name] for name in RESULT}, RESULT)
         self.assertEqual(latest["solver"], "services.fea_solver.simulate_fea")
-        self.assertEqual(set(latest["solver_versions"]), set(history.SOLVER_PACKAGES))
+        self.assertEqual(set(latest["solver_versions"]), {*history.SOLVER_PACKAGES, "segmentation"})
         self.assertGreaterEqual(latest["solve_ms"], 0.0)
 
         (bucket, runs, avg_stress, max_stress), = self.query(

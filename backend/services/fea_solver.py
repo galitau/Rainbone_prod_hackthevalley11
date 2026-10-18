@@ -309,7 +309,11 @@ def analyze_bone_volume(
 
 
 def simulate_fea(payload: bytes, filename: str = "mock-bone.nii") -> dict[str, Any]:
-    """Segment the CT volume and run a linear-elastic SfePy solve under 800 N."""
+    """Segment the CT volume and run a linear-elastic SfePy solve under 800 N.
+
+    Returns the API fields plus `segmentation` ("fsl" or "numpy"), which the
+    simulation history stores and the API response leaves out.
+    """
     volume, spacing_mm = _load_nifti(payload)
-    result, _ = analyze_bone_volume(volume, spacing_mm, filename)
-    return result.model_dump()
+    result, details = analyze_bone_volume(volume, spacing_mm, filename)
+    return {**result.model_dump(), "segmentation": details["segmentation"]}

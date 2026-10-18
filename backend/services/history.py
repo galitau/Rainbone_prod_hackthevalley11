@@ -17,12 +17,14 @@ from __future__ import annotations
 
 import argparse
 import logging
+import re
 import sys
 from datetime import datetime, timezone
 from functools import lru_cache
 from importlib import metadata
 from pathlib import Path
 from typing import Any, Callable, Mapping, Optional
+from urllib.parse import quote
 
 from services.settings import runtime_env
 
@@ -97,7 +99,9 @@ def insert_run(conn, result: Mapping[str, Any], solve_ms: Optional[float] = None
     from psycopg.types.json import Jsonb
 
     params = {name: result[name] for name in RESULT_COLUMNS}
-    params.update(solver=SOLVER, solver_versions=Jsonb(solver_versions()), solve_ms=solve_ms)
+    # Which tool made the bone mask ("fsl" or "numpy"), as simulate_fea reports it.
+    versions = {**solver_versions(), "segmentation": result.get("segmentation")}
+    params.update(solver=SOLVER, solver_versions=Jsonb(versions), solve_ms=solve_ms)
     conn.execute(INSERT_SQL, params)
 
 
@@ -128,6 +132,8 @@ def save_simulation_run(
 def _describe(exc: BaseException, url: str) -> str:
     """Exception type and first message line, with the connection password masked.
 
+    The password is masked where it stands as its own token (":<password>@", "password=<password>",
+    or a quoted word), not inside other words, so a short password does not garble the message.
     When the connection string cannot be parsed the message is dropped, since it may quote the string.
     """
     lines = str(exc).strip().splitlines()
@@ -139,7 +145,8 @@ def _describe(exc: BaseException, url: str) -> str:
     except Exception:  # noqa: BLE001 - psycopg missing or an unparseable connection string
         return type(exc).__name__
     if password:
-        text = text.replace(str(password), "***")
+        for secret in {str(password), quote(str(password), safe="")}:
+            text = re.sub(rf"(?<![A-Za-z0-9]){re.escape(secret)}(?![A-Za-z0-9])", "***", text)
     return f"{type(exc).__name__}: {text}" if text else type(exc).__name__
 
 

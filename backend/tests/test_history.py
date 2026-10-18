@@ -116,8 +116,15 @@ class SaveTests(HistoryTestCase):
             self.assertEqual(params[name], value, name)
         self.assertEqual(set(main.SimulationResponse.model_fields), set(history.RESULT_COLUMNS))
         self.assertEqual(params["solver"], "services.fea_solver.simulate_fea")
-        self.assertEqual(set(params["solver_versions"].obj), set(history.SOLVER_PACKAGES))
+        self.assertEqual(set(params["solver_versions"].obj), {*history.SOLVER_PACKAGES, "segmentation"})
+        self.assertIsNone(params["solver_versions"].obj["segmentation"])
         self.assertEqual(params["solve_ms"], 42.0)
+
+    def test_segmentation_tool_is_saved_with_the_versions(self):
+        conn = self.use_database()
+        self.assertTrue(history.save_simulation_run({**RESULT, "segmentation": "fsl"}))
+        [(_, params)] = conn.executed
+        self.assertEqual(params["solver_versions"].obj["segmentation"], "fsl")
 
     def test_connection_failure_is_logged_not_raised(self):
         self.use_database(error=psycopg.OperationalError("connection refused"))
@@ -136,6 +143,13 @@ class SaveTests(HistoryTestCase):
             history.save_simulation_run(RESULT)
         self.assertNotIn("not-a-real-password", logs.output[0])
         self.assertIn("auth failed for ***", logs.output[0])
+
+    def test_a_short_password_is_masked_only_where_it_stands_alone(self):
+        os.environ[history.DATABASE_URL_ENV] = "postgresql://u:p@127.0.0.1:1/db"
+        self.connector.error = psycopg.OperationalError("connection timeout expired at postgresql://u:p@127.0.0.1")
+        with self.assertLogs("rainbowbone.history", "WARNING") as logs:
+            history.save_simulation_run(RESULT)
+        self.assertIn("connection timeout expired at postgresql://u:***@127.0.0.1", logs.output[0])
 
 
 class FetchTests(HistoryTestCase):
@@ -245,8 +259,11 @@ class SimulateWiringTests(HistoryTestCase):
         without_db = self.client.post("/api/simulate", files=files)
         conn = self.use_database()
         with_db = self.client.post("/api/simulate", files=files)
-        self.assertEqual((with_db.status_code, with_db.json()), (without_db.status_code, without_db.json()))
-        self.assertEqual(len(conn.executed), 1 if with_db.status_code == 200 else 0)
+        self.assertEqual(without_db.status_code, 200, without_db.text)
+        self.assertEqual((with_db.status_code, with_db.json()), (200, without_db.json()))
+        [(_, params)] = conn.executed
+        self.assertEqual({name: params[name] for name in history.RESULT_COLUMNS}, with_db.json())
+        self.assertIn(params["solver_versions"].obj["segmentation"], ("fsl", "numpy"))
 
 
 class WithoutPsycopgTests(HistoryTestCase):

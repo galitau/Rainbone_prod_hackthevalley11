@@ -395,7 +395,8 @@ in its own transaction. Every file is idempotent, so re-running is safe.
   a `run_id`, every `SimulationResponse` field exactly as returned, and solver
   information: `solver` (the function that produced the values,
   `services.fea_solver.simulate_fea`), `solver_versions` (installed versions of
-  nibabel, numpy, scipy and sfepy) and `solve_ms` (wall
+  nibabel, numpy, scipy and sfepy, and `segmentation`: `fsl` or `numpy`, the
+  tool that made that run's bone mask) and `solve_ms` (wall
   time of that call in the API process, including any wait for an earlier
   solve).
 - `simulation_runs_hourly`, a real-time continuous aggregate: per UTC hour, the
