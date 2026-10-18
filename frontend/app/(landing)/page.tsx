@@ -53,7 +53,7 @@ export default function Landing() {
         {/* The brand lockup is the header's home link: at headline scale it opens the hero above the eyebrow.
             The hero is at least one screen tall (680-1000 px) and grows on a short screen instead of clipping the stats. */}
         <header className="relative z-20 mx-auto flex w-full max-w-[1440px] items-center justify-between gap-3 px-4 pt-4 lg:items-start lg:px-12 lg:pt-6">
-          <Link href="/" aria-label="Rainbone home" className={`rounded-xl ${FOCUS_DARK}`}><RainboneLockup /></Link>
+          <Link href="/" aria-label="Rainbone home" className={`rb-hero-lockup shrink-0 rounded-xl ${FOCUS_DARK}`}><RainboneLockup /></Link>
           <div className="flex items-center gap-3">
             <span className="hidden rounded-full border border-viewport-line px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.12em] text-nav-muted xl:inline-flex">Research prototype · not a medical device</span>
             <Link href="/enter" className={`inline-flex h-9 items-center rounded-lg border border-nav-line px-4 text-[13px] font-medium text-nav-ink transition hover:bg-white/5 ${FOCUS_DARK}`}>Enter</Link>
@@ -81,7 +81,7 @@ export default function Landing() {
             <ScanHero maxMpa={m.max_nodal_von_mises_mpa} loadN={FACTS.loadN} lengthMm={FACTS.lengthMm} />
 
             <p className="rb-rise relative z-10 mt-5 max-w-[52ch] text-[16px] leading-[1.6] text-viewport-ink lg:text-[18px]" style={{ animationDelay: "300ms" }}>
-              A complete right femur from a real CT ({manifest.dataset} {manifest.case_id}), meshed into {FACTS.elements} tetrahedra and solved offline with {m.solver} under {FACTS.loadN}&nbsp;N on the hip. The colours are its computed von Mises stress, rendered live in your browser. Then the lab explains the result in plain words.
+              A real research femur ({manifest.dataset} {manifest.case_id}), solved offline under {FACTS.loadN}&nbsp;N. Explore its computed stress in 3D, then ask Rainbone to explain the checked evidence. Research tools for care teams exploring bone strength before a fall becomes an emergency.
             </p>
 
             <div className="rb-rise relative z-10 mt-6 flex flex-col gap-4 lg:mt-8 lg:flex-row lg:items-center lg:gap-6 xl:gap-7" style={{ animationDelay: "380ms" }}>
@@ -115,6 +115,28 @@ export default function Landing() {
       </section>
       <div aria-hidden className="spectrum-line h-[2px]" />
 
+      <section aria-labelledby="new-in-lab" className="border-b border-line bg-surface">
+        <div className="mx-auto max-w-[1200px] px-4 py-8 lg:px-12 lg:py-10">
+          <p className={KICKER}>Explore the research lab</p>
+          <h2 id="new-in-lab" className="mt-2 font-serif text-[25px] font-semibold text-ink">Ask questions. Inspect the evidence.</h2>
+          <ul className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {[
+              ["Ask Rainbone", "Questions about the research, simulations and page controls."],
+              ["Recorded workflow", "Inspect five LangGraph stages: Triage, Evidence, Writer, Critic and Audit. Shown after completion."],
+              ["Checked Ask answers", "Ask selects approved source statements; code checks and renders the answer."],
+              ["Visible token usage", "Provider-reported token subtotals, with missing usage and reused work labelled."],
+            ].map(([title, text]) => <li key={title} className="min-w-0 rounded-xl border border-line bg-canvas p-4">
+              <h3 className="text-[14px] font-semibold text-ink">{title}</h3><p className="mt-2 text-[13px] leading-relaxed text-body">{text}</p>
+            </li>)}
+          </ul>
+          <p className="mt-4 text-[13px] leading-relaxed text-body">32-question red-team audit, including seven legitimate questions: 30 passed in the original run; the two failures passed a targeted production follow-up. <a href="https://github.com/galitau/Rainbone_prod_hackthevalley11/blob/main/redteam/REDTEAM.md" target="_blank" rel="noreferrer" className="rounded text-link underline underline-offset-2">Read the results and limits →</a></p>
+          <ul aria-label="Technology stack" className="mt-5 flex flex-wrap gap-2">
+            {["Gemini", "Vultr Compute + Object Storage", "Tiger Data · TimescaleDB", ".health · GoDaddy Registry"].map(name => <li key={name} className="max-w-full rounded-full border border-line bg-sunken px-3 py-1.5 text-[12px] text-body">{name}</li>)}
+          </ul>
+          <p className="mt-4 text-[12px] leading-relaxed text-muted">Built for PointClickCare’s Catch It Early challenge. Research prototype; no PointClickCare integration.</p>
+        </div>
+      </section>
+
       <section id="what" aria-labelledby="what-title" className="mx-auto max-w-[1200px] px-4 py-16 lg:px-12 lg:py-24">
         <p className={KICKER}>What it does</p>
         <h2 id="what-title" className={H2}>One bone, read three ways.</h2>
@@ -130,7 +152,7 @@ export default function Landing() {
             </div>
             <h3 className="mt-5 flex items-center gap-2 text-[17px] font-semibold text-ink"><Box size={18} className="text-link" aria-hidden /> Stress map</h3>
             <p className="mt-2 flex-1 text-[15px] leading-relaxed text-body">
-              The complete right femur under {FACTS.loadN}&nbsp;N on the head, coloured from 0 to {FACTS.maxNodal}&nbsp;MPa. Rotate it, cut it open and read the stress on the cut face. Its peak against an assumed {ASSUMED_STRENGTH_MPA}&nbsp;MPa bone strength gives a fracture risk index: a research number, not a diagnosis.
+              The complete right femur under {FACTS.loadN}&nbsp;N on the head, coloured from 0 to {FACTS.maxNodal}&nbsp;MPa. Rotate it, cut it open and read the stress on the cut face. Its peak against an assumed {ASSUMED_STRENGTH_MPA}&nbsp;MPa bone strength gives a standing-load stress ratio: a research number, not a fracture probability or diagnosis.
             </p>
             <Link href="/enter" className="mt-4 w-fit rounded text-[15px] font-medium text-link hover:underline">Open the stress map →</Link>
           </article>

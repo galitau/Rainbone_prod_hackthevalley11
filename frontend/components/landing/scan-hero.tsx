@@ -515,12 +515,12 @@ export function ScanHero({ maxMpa, loadN, lengthMm }: Props) {
       <div ref={frameRef} role="img" aria-label={label} className="absolute inset-0">
         <div ref={hostRef} aria-hidden className={`rb-fade pointer-events-none absolute inset-0 ${live ? "opacity-100" : "opacity-0"}`} />
 
-        <span aria-hidden className={`${bracket} left-[10px] top-[10px] border-l border-t lg:left-6 lg:top-[88px]`} />
-        <span aria-hidden className={`${bracket} right-[10px] top-[10px] border-r border-t lg:right-6 lg:top-[88px]`} />
+        <span aria-hidden className={`${bracket} left-[10px] top-[10px] border-l border-t lg:left-6 lg:top-[204px]`} />
+        <span aria-hidden className={`${bracket} right-[10px] top-[10px] border-r border-t lg:right-6 lg:top-[204px]`} />
         <span aria-hidden className={`${bracket} bottom-[10px] left-[10px] border-b border-l lg:bottom-6 lg:left-6`} />
         <span aria-hidden className={`${bracket} bottom-[10px] right-[10px] border-b border-r lg:bottom-6 lg:right-6`} />
 
-        <div aria-hidden className="pointer-events-none absolute left-[22px] top-[18px] font-mono text-[9.5px] leading-[1.6] tracking-[0.1em] lg:left-[44px] lg:top-[104px] lg:text-[11px] lg:tracking-[0.12em]">
+        <div aria-hidden className="pointer-events-none absolute left-[22px] top-[18px] font-mono text-[9.5px] leading-[1.6] tracking-[0.1em] lg:left-[44px] lg:top-[220px] lg:text-[11px] lg:tracking-[0.12em]">
           <p className="text-viewport-ink/80">HFVALID PAT001 · RIGHT FEMUR · {lengthMm} mm</p>
           <p className="text-white/90">{hud}</p>
           <p className="hidden text-nav-muted lg:block">

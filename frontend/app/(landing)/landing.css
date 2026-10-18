@@ -234,3 +234,13 @@
     animation: rb-pass-scan 320ms cubic-bezier(0.4, 0, 0.2, 1) both;
   }
 }
+
+/* Landing-only scale: preserve the compact phone lockup and all other page brands. */
+@media (min-width: 1024px) {
+  .rb-hero-lockup > div > svg { width: 128px; height: 128px; }
+  .rb-hero-lockup > div > div > p:first-child { font-size: 116px; }
+}
+@media (min-width: 1280px) {
+  .rb-hero-lockup > div > svg { width: 162px; height: 162px; }
+  .rb-hero-lockup > div > div > p:first-child { font-size: 150px; }
+}
