@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef } from "react";
+import Link from "next/link";
 import { ChevronDown, CircleAlert, LoaderCircle, RotateCw, Upload } from "lucide-react";
 import type { RunState } from "@/components/dashboard";
 import { API_BASE_URL, API_HOST, type HistoryState } from "@/lib/api";
@@ -31,7 +32,14 @@ export function LiveRun({ run, history, onRunSample, onUpload }: Props) {
           <RunBadge run={run} />
         </div>
         <p className="text-[12.5px] leading-5 text-body">
-          {sample ? (
+          {run.status === "idle" ? (
+            <>
+              The automatic check is off in{" "}
+              <Link href="/preferences" className="text-link hover:underline">Preferences</Link>. &ldquo;Run the sample&rdquo; sends{" "}
+              <span className="font-mono text-ink">{run.input.name}</span>, a small synthetic test volume (not the femur), to the
+              RainbowBone API and shows what comes back.
+            </>
+          ) : sample ? (
             <>
               On each visit this page sends <span className="font-mono text-ink">{run.input.name}</span>, a small synthetic test volume (not
               the femur), to the RainbowBone API and shows what comes back.
@@ -63,7 +71,7 @@ export function LiveRun({ run, history, onRunSample, onUpload }: Props) {
         </p>
         <div className="flex flex-wrap gap-2">
           <button type="button" onClick={onRunSample} disabled={run.status === "loading"} className={buttonClass}>
-            <RotateCw size={14} aria-hidden /> {sample ? "Run the sample again" : "Run the sample"}
+            <RotateCw size={14} aria-hidden /> {sample && run.status !== "idle" ? "Run the sample again" : "Run the sample"}
           </button>
           <UploadButton disabled={run.status === "loading"} onUpload={onUpload} />
         </div>
@@ -83,6 +91,8 @@ function RunBadge({ run }: { run: RunState }) {
         <LoaderCircle size={12} className="animate-spin" aria-hidden /> Solving
       </span>
     );
+  if (run.status === "idle")
+    return <span title={where} className="rounded-full border border-line bg-sunken px-2.5 py-1 text-[11px] font-medium text-muted">Not run</span>;
   if (run.status === "error")
     return <span title={where} className="rounded-full border border-caution/25 bg-caution/[0.08] px-2.5 py-1 text-[11px] font-medium text-caution">No numbers</span>;
   return <span title={where} className="rounded-full border border-success/25 bg-success/[0.07] px-2.5 py-1 text-[11px] font-medium text-success">From FEA service</span>;
