@@ -2,7 +2,7 @@
 
 ![Rainbone: a 3D stress test for bones, explained by AI agents](docs/images/rainbone-cover.png)
 
-**[Live site](https://rainbone.health)** · **[Demo video](https://youtu.be/81SZ7VXBaV0)** · **[Devpost](https://devpost.com/software/rainbowbone)** · **[Research paper](https://rainbone.health/research-paper)** · **[Architecture](ARCHITECTURE.md)** · **[Business process flow](BUSINESS_PROCESS_FLOW.md)**
+**[Live site](https://rainbone.health)** · **[Demo video (1:59)](https://youtu.be/81SZ7VXBaV0)** · **[Full walkthrough (2:39)](https://youtu.be/SCrmSu9aVzs)** · **[Devpost](https://devpost.com/software/rainbowbone)** · **[Research paper](https://rainbone.health/research-paper)** · **[Architecture](ARCHITECTURE.md)** · **[Business process flow](BUSINESS_PROCESS_FLOW.md)**
 
 **A 3D stress test for bones, explained by AI agents.**
 
