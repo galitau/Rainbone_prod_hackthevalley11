@@ -55,7 +55,7 @@ export function LesionProgression() {
             <p className="border-t border-line bg-sunken/60 px-5 py-3.5 text-[11.5px] leading-5 text-muted">Interpolated values are for visualization only and are not a diagnosis.</p>
           </aside>
         </div>
-        <div><h2 className="mb-3 text-sm font-semibold text-ink">3D imaging frames</h2><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{timeline.map(item => <ProgressionViewer key={item.vtpFile} frame={item} active={item.frameIndex === currentFrameIndex} />)}</div></div>
+        <div><h2 className="mb-3 text-sm font-semibold text-ink">3D imaging frames</h2><p className="mb-3 text-xs text-muted">All eight cached VTP previews are loaded below. The red marker shrinks with the illustrative interpolated lesion volume.</p><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{timeline.map(item => <ProgressionViewer key={item.vtpFile} frame={item} active />)}</div></div>
       </div>}
     </div>
   );

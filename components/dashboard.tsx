@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import {
   Activity,
   Bell,
@@ -24,9 +25,14 @@ import { BoneViewer } from "@/components/BoneViewer";
 import { LesionProgression } from "@/components/imaging-library";
 import type { ClinicalMetrics as Metrics } from "@/lib/mock-data";
 import { mockMetrics } from "@/lib/mock-data";
+import { prefetchProgressionFrames } from "@/lib/progression-cache";
 const PhysicsSimulations = dynamic(() => import("@/components/physics-simulations").then(module => module.PhysicsSimulations));
 
 export function Dashboard({ metrics = mockMetrics, simulationStatus = "ready", view = "overview" }: { metrics?: Metrics; simulationStatus?: "loading" | "ready" | "error"; view?: "overview" | "physics" | "progression" }) {
+  useEffect(() => {
+    void prefetchProgressionFrames();
+  }, []);
+
   return (
     <main className="min-h-screen bg-canvas text-ink">
       <div className="flex min-h-screen">

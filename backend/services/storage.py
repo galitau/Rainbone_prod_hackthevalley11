@@ -48,6 +48,19 @@ def read_object_bytes(filename: str) -> bytes:
     except (BotoCoreError, ClientError) as exc:
         raise RuntimeError(f"Could not read progression object {filename}.") from exc
 
+
+def write_object_bytes(filename: str, payload: bytes, content_type: str = "application/octet-stream") -> None:
+    bucket, prefix = _settings()
+    try:
+        _client().put_object(
+            Bucket=bucket,
+            Key=f"{prefix}/{filename}",
+            Body=payload,
+            ContentType=content_type,
+        )
+    except (BotoCoreError, ClientError) as exc:
+        raise RuntimeError(f"Could not upload progression object {filename}.") from exc
+
 def read_json_object(filename: str) -> dict[str, Any]:
     try:
         payload = json.loads(read_object_bytes(filename))

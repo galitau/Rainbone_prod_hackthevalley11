@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { ProgressionFrame } from "@/lib/progression-data";
+import { getProgressionFrame } from "@/lib/progression-cache";
 
 export function ProgressionViewer({ frame, active = true }: { frame: ProgressionFrame; active?: boolean }) {
   const container = useRef<HTMLDivElement>(null);
@@ -26,10 +27,8 @@ export function ProgressionViewer({ frame, active = true }: { frame: Progression
           import("@kitware/vtk.js/IO/XML/XMLPolyDataReader"),
           import("@kitware/vtk.js/Filters/Sources/SphereSource"),
         ]);
-        const response = await fetch(`http://127.0.0.1:8000/api/progression/frames/${frame.frameIndex}.vtp`, { signal: controller.signal });
-        if (!response.ok) throw new Error(`VTP frame request failed (${response.status}).`);
         const reader = Reader.newInstance();
-        reader.parseAsArrayBuffer(await response.arrayBuffer());
+        reader.parseAsArrayBuffer(await getProgressionFrame(frame.frameIndex));
         const data = reader.getOutputData(0);
         if (!data?.getNumberOfPoints()) throw new Error("The VTP frame contains no surface points.");
         if (disposed || !container.current) {
@@ -40,7 +39,9 @@ export function ProgressionViewer({ frame, active = true }: { frame: Progression
         const actor = Actor.newInstance();
         const mapper = Mapper.newInstance();
         const bounds = data.getBounds();
-        const lesionRadius = Math.max(bounds[1] - bounds[0], bounds[3] - bounds[2], bounds[5] - bounds[4]) * 0.035;
+        const diagonal = Math.max(bounds[1] - bounds[0], bounds[3] - bounds[2], bounds[5] - bounds[4]);
+        const volumeProgress = (frame.lesionVolumeCm3 - 4.2) / (8.4 - 4.2);
+        const lesionRadius = diagonal * (0.018 + Math.max(0, Math.min(1, volumeProgress)) * 0.03);
         const lesionSource = SphereSource.newInstance({ center: frame.point, radius: lesionRadius, thetaResolution: 24, phiResolution: 16 });
         const lesionActor = Actor.newInstance();
         const lesionMapper = Mapper.newInstance();
@@ -58,10 +59,16 @@ export function ProgressionViewer({ frame, active = true }: { frame: Progression
         actor.getProperty().setSpecular(0.2);
         renderWindow.setContainer(container.current);
         renderWindow.resize();
-        renderWindow.getRenderer().addActor(actor);
-        renderWindow.getRenderer().addActor(lesionActor);
-        renderWindow.getRenderer().resetCamera();
-        renderWindow.getRenderer().resetCameraClippingRange();
+        const renderer = renderWindow.getRenderer();
+        renderer.addActor(actor);
+        renderer.addActor(lesionActor);
+        renderer.resetCamera();
+        const camera = renderer.getActiveCamera();
+        const center = frame.point;
+        camera.setFocalPoint(...center);
+        camera.setPosition(center[0] + diagonal * 0.28, center[1] - diagonal * 0.28, center[2] + diagonal * 0.18);
+        camera.setViewUp(0, 0, 1);
+        renderer.resetCameraClippingRange();
         renderWindow.getRenderWindow().render();
         view = renderWindow;
         setRendered(true);
@@ -79,7 +86,7 @@ export function ProgressionViewer({ frame, active = true }: { frame: Progression
       controller.abort();
       view?.delete();
     };
-  }, [active, frame.vtpFile]);
+  }, [active, frame.vtpFile, frame.point, frame.lesionVolumeCm3]);
 
   return (
     <section aria-label={`3D lesion frame ${frame.frameIndex}`} className="overflow-hidden rounded-2xl border border-line bg-[#101a25] shadow-card">

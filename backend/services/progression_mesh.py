@@ -8,7 +8,7 @@ import nibabel as nib
 import numpy as np
 from skimage.measure import marching_cubes
 
-from services.storage import read_object_bytes
+from services.storage import read_lesion_coordinates, read_object_bytes
 
 MAX_NIFTI_BYTES = 512 * 2**20
 MAX_SURFACE_DIMENSION = 192
@@ -44,12 +44,17 @@ def _surface(filename: str) -> tuple[np.ndarray, np.ndarray]:
     stride = max(1, int(np.ceil(max(volume.shape) / MAX_SURFACE_DIMENSION)))
     if stride > 1:
         volume = volume[::stride, ::stride, ::stride]
-        spacing = spacing * stride
     mask = volume > 0 if "_mask_" in filename else volume >= 150.0
     if not np.any(mask):
         raise RuntimeError(f"No bone voxels were found in {filename}.")
     try:
-        vertices, faces, _, _ = marching_cubes(mask.astype(np.float32), level=0.5, spacing=spacing)
+        # The annotation JSON uses voxel coordinates. Keep the generated mesh
+        # in that same coordinate system rather than applying the NIfTI affine.
+        vertices, faces, _, _ = marching_cubes(
+            mask.astype(np.float32),
+            level=0.5,
+            spacing=(float(stride), float(stride), float(stride)),
+        )
     except (RuntimeError, ValueError) as exc:
         raise RuntimeError(f"Could not create a surface from {filename}.") from exc
     return vertices, faces.astype(np.int32)
@@ -69,6 +74,11 @@ def _xml(vertices: np.ndarray, faces: np.ndarray) -> bytes:
 
 
 @lru_cache(maxsize=8)
+def _cached_vultr_progression_vtp(frame_index: int) -> bytes:
+    return read_object_bytes(f"progression/frame-{frame_index:02d}.vtp")
+
+
+@lru_cache(maxsize=8)
 def progression_vtp(frame_index: int) -> bytes:
     if not 0 <= frame_index <= 7:
         raise RuntimeError("Progression frame must be between 0 and 7.")
@@ -76,11 +86,26 @@ def progression_vtp(frame_index: int) -> bytes:
     if frame_index == 7:
         vertices, faces = _surface("006f52e910_FU_img_FU_img_00.nii.gz")
     else:
-        # Preserve a stable mesh topology while moving from baseline to follow-up.
+        # The scans do not have identical marching-cubes topology. Translate
+        # the stable baseline surface through the registered lesion displacement
+        # for intermediate frames, then use the real follow-up surface at frame 7.
         followup, _ = _surface("006f52e910_FU_img_FU_img_00.nii.gz")
+        progress = frame_index / 7
+        coordinates = read_lesion_coordinates()
+        baseline_point = coordinates["baseline"]
+        followup_point = coordinates["followup"]
+        displacement = np.asarray(followup_point) - np.asarray(baseline_point)
         if len(followup) == len(baseline):
-            progress = frame_index / 7
             vertices, faces = baseline + (followup - baseline) * progress, baseline_faces
         else:
-            vertices, faces = baseline, baseline_faces
+            vertices, faces = baseline + displacement * progress, baseline_faces
     return _xml(vertices, faces)
+
+
+def cached_progression_vtp(frame_index: int) -> bytes:
+    if not 0 <= frame_index <= 7:
+        raise RuntimeError("Progression frame must be between 0 and 7.")
+    try:
+        return _cached_vultr_progression_vtp(frame_index)
+    except RuntimeError:
+        return progression_vtp(frame_index)
