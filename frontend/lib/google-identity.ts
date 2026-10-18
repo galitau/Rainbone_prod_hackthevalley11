@@ -48,8 +48,10 @@ export function loadGsi(): Promise<GsiId> {
     script.async = true;
     script.onload = () => {
       const id = gsi();
-      if (id) resolve(id);
-      else reject(new Error("Google Identity Services did not start"));
+      if (id) return resolve(id);
+      script.remove();
+      loading = null;
+      reject(new Error("Google Identity Services did not start"));
     };
     script.onerror = () => {
       script.remove();
@@ -59,6 +61,27 @@ export function loadGsi(): Promise<GsiId> {
     document.head.appendChild(script);
   });
   return loading;
+}
+
+type CredentialHandler = (credential?: string) => void;
+
+let onCredential: CredentialHandler | null = null;
+let initialized = false;
+
+/**
+ * Initialises Google's client once per page load. Later mounts of the button (Back, or /enter after
+ * signing out) only swap the handler, so Google never warns that initialize() was called twice.
+ */
+export function initGsi(id: GsiId, handler: CredentialHandler): void {
+  onCredential = handler;
+  if (initialized) return;
+  id.initialize({ client_id: GOOGLE_CLIENT_ID, callback: (response) => onCredential?.(response.credential) });
+  initialized = true;
+}
+
+/** Drops the handler of a button that unmounted, unless a newer button already replaced it. */
+export function clearGsiHandler(handler: CredentialHandler): void {
+  if (onCredential === handler) onCredential = null;
 }
 
 /** Reads name, email and picture from the ID token's payload. Decoded only, not verified: display use only. */
@@ -128,6 +151,8 @@ export function clearIdentity(): void {
 
 export function initials(name: string): string {
   const words = name.split("@")[0].split(/[\s._-]+/).filter(Boolean);
-  const letters = words.length > 1 ? words[0][0] + words[words.length - 1][0] : (words[0] ?? "?").slice(0, 2);
+  // Array.from splits by code point, so a name starting with an emoji or a math letter keeps the whole character.
+  const first = (word: string) => Array.from(word)[0] ?? "";
+  const letters = words.length > 1 ? first(words[0]) + first(words[words.length - 1]) : Array.from(words[0] ?? "?").slice(0, 2).join("");
   return letters.toUpperCase();
 }

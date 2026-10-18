@@ -17,7 +17,7 @@ const GOOGLE = GOOGLE_CLIENT_ID !== "";
 const PASS_ROWS: [string, string][] = [
   ["SEAT", "Dr. Rowan · demo clinician"],
   ["ACCOUNT", GOOGLE ? "None, or your Google account" : "None"],
-  ["STORED", GOOGLE ? "Nothing on Rainbone's server" : "Nothing about you"],
+  ["STORED", GOOGLE ? "Nothing about you on Rainbone's server" : "Nothing about you"],
   ["CASE", "HFValid Pat001 · right femur"],
   ["USE", "Research only · not a medical device"],
   ["EVENT", "Hack the Valley 11"],
@@ -56,7 +56,7 @@ export function AccessPass({ maxMpa }: { maxMpa: number }) {
   }, [router]);
 
   const enter = (event: MouseEvent<HTMLAnchorElement>) => {
-    clearIdentity(); // the demo seat is Dr. Rowan, even after a Google sign-in on this browser
+    if (GOOGLE) clearIdentity(); // the demo seat is Dr. Rowan, even after a Google sign-in on this browser
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
       setPhase("opening");
@@ -122,8 +122,9 @@ export function AccessPass({ maxMpa }: { maxMpa: number }) {
             onClick={enter}
             className={`mt-5 inline-flex h-[52px] w-full items-center justify-center gap-3 rounded-xl bg-white px-4 text-center text-[15px] font-semibold text-ink transition hover:bg-white/90 ${FOCUS_DARK}`}
           >
-            Continue as Dr. Rowan (demo)
-            <kbd aria-hidden className="rounded-md border border-line px-1.5 font-mono text-[12px] font-normal text-muted">↵</kbd>
+            {GOOGLE ? "Continue as Dr. Rowan (demo)" : "Enter as guest"}
+            {/* Phones have no Enter key, and the longer Google-mode label needs the room at 390 px. */}
+            <kbd aria-hidden className={`rounded-md border border-line px-1.5 font-mono text-[12px] font-normal text-muted${GOOGLE ? " hidden sm:inline" : ""}`}>↵</kbd>
           </Link>
           <p role="status" aria-live="polite" className={phase === "opening" ? "mt-2 text-center font-mono text-[11px] text-nav-muted" : "sr-only"}>
             {phase === "opening" ? "Opening the lab…" : ""}

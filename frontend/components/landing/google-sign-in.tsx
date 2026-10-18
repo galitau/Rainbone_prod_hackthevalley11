@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { GOOGLE_CLIENT_ID, identityFromCredential, loadGsi, saveIdentity } from "@/lib/google-identity";
+import { clearGsiHandler, identityFromCredential, initGsi, loadGsi, saveIdentity } from "@/lib/google-identity";
 
 /**
  * Google's own "Sign in with Google" button, rendered by Google Identity Services into this box.
@@ -18,19 +18,17 @@ export function GoogleSignIn({ onSignedIn }: { onSignedIn: () => void }) {
 
   useEffect(() => {
     let cancelled = false;
+    const handleCredential = (credential?: string) => {
+      const identity = credential ? identityFromCredential(credential) : null;
+      if (!identity) return setProblem("Google did not return a name. Try again, or continue as Dr. Rowan.");
+      if (!saveIdentity(identity)) return setProblem("This browser blocks storage, so the sign-in cannot be kept. Continue as Dr. Rowan instead.");
+      signedIn.current();
+    };
     loadGsi()
       .then((id) => {
         const el = box.current;
         if (cancelled || !el) return;
-        id.initialize({
-          client_id: GOOGLE_CLIENT_ID,
-          callback: ({ credential }) => {
-            const identity = credential ? identityFromCredential(credential) : null;
-            if (!identity) return setProblem("Google did not return a name. Try again, or continue as Dr. Rowan.");
-            if (!saveIdentity(identity)) return setProblem("This browser blocks storage, so the sign-in cannot be kept. Continue as Dr. Rowan instead.");
-            signedIn.current();
-          },
-        });
+        initGsi(id, handleCredential);
         el.replaceChildren();
         id.renderButton(el, {
           type: "standard",
@@ -47,6 +45,7 @@ export function GoogleSignIn({ onSignedIn }: { onSignedIn: () => void }) {
       });
     return () => {
       cancelled = true;
+      clearGsiHandler(handleCredential);
     };
   }, []);
 

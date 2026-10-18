@@ -68,13 +68,23 @@ export function AccountChip() {
   const label = (
     <>
       {face}
-      <div className="hidden text-left xl:block"><p className="max-w-[160px] truncate text-[13px] font-medium leading-4 text-ink">{name}</p><p className="text-[11px] text-muted">{detail}</p></div>
-      <ChevronDown size={14} className="text-muted" aria-hidden />
+      {/* With Google on, a fixed width keeps the header still when a longer Google name replaces Dr. Rowan after mount. */}
+      <div className={`hidden text-left xl:block${interactive ? " w-40" : ""}`}><p className="max-w-[160px] truncate text-[13px] font-medium leading-4 text-ink">{name}</p><p className="text-[11px] text-muted">{detail}</p></div>
+      <ChevronDown size={14} className={interactive ? "hidden text-muted sm:block" : "text-muted"} aria-hidden />
     </>
   );
 
   return (
-    <div ref={root} className={`relative ml-2 hidden border-l border-line pl-4 sm:block ${ready || !interactive ? "" : "invisible"}`}>
+    // Below 640 px only a Google sign-in shows (photo alone), so a phone still has the person, "Sign out" and the
+    // demo switch; the Dr. Rowan badge stays hidden there as it always was, keeping the demo path's header unchanged.
+    <div
+      ref={root}
+      onBlur={(event) => {
+        // relatedTarget is null when a click does not move focus (Safari buttons), so a menu click is not cut short.
+        if (event.relatedTarget && !root.current?.contains(event.relatedTarget as Node)) setOpen(false);
+      }}
+      className={`relative ${identity ? "sm:ml-2 sm:border-l sm:border-line sm:pl-4" : "ml-2 hidden border-l border-line pl-4 sm:block"} ${ready || !interactive ? "" : "invisible"}`}
+    >
       {interactive ? (
         <button
           ref={trigger}
@@ -92,7 +102,7 @@ export function AccountChip() {
       )}
 
       {open && (
-        <div id={menuId} className="absolute right-0 top-full z-20 mt-2 w-80 rounded-xl border border-line bg-surface p-1.5 shadow-raised">
+        <div id={menuId} className="absolute right-0 top-full z-20 mt-2 w-[min(20rem,calc(100vw-2.5rem))] rounded-xl border border-line bg-surface p-1.5 shadow-raised">
           <div className="border-b border-line px-3 pb-2.5 pt-2">
             <p className="truncate text-[13px] font-medium text-ink">{name}</p>
             <p className="truncate text-[12px] text-muted">{identity ? identity.email || "Signed in with Google" : "Demo account · Radiology"}</p>
