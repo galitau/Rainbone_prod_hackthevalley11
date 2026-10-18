@@ -29,14 +29,17 @@ export function RainboneMark({ size = 36, className = "" }: { size?: number; cla
   );
 }
 
-export function RainboneLogo({ tone = "dark", subtitle = "Clinical biomechanics", size = "md" }: { tone?: "dark" | "light"; subtitle?: string; size?: "md" | "lg" }) {
+// "xl" is the landing headers' logo: 44 px mark on phones, 56 px from lg up. Its text sizes avoid the
+// pixel sizes globals.css raises, so the class value is the rendered size.
+export function RainboneLogo({ tone = "dark", subtitle = "Clinical biomechanics", size = "md" }: { tone?: "dark" | "light"; subtitle?: string; size?: "md" | "lg" | "xl" }) {
   const lg = size === "lg";
+  const xl = size === "xl";
   return (
-    <div className={`flex items-center ${lg ? "gap-3.5" : "gap-3"}`}>
-      <RainboneMark size={lg ? 48 : 36} />
+    <div className={`flex items-center ${xl ? "gap-3 lg:gap-4" : lg ? "gap-3.5" : "gap-3"}`}>
+      <RainboneMark size={xl ? 56 : lg ? 48 : 36} className={xl ? "h-11 w-11 lg:h-14 lg:w-14" : ""} />
       <div className="leading-none">
-        <p className={`font-serif ${lg ? "text-[27px]" : "text-[19px]"} font-semibold tracking-[-0.01em] ${tone === "dark" ? "text-nav-ink" : "text-ink"}`}>Rainbone</p>
-        <p className={`${lg ? "mt-1.5 text-[12.5px]" : "mt-1 text-[10.5px]"} font-medium tracking-[0.04em] ${tone === "dark" ? "text-nav-muted" : "text-muted"}`}>{subtitle}</p>
+        <p className={`font-serif ${xl ? "text-[24px] lg:text-[30px]" : lg ? "text-[27px]" : "text-[19px]"} font-semibold tracking-[-0.01em] ${tone === "dark" ? "text-nav-ink" : "text-ink"}`}>Rainbone</p>
+        <p className={`${xl ? "mt-1.5 max-lg:text-[12px] lg:text-[15px]" : lg ? "mt-1.5 text-[12.5px]" : "mt-1 text-[10.5px]"} font-medium tracking-[0.04em] ${tone === "dark" ? "text-nav-muted" : "text-muted"}`}>{subtitle}</p>
       </div>
     </div>
   );

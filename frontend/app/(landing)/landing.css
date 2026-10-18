@@ -31,6 +31,20 @@
     -webkit-mask-image: radial-gradient(42% 60% at 72% 50%, #000 25%, transparent 75%);
     mask-image: radial-gradient(42% 60% at 72% 50%, #000 25%, transparent 75%);
   }
+
+  /* Hero text column: centred on the band the femur stands in (scan-hero.tsx: 172 px from the section's top,
+     48 px from its bottom; the header takes 80), so the gap above is 44 px taller than the gap below.
+     On a short screen the gap above gives way first and the research-prototype line keeps 24 px. */
+  .rb-hero-column::before {
+    content: "";
+    flex: 1 1 44px;
+  }
+
+  .rb-hero-column::after {
+    content: "";
+    flex: 1 1 0px;
+    min-height: 24px;
+  }
 }
 
 /* The Enter screen centres everything. */

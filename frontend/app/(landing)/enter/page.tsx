@@ -19,8 +19,8 @@ export default function EnterPage() {
       <div aria-hidden className="rb-vignette pointer-events-none absolute inset-0" />
       <div aria-hidden className="spectrum-line rb-draw-x relative h-[2px]" />
 
-      <header className="relative z-10 mx-auto flex h-14 max-w-[1440px] items-center justify-between px-4 lg:h-16 lg:px-12">
-        <Link href="/" aria-label="Rainbone home" className={`rounded-lg ${FOCUS_DARK}`}><RainboneLogo tone="dark" /></Link>
+      <header className="relative z-10 mx-auto flex h-16 max-w-[1440px] items-center justify-between px-4 lg:h-20 lg:px-12">
+        <Link href="/" aria-label="Rainbone home" className={`rounded-lg ${FOCUS_DARK}`}><RainboneLogo tone="dark" size="xl" /></Link>
         <Link href="/" className={`rounded text-[13px] text-nav-muted transition hover:text-white ${FOCUS_DARK}`}>← Back to Rainbone</Link>
       </header>
 
