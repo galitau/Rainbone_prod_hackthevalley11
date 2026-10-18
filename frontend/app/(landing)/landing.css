@@ -1,0 +1,213 @@
+/*
+ * Landing and Enter screen. Static layers are always on; every animation lives under
+ * prefers-reduced-motion: no-preference, so the base styles are always the finished state.
+ */
+
+/* Reading-room backdrop: navy glow, CT grid, vignette. */
+.rb-glow {
+  background: radial-gradient(70% 45% at 50% 34%, rgb(var(--primary) / 0.6), transparent 70%);
+}
+
+.rb-ct-grid {
+  background-image:
+    linear-gradient(rgb(var(--viewport-line)) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(var(--viewport-line)) 1px, transparent 1px);
+  background-size: 32px 32px;
+  opacity: 0.7;
+  -webkit-mask-image: radial-gradient(70% 40% at 50% 34%, #000 25%, transparent 75%);
+  mask-image: radial-gradient(70% 40% at 50% 34%, #000 25%, transparent 75%);
+}
+
+.rb-vignette {
+  background: radial-gradient(120% 90% at 50% 50%, transparent 55%, rgb(0 0 0 / 0.35));
+}
+
+@media (min-width: 1024px) {
+  .rb-glow {
+    background: radial-gradient(55% 65% at 72% 52%, rgb(var(--primary) / 0.55), transparent 70%);
+  }
+
+  .rb-ct-grid {
+    -webkit-mask-image: radial-gradient(42% 60% at 72% 50%, #000 25%, transparent 75%);
+    mask-image: radial-gradient(42% 60% at 72% 50%, #000 25%, transparent 75%);
+  }
+}
+
+/* The Enter screen centres everything. */
+.rb-glow-center {
+  background: radial-gradient(40% 45% at 50% 50%, rgb(var(--primary) / 0.6), transparent 70%);
+}
+
+.rb-ct-grid-center {
+  -webkit-mask-image: radial-gradient(60% 60% at 50% 50%, #000 25%, transparent 75%);
+  mask-image: radial-gradient(60% 60% at 50% 50%, #000 25%, transparent 75%);
+}
+
+/* Enter screen lanyard strap: navy webbing with a spectrum thread, fading out towards the top. */
+.rb-ribbon {
+  background:
+    linear-gradient(180deg, rgb(var(--spectrum-violet)), rgb(var(--spectrum-blue)), rgb(var(--spectrum-cyan)), rgb(var(--spectrum-green)), rgb(var(--spectrum-amber)), rgb(var(--spectrum-red))) center / 2px 100% no-repeat,
+    linear-gradient(90deg, rgb(var(--nav-line)) 0 1px, rgb(var(--nav)) 1px calc(100% - 1px), rgb(var(--nav-line)) calc(100% - 1px));
+  -webkit-mask-image: linear-gradient(180deg, transparent, #000 55%);
+  mask-image: linear-gradient(180deg, transparent, #000 55%);
+}
+
+/* Scan line: fades out at both ends instead of stopping hard at the frame. */
+.rb-fade-x {
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 14%, #000 86%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 14%, #000 86%, transparent);
+}
+
+.rb-fade-y {
+  -webkit-mask-image: linear-gradient(180deg, transparent, #000 14%, #000 86%, transparent);
+  mask-image: linear-gradient(180deg, transparent, #000 14%, #000 86%, transparent);
+}
+
+/* The bright segment where the scan line crosses the bone. */
+.rb-cut-x {
+  background:
+    linear-gradient(180deg, transparent 3px, rgb(255 255 255) 3px, rgb(255 255 255) 6px, transparent 6px),
+    linear-gradient(180deg, transparent, rgb(var(--spectrum-cyan) / 0.75), transparent);
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
+}
+
+.rb-cut-y {
+  background:
+    linear-gradient(90deg, transparent 3px, rgb(255 255 255) 3px, rgb(255 255 255) 6px, transparent 6px),
+    linear-gradient(90deg, transparent, rgb(var(--spectrum-cyan) / 0.75), transparent);
+  -webkit-mask-image: linear-gradient(180deg, transparent, #000 8%, #000 92%, transparent);
+  mask-image: linear-gradient(180deg, transparent, #000 8%, #000 92%, transparent);
+}
+
+.rb-legend {
+  background: linear-gradient(
+    0deg,
+    rgb(var(--spectrum-blue)),
+    rgb(var(--spectrum-cyan)),
+    rgb(var(--spectrum-green)),
+    rgb(var(--spectrum-amber)),
+    rgb(var(--spectrum-red))
+  );
+}
+
+/* The hero's scan line disappears once the field is fully revealed. */
+[data-phase="done"] .rb-scan,
+[data-phase="done"] .rb-scan-x {
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes rb-draw-x {
+    from { transform: scaleX(0); }
+    to { transform: scaleX(1); }
+  }
+
+  @keyframes rb-rise {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: none; }
+  }
+
+  @keyframes rb-breathe {
+    0%, 100% { opacity: 0.45; }
+    50% { opacity: 1; }
+  }
+
+  @keyframes rb-line-out {
+    from { opacity: 1; transform: scaleY(1); }
+    to { opacity: 0; transform: scaleY(3); }
+  }
+
+  @keyframes rb-line-out-x {
+    from { opacity: 1; transform: scaleX(1); }
+    to { opacity: 0; transform: scaleX(3); }
+  }
+
+  @keyframes rb-appear {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  @keyframes rb-card-in {
+    from { opacity: 0; transform: translateY(16px); }
+    to { opacity: 1; transform: none; }
+  }
+
+  @keyframes rb-bar {
+    from { transform: scaleY(0); }
+    to { transform: scaleY(1); }
+  }
+
+  @keyframes rb-pass-scan {
+    from { transform: translateY(0); opacity: 1; }
+    to { transform: translateY(100%); opacity: 1; }
+  }
+
+  .rb-draw-x {
+    transform-origin: left;
+    animation: rb-draw-x 900ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  }
+
+  .rb-rise {
+    animation: rb-rise 500ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+  }
+
+  .rb-breathe {
+    animation: rb-breathe 2.4s ease-in-out infinite;
+  }
+
+  .rb-fade {
+    transition: opacity 400ms ease-out;
+  }
+
+  .rb-line-out {
+    animation: rb-line-out 500ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  }
+
+  .rb-appear {
+    animation: rb-appear 300ms ease-out backwards;
+  }
+
+  /* Parked scan line breathes until the sweep starts; at the end it flares out once (data-flare is set for that moment
+     only, so a later breakpoint change does not replay it). */
+  [data-phase="standby"] .rb-scan,
+  [data-phase="ready"] .rb-scan,
+  [data-phase="standby"] .rb-scan-x,
+  [data-phase="ready"] .rb-scan-x {
+    animation: rb-breathe 2.4s ease-in-out infinite;
+  }
+
+  [data-phase="done"] [data-flare] .rb-scan {
+    animation: rb-line-out 500ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  }
+
+  [data-phase="done"] [data-flare] .rb-scan-x {
+    animation: rb-line-out-x 500ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  }
+
+  /* Drawn by the scan: the hero sets scaleX(h / L) while it sweeps, and scaleX(1) if 3D is unavailable. */
+  .rb-underline {
+    transform: scaleX(0);
+  }
+
+  .rb-card-in {
+    animation: rb-card-in 400ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+  }
+
+  .rb-bar {
+    transform-origin: bottom;
+    animation: rb-bar 300ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+  }
+
+  .rb-press {
+    transition: transform 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
+  .rb-press[data-phase="opening"] {
+    transform: scale(0.98);
+  }
+
+  .rb-pass-scan {
+    animation: rb-pass-scan 320ms cubic-bezier(0.4, 0, 0.2, 1) both;
+  }
+}
