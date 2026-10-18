@@ -188,6 +188,17 @@ logging (`backend/services/risk.py`, `explain.py`, `ask.py`, `llm_providers.py`,
   is skipped for 60 s, or 300 s after HTTP 429, by both endpoints. Eligible checked Gemini
   answers are also saved to `AI_ANSWER_STORE` when the local answer store is writable;
   this best-effort saved-answer cache outlives a restart.
+- **Token meter.** Each model answer from `/api/risk-analysis` and `/api/explain` returns
+  `usage`: the token counts the provider itself reported for the call that wrote it
+  (Gemini `usageMetadata`, with thinking tokens counted as output; Groq `usage`), plus
+  `served`. A cached answer made no new call, so the card says "Reused — no new Gemini call".
+  A saved answer is served after Gemini failed or was skipped, so the card says only that it
+  was reused; the template reports none. Under a live Gemini answer the card adds an
+  reference figure for scale, clearly marked as not measured for this answer: Google's published median for one Gemini Apps text prompt (May 2025), 0.24 Wh and
+  0.03 gCO2e ([Google Cloud blog, Aug 2025](https://cloud.google.com/blog/products/infrastructure/measuring-the-environmental-impact-of-ai-inference);
+  method in [arXiv:2508.15734](https://arxiv.org/abs/2508.15734)). It is the same reference
+  number for every answer and never scaled by tokens, since the source gives no per-token figure. Tokens are not
+  written to the audit log.
 - **Audit log.** Each answer the chain produces attempts to write one row to the `ai_analyses`
   hypertable in Tiger Cloud: endpoint, case, provider, model, latency, grounding store,
   fallbacks and the sha256 of the facts and of the text. The text itself is not stored,
@@ -216,7 +227,11 @@ The writer receives an explicit allowed-ID list and a valid example for those ou
 For recognized intents, the code critic also requires the primary fact or page instruction;
 an irrelevant statement or refusal cannot silently pass. It permits one bounded rewrite
 before falling through the provider chain and reports fixed rejection categories without
-quoting model output or the question. The
+quoting model output or the question. Provider failures and cooldowns are shown separately
+from critic rejections, so a Gemini HTTP 429 correctly appears as a rate-limit fallback.
+Strength comparisons use the MSF cohort ranking; explicit ARF0 comparisons keep their
+different ranking. Prediction questions receive the research limitation and recorded
+Pat001 follow-up outcome, never a forecast. The
 server rejects unknown IDs, sources, routes and answers over 120 words, then renders exact
 statements. The UI discloses that models select checked statements; a provider label does
 not imply unrestricted generated prose. Unsupported requests get a bounded site-help response.

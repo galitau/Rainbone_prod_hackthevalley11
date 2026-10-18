@@ -153,7 +153,6 @@ class PipelineTests(unittest.TestCase):
     def test_chips_and_followups_use_their_exact_evidence_even_if_native_would_misroute(self):
         examples = [
             ("What does the 47% mean?", "arf0", {"arf0", "arf0_rank"}, "47.1%"),
-            ("Is the 47% a fracture chance?", "arf0", {"arf0", "arf0_rank"}, "47.1%"),
             ("Why isn't the 11% a fracture chance?", "stress_index", {"stress_index"}, "10.55%"),
             ("How do I cut the bone open?", "cut", {"cut"}, "Cut-away"),
             ("What does the 2.2–3.2× fall ratio mean?", "fall_ratio", {"fall_ratio", "strength"}, "2.17"),
@@ -195,6 +194,70 @@ class PipelineTests(unittest.TestCase):
                 summaries = " ".join(e.summary for e in answer.trace)
                 self.assertNotIn("secret rejected prose", summaries)
                 self.assertTrue(any(e.stage == "critic" and e.summary.startswith("Code critic rejected:") for e in answer.trace))
+
+    def test_strength_comparison_runs_msf_tools_and_keeps_arf0_rank_separate(self):
+        question = "How strong is this femur compared with the other women?"
+        result = asyncio.run(ask.ask(ask.AskRequest(question=question), {"AI_OFFLINE": "1"}))
+        self.assertEqual(result.tools_used, ["get_patient_facts", "compare_with_cohort"])
+        self.assertIn("1,339 N", result.answer)
+        self.assertIn("75 of the 101", result.answer)
+        self.assertEqual(ask_tools.rules_plan(ask.known_selection(question))[-1].args, {"metric": "msf"})
+        for phrasing in ("Which rank is she?", "Is this weaker than the other women?", "How strong is it?"):
+            self.assertEqual(ask.known_selection(phrasing), "strength")
+        self.assertEqual(ask_tools.rules_plan(ask.known_selection("What is the ARF0 rank compared with other women?"))[-1].args,
+                         {"metric": "arf0"})
+
+    def test_prediction_question_requires_limit_actual_outcome_and_published_measure(self):
+        question = "Is she going to break her hip?"
+        expected = "prediction_limit,recorded_outcome,arf0"
+        self.assertEqual(ask.known_selection(question), expected)
+        seen = []
+        def handle(request):
+            body = json.loads(request.content)
+            if "contents" in body:
+                payload = json.loads(body["contents"][0]["parts"][0]["text"])
+                payload = payload.get("request", payload)
+                self.assertEqual(set(payload["required_statement_ids"]), set(expected.split(",")))
+                seen.append(payload)
+            return groq_reply("prediction_limit") if request.url.host == "api.groq.com" else gemini_reply("prediction_limit")
+        result = self.run_question(question, handle)
+        self.assertTrue(seen)
+        self.assertEqual(result.provider, "template")
+        self.assertIn("cannot predict", result.answer)
+        self.assertIn("No fracture was recorded for Pat001", result.answer)
+        self.assertIn("47.1%", result.answer)
+        self.assertNotIn("hip fracture was recorded", result.answer)
+        self.assertLessEqual(len(result.answer.split()), 120)
+        for phrasing in ("Will she break her hip?", "Can you predict a fracture?", "What is her fracture chance?"):
+            self.assertEqual(ask.known_selection(phrasing), expected)
+        self.assertEqual(ask.known_selection("Is 11% her fracture chance?"), "stress_index")
+        self.assertEqual(ask.known_selection("Is 47% her fracture chance?"), expected)
+        self.assertEqual(ask.known_selection("Does 47% predict whether she will fracture?"), expected)
+        self.assertEqual(ask.known_selection("Should I treat her?"), "unavailable")
+        original = ask.risk.build_facts
+        def fractured(*args, **kwargs):
+            return original(*args, **kwargs).model_copy(update={"fractured_within_followup": True})
+        with mock.patch.object(ask.risk, "build_facts", side_effect=fractured):
+            evidence = ask.build_evidence({})
+        self.assertTrue(evidence.statements["recorded_outcome"].text.startswith("A fracture was recorded"))
+
+    def test_provider_rate_limit_and_cooldown_are_distinct_from_critic_rejection(self):
+        def handle(request):
+            return groq_reply("cut") if request.url.host == "api.groq.com" else httpx.Response(429)
+        result = self.run_question("How do I cut the bone open?", handle)
+        summaries = " ".join(e.summary for e in result.trace)
+        self.assertIn("rate-limited (HTTP 429)", summaries)
+        self.assertNotIn("Code critic rejected", summaries)
+        self.assertEqual(result.provider, "groq")
+        again = self.run_question("Show me the cut-away", handle)
+        self.assertIn("cooldown after HTTP 429", " ".join(e.summary for e in again.trace))
+        for reason, category in (("GEMINI_API_KEY not set", "provider unconfigured"),
+                                 ("timed out after 9 s", "request timeout"),
+                                 ("skipped: HTTP 429 less than 300 s ago", "cooldown after HTTP 429"),
+                                 ("invalid output: secret user text", "invalid provider output"),
+                                 ("rejected: secret user text", "statement selection rejected"),
+                                 ("private output", "provider request failed")):
+            self.assertEqual(ask.provider_failure_category(reason), category)
 
     def test_evidence_timeout_keeps_worker_capacity_until_real_work_finishes(self):
         entered, release, finished = threading.Event(), threading.Event(), threading.Event()

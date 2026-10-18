@@ -487,8 +487,9 @@ class RouteTests(RiskTestCase):
         self.assertEqual(response.status_code, 200)
         body = response.json()
         self.assertEqual(set(body), {"case_id", "facts", "text", "provider", "model", "served", "saved_at", "fallbacks",
-                                     "source", "grounding", "logged"})
+                                     "source", "grounding", "logged", "usage"})
         self.assertEqual(body["grounding"]["store"], "local-backup")  # no VULTR_S3_* in this env
+        self.assertIsNone(body["usage"])  # the template made no model call
         self.assertIsNone(body["logged"])  # no DATABASE_URL
         self.assertEqual(set(body["facts"]), {
             "age", "arf0_percent", "arf0_higher_than", "cohort_n", "cohort_median_arf0_percent", "cohort_fractured",

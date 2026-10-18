@@ -666,7 +666,7 @@ class RouteTests(ExplainTestCase):
         self.assertEqual(response.status_code, 200)
         body = response.json()
         self.assertEqual(set(body), {"text", "provider", "model", "served", "saved_at", "fallbacks", "grounding",
-                                     "logged"})
+                                     "logged", "usage"})
         self.assertEqual((body["grounding"], body["logged"]), (None, None))  # numbers from the request, no database
         self.assertEqual((body["provider"], body["model"]), ("template", None))
         self.assertEqual(body["fallbacks"][0], {"provider": "gemini", "reason": "GEMINI_API_KEY not set"})

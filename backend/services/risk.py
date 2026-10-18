@@ -27,7 +27,8 @@ written is kept for at most 60 s. A saved Gemini answer (served="saved") is not
 logged, since no model was called for it.
 
 The chain order, providers, timeouts and fallback reasons are the ones
-POST /api/explain uses (AI_CHAIN, AI_OFFLINE, GEMINI_*, GROQ_*).
+POST /api/explain uses (AI_CHAIN, AI_OFFLINE, GEMINI_*, GROQ_*), and so is the
+`usage` of a model answer (services.explain.Usage).
 """
 from __future__ import annotations
 
@@ -48,8 +49,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from services import ai_log
 from services.ai_log import Logged
 from services.clinical_store import CATALOGUE, ClinicalDataUnavailable, Grounding, get_clinical_json
-from services.explain import (_NUMBER_WORDS, _TENS, _UNITS, _WORD_VALUES, NUMBER_RE, Fallback, _number_value,
-                              build_providers, chain_order)
+from services.explain import (_NUMBER_WORDS, _TENS, _UNITS, _WORD_VALUES, NUMBER_RE, Fallback, Usage,
+                              _number_value, build_providers, chain_order, served_usage, usage_for)
 from services.llm_providers import AnswerCache, answer_ttl, ask_models, chain_signature
 from services.llm_providers import reset_cooldowns as reset_provider_cooldowns
 
@@ -247,6 +248,8 @@ class RiskResponse(BaseModel):
     grounding: Optional[Grounding] = Field(default=None, description="Where the HFValid table was read from.")
     logged: Optional[Logged] = Field(default=None, description="The Tiger Cloud row of this answer; null when "
                                                                "DATABASE_URL is unset or the write failed.")
+    usage: Optional[Usage] = Field(default=None, description="Tokens of the model call that wrote this answer; "
+                                                             "null for the template or when none were reported.")
 
 
 # ----------------------------------------------------------------------------- data
@@ -618,6 +621,9 @@ async def analyse(request: RiskRequest, env: Optional[Mapping[str, str]] = None,
     answer = await _answers.get_or_compute(
         key, produce, lambda answer: ai_log.kept_for(answer_ttl(answer.provider), answer.logged, e),
         valid=lambda answer: check(answer.text.removesuffix(" " + NOTE), facts) is None)
+    usage = served_usage(answer.usage, answer.served)  # a kept answer made no new model call
+    if usage is not answer.usage:
+        answer = answer.model_copy(update={"usage": usage})
     # A kept answer shows this request's reason for a fallback (the store is the same, or it would not be kept).
     return answer if answer.grounding == grounding else answer.model_copy(update={"grounding": grounding})
 
@@ -625,9 +631,10 @@ async def analyse(request: RiskRequest, env: Optional[Mapping[str, str]] = None,
 async def _run_chain(case_id: str, order: tuple[str, ...], facts: RiskFacts, source: RiskSource,
                      tiers: Mapping[str, list]) -> RiskResponse:
     def done(text: str, provider: str, model: Optional[str], fallbacks: list[Fallback], served: str = "live",
-             saved_at: Optional[str] = None) -> RiskResponse:
+             saved_at: Optional[str] = None, usage: Optional[Usage] = None) -> RiskResponse:
         return RiskResponse(case_id=case_id, facts=facts, text=_with_note(text), provider=provider,
-                            model=model, served=served, saved_at=saved_at, fallbacks=fallbacks, source=source)
+                            model=model, served=served, saved_at=saved_at, fallbacks=fallbacks, source=source,
+                            usage=usage)
 
     fallbacks: list[Fallback] = []
     for name in order:
@@ -646,5 +653,6 @@ async def _run_chain(case_id: str, order: tuple[str, ...], facts: RiskFacts, sou
         answer = await ask_models(tiers[name], system_prompt(), model_input(facts), lambda t: check(t, facts),
                                   fell_through, kind="risk-analysis", facts=f"{case_id}:{facts_json(facts)}")
         if answer is not None:
-            return done(answer.text, name, answer.model, fallbacks, answer.served, answer.saved_at)
+            return done(answer.text, name, answer.model, fallbacks, answer.served, answer.saved_at,
+                        usage_for(name, answer))
     raise RuntimeError("chain ended without the template")  # chain_order always appends it
