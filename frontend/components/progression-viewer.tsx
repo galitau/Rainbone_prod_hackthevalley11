@@ -8,15 +8,21 @@ export function ProgressionViewer({ frame, active = true }: { frame: Progression
   const container = useRef<HTMLDivElement>(null);
   const [rendered, setRendered] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     if (!active) {
       setRendered(false);
       setError(null);
       return;
     }
-    const controller = new AbortController();
     let disposed = false;
-    let view: { delete: () => void } | undefined;
+    const resources: Array<{ delete: () => void }> = [];
+    let releaseView: (() => void) | undefined;
+    function cleanup() {
+      releaseView?.();
+      releaseView = undefined;
+      resources.splice(0).reverse().forEach(resource => resource.delete());
+    }
     async function load() {
       try {
         await import("@kitware/vtk.js/Rendering/Profiles/Geometry");
@@ -27,17 +33,39 @@ export function ProgressionViewer({ frame, active = true }: { frame: Progression
           import("@kitware/vtk.js/IO/XML/XMLPolyDataReader"),
           import("@kitware/vtk.js/Filters/Sources/SphereSource"),
         ]);
+        const buffer = await getProgressionFrame(frame.frameIndex);
+        if (disposed || !container.current) return;
         const reader = Reader.newInstance();
-        reader.parseAsArrayBuffer(await getProgressionFrame(frame.frameIndex));
+        resources.push(reader);
+        reader.parseAsArrayBuffer(buffer);
         const data = reader.getOutputData(0);
         if (!data?.getNumberOfPoints()) throw new Error("The VTP frame contains no surface points.");
-        if (disposed || !container.current) {
-          reader.delete();
-          return;
-        }
         const renderWindow = GenericRenderWindow.newInstance({ background: [0.06, 0.1, 0.15], listenWindowResize: false });
+        const renderer = renderWindow.getRenderer();
+        const window = renderWindow.getRenderWindow();
+        const interactor = renderWindow.getInteractor();
+        const style = interactor.getInteractorStyle();
+        const resizeObserver = new ResizeObserver(() => {
+          if (!disposed) renderWindow.resize();
+        });
+        releaseView = () => {
+          resizeObserver.disconnect();
+          // GenericRenderWindow.delete() does not delete its interactor. Stop
+          // pending animation before deleting the OpenGL view it renders into.
+          interactor.disable();
+          // vtk 37's delete() misses the short post-wheel animation tail. This
+          // public API cancels its RAF unconditionally; this view is being retired.
+          // Its shipped .d.ts still calls this switchToVRAnimation.
+          (interactor as typeof interactor & { switchToXRAnimation: () => void }).switchToXRAnimation();
+          renderWindow.delete();
+          interactor.delete();
+          style.delete();
+          renderer.delete();
+          window.delete();
+        };
         const actor = Actor.newInstance();
         const mapper = Mapper.newInstance();
+        resources.push(mapper, actor);
         const bounds = data.getBounds();
         const diagonal = Math.max(bounds[1] - bounds[0], bounds[3] - bounds[2], bounds[5] - bounds[4]);
         const volumeProgress = (frame.lesionVolumeCm3 - 4.2) / (8.4 - 4.2);
@@ -45,6 +73,7 @@ export function ProgressionViewer({ frame, active = true }: { frame: Progression
         const lesionSource = SphereSource.newInstance({ center: frame.point, radius: lesionRadius, thetaResolution: 24, phiResolution: 16 });
         const lesionActor = Actor.newInstance();
         const lesionMapper = Mapper.newInstance();
+        resources.push(lesionSource, lesionMapper, lesionActor);
         lesionMapper.setInputConnection(lesionSource.getOutputPort());
         lesionActor.setMapper(lesionMapper);
         lesionActor.getProperty().setColor(0.95, 0.08, 0.12);
@@ -58,8 +87,8 @@ export function ProgressionViewer({ frame, active = true }: { frame: Progression
         actor.getProperty().setDiffuse(0.75);
         actor.getProperty().setSpecular(0.2);
         renderWindow.setContainer(container.current);
+        resizeObserver.observe(container.current);
         renderWindow.resize();
-        const renderer = renderWindow.getRenderer();
         renderer.addActor(actor);
         renderer.addActor(lesionActor);
         renderer.resetCamera();
@@ -70,10 +99,10 @@ export function ProgressionViewer({ frame, active = true }: { frame: Progression
         camera.setViewUp(0, 0, 1);
         renderer.resetCameraClippingRange();
         renderWindow.getRenderWindow().render();
-        view = renderWindow;
         setRendered(true);
       } catch (cause) {
-        if (!controller.signal.aborted) {
+        cleanup();
+        if (!disposed) {
           setError(cause instanceof Error ? cause.message : "Could not load the VTP frame.");
         }
       }
@@ -83,19 +112,17 @@ export function ProgressionViewer({ frame, active = true }: { frame: Progression
     void load();
     return () => {
       disposed = true;
-      controller.abort();
-      view?.delete();
+      cleanup();
     };
-  }, [active, frame.vtpFile, frame.point, frame.lesionVolumeCm3]);
+  }, [active, frame.frameIndex, frame.vtpFile, frame.point, frame.lesionVolumeCm3, attempt]);
 
   return (
     <section aria-label={`3D lesion frame ${frame.frameIndex}`} className="overflow-hidden rounded-2xl border border-line bg-[#101a25] shadow-card">
       <div className="relative flex h-72 items-center justify-center overflow-hidden bg-[radial-gradient(circle_at_50%_45%,#38506a_0,#172536_42%,#101a25_75%)]">
         <div ref={container} className="absolute inset-0 h-full w-full" />
-        {!rendered && <div className="relative z-[1] flex h-full items-center justify-center">
-          <div className="h-40 w-40 rounded-[45%] border-2 border-[#c8d5df]/60 bg-[#b6c3cc]/25 shadow-[0_20px_35px_rgba(0,0,0,.35),inset_-20px_-12px_25px_rgba(0,0,0,.25)]">
-            <span className="absolute left-1/2 top-1/2 h-7 w-7 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#ef6a72] shadow-[0_0_20px_#ef6a72]" />
-          </div>
+        {!rendered && <div role={error ? "alert" : "status"} className="relative z-[1] px-6 text-center text-sm text-white/80">
+          <p>{error ?? (active ? "Loading scan surface…" : "Preview inactive")}</p>
+          {error && <button onClick={() => setAttempt(value => value + 1)} className="mt-3 rounded-lg border border-white/40 px-3 py-2 text-white">Retry frame {frame.frameIndex}</button>}
         </div>}
         <span className="absolute bottom-3 left-3 z-[2] rounded bg-black/50 px-2 py-1 font-mono text-[10px] text-white/80">{rendered ? frame.vtpFile : error ?? "Loading VTP frame…"}</span>
       </div>

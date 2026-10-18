@@ -6,7 +6,6 @@ from functools import lru_cache
 
 import nibabel as nib
 import numpy as np
-from skimage.measure import marching_cubes
 
 from services.storage import read_lesion_coordinates, read_object_bytes
 
@@ -40,6 +39,11 @@ def _read_volume(filename: str) -> tuple[np.ndarray, np.ndarray]:
 
 @lru_cache(maxsize=2)
 def _surface(filename: str) -> tuple[np.ndarray, np.ndarray]:
+    # Stored VTP frames do not require the optional surface-generation dependency.
+    try:
+        from skimage.measure import marching_cubes
+    except ImportError as exc:
+        raise RuntimeError("Progression surface generation requires scikit-image; install backend/requirements.txt or provide stored VTP frames.") from exc
     volume, spacing = _read_volume(filename)
     stride = max(1, int(np.ceil(max(volume.shape) / MAX_SURFACE_DIMENSION)))
     if stride > 1:
