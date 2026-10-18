@@ -24,7 +24,7 @@ from services.explain import Fallback
 from services.llm_providers import AnswerCache, answer_ttl, ask_models, chain_signature
 
 PAGES = frozenset({"/dashboard", "/physics-simulations", "/lesion-progression", "/bones", "/datasets", "/preferences"})
-VERSION = "ask-tools-3"
+VERSION = "ask-tools-4"
 PROVIDER_BUDGET_S = 25.0  # includes time already spent gathering evidence; audit has its own short bound
 MAX_PENDING = 4  # computations remain bounded even when all original HTTP callers disconnect
 _evidence_workers = ThreadPoolExecutor(max_workers=MAX_PENDING, thread_name_prefix="ask-evidence")
@@ -37,7 +37,7 @@ SYSTEM = (
     "allowed_statement_ids list, separated by commas in the text STRING, most relevant first. "
     "IDs are keys such as cut or stress_index, not their sentence text or source citations. "
     "Copy only allowed IDs; no brackets, arrays, quotes inside the string, markdown, citations or prose. "
-    "Include required_statement_id when it is provided. Select unavailable only if it is listed in "
+    "Include every ID in required_statement_ids when provided. Select unavailable only if it is listed in "
     "allowed_statement_ids and the question cannot be answered or requests personal medical advice. "
     "Do not mix unavailable with other IDs. "
     "The server renders each statement exactly, with citations, within 120 words. "
@@ -167,6 +167,10 @@ def build_evidence(env: Mapping[str, str]) -> Evidence:
     statements = {
         "arf0": s(f"Pat001's published ARF0 is {facts.arf0_percent:g}%; it is a study authors' model estimate, "
                   "not Rainbone's validated prediction for a person.", "HFValid-Pat001"),
+        "prediction_limit": s("Rainbone cannot predict whether or when this woman will fracture.", "Rainbone-guide"),
+        "recorded_outcome": s("A fracture was recorded for Pat001 during the study follow-up."
+                              if facts.fractured_within_followup else
+                              "No fracture was recorded for Pat001 during the study follow-up.", "HFValid-Pat001"),
         "arf0_rank": s(f"Pat001's ARF0 is higher than {facts.arf0_higher_than} of the {facts.cohort_n} women "
                        "in the research cohort.", "HFValid-Pat001"),
         "strength": s(f"Its minimum sidefall strength is {facts.msf_newtons:,} N in the study authors' model; "
@@ -257,13 +261,14 @@ def known_selection(question: str) -> Optional[str]:
         return "upload,upload_privacy"
     if any(word in q for word in ("press", "compression")):
         return "press"
+    if (re.search(r"\b(?:predict\w*|chance)\b", q)
+            or re.search(r"\b(?:will she|going to)\b.*\b(?:break|fracture)\b", q)):
+        return "prediction_limit,recorded_outcome,arf0"
     if re.search(r"(?<![\w.])47(?:\.1)?(?![\w.])|\barf0\b", q):
         return "arf0,arf0_rank"
-    if "fracture chance" in q:
-        return "stress_index"
     if any(word in q for word in ("2.2", "3.2", "ratio", "fall force")):
         return "fall_ratio,strength"
-    if any(word in q for word in ("strength", "msf")):
+    if re.search(r"\b(?:strength|strong|stronger|weaker|msf|rank)\b|compared with|other women", q):
         return "strength"
     if re.search(r"\brisk\b", q):
         return "arf0,arf0_rank"
@@ -278,6 +283,30 @@ def known_selection(question: str) -> Optional[str]:
     if re.search(r"\bwhere\b", q):
         return "navigation"
     return None
+
+
+def required_selection(selection: Optional[str]) -> list[str]:
+    ids = selected_ids(selection) if selection else []
+    return ids if "prediction_limit" in ids else ids[:1]
+
+
+def provider_failure_category(reason: str) -> str:
+    """Public diagnostics are fixed categories, never provider bodies or question fragments."""
+    if reason.startswith("rejected"):
+        return "statement selection rejected"
+    if reason.startswith("skipped:") or "cooldown" in reason.casefold():
+        return "cooldown after HTTP 429" if "HTTP 429" in reason else "provider cooldown"
+    status = re.search(r"\bHTTP ([1-5][0-9]{2})\b", reason)
+    if status:
+        return "rate-limited (HTTP 429)" if status.group(1) == "429" else f"HTTP {status.group(1)}"
+    lower = reason.casefold()
+    if "timeout" in lower or "timed out" in lower or "time budget" in lower:
+        return "request timeout"
+    if "not set" in lower or "unconfigured" in lower:
+        return "provider unconfigured"
+    if any(token in lower for token in ("json", "parse", "empty", "missing", "invalid", "malformed")):
+        return "invalid provider output"
+    return "provider request failed"
 
 
 def template_selection(question: str) -> str:
@@ -330,11 +359,13 @@ async def ask(request: AskRequest, env: Mapping[str, str], *, providers=None, tr
             for output in outputs:
                 output["statements"] = {i: text for i, text in output["statements"].items() if i in allowed_ids}
         selected_evidence = replace(evidence, statements={i: evidence.statements[i] for i in allowed_ids})
-        required_id = selected_ids(recognized)[0] if recognized else None
-        example_id = required_id or next((i for i in sorted(allowed_ids) if i != "unavailable"), "unavailable")
+        required_ids = required_selection(recognized)
+        required_id = required_ids[0] if required_ids else None
+        example_id = ",".join(required_ids) or next((i for i in sorted(allowed_ids) if i != "unavailable"), "unavailable")
         # Only executed tool outputs reach the writer; the raw question remains transient provider input.
         user = json.dumps({"question": request.question, "page": request.page, "tool_outputs": outputs,
                            "allowed_statement_ids": sorted(allowed_ids), "required_statement_id": required_id,
+                           "required_statement_ids": required_ids,
                            "response_example": {"text": example_id},
                            "fallback_statement": {"unavailable": evidence.statements["unavailable"].text}
                            if "unavailable" in allowed_ids else {}}, ensure_ascii=False)
@@ -344,10 +375,10 @@ async def ask(request: AskRequest, env: Mapping[str, str], *, providers=None, tr
         def critic(text: str) -> Optional[str]:
             began = time.perf_counter()
             reason = check_selection(text, selected_evidence)
-            if reason is None and required_id is not None and required_id not in selected_ids(text):
+            if reason is None and not set(required_ids).issubset(selected_ids(text)):
                 reason = "selection does not answer recognized question"
-            event("critic", f"Code critic rejected: {reason}" if reason else
-                  "Code critic checked selected evidence, citations, routes and word budget", began)
+            event("critic", f"Code critic rejected: {name.capitalize()} selection; {reason}" if reason else
+                  f"Code critic checked {name.capitalize()} selected evidence, citations, routes and word budget", began)
             return reason
 
         for name in order:
@@ -363,8 +394,12 @@ async def ask(request: AskRequest, env: Mapping[str, str], *, providers=None, tr
                     nonlocal rejected
                     rejected = rejected or reason.startswith("rejected")
                     # Never retain rejected output or question fragments, including in Tiger fallback metadata.
-                    category = "statement selection rejected" if reason.startswith("rejected") else ai_log.stored_reason(reason)
+                    category = provider_failure_category(reason)
                     fallbacks.append(Fallback(provider=provider, reason=category))
+                    # Model names are configured server-side; never use a provider response body as a label.
+                    known_models = {getattr(p, "model", None) for p in tiers.get(provider, [])}
+                    label = f" · {model}" if model and model in known_models else ""
+                    event("writer", f"{provider.capitalize()} writer{label}: {category}", began)
                 remaining = started + PROVIDER_BUDGET_S - time.perf_counter()
                 if remaining <= 0:
                     fallbacks.append(Fallback(provider=name, reason="request time budget exhausted"))
@@ -378,9 +413,9 @@ async def ask(request: AskRequest, env: Mapping[str, str], *, providers=None, tr
                             tiers[name], SYSTEM, writer_user, critic,
                             failed, kind="ask", facts=writer_identity), timeout=max(.001, remaining))
                     except asyncio.TimeoutError:
-                        fallbacks.append(Fallback(provider=name, reason="request time budget exhausted"))
+                        failed(None, "request time budget exhausted")
                     status = ("reused saved checked statement selection" if reply and reply.served == "saved" else
-                              "returned checked statement selection" if reply else "unavailable or rejected")
+                              "returned checked statement selection" if reply else "produced no accepted selection")
                     event("writer", f"{name.capitalize()} writer {status}",
                           began)
                     remaining = started + PROVIDER_BUDGET_S - time.perf_counter()
@@ -390,7 +425,7 @@ async def ask(request: AskRequest, env: Mapping[str, str], *, providers=None, tr
                     rejected = False
                     writer_user = json.dumps({"request": json.loads(user), "revision":
                         "The code critic rejected the previous selection. Choose only IDs in these tool outputs; "
-                        "Use unavailable only if listed in allowed_statement_ids. Include required_statement_id "
+                        "Use unavailable only if listed in allowed_statement_ids. Include every required_statement_ids entry "
                         "when supplied. Do not write prose."}, ensure_ascii=False)
                 if reply is None:
                     continue
@@ -426,7 +461,7 @@ async def ask(request: AskRequest, env: Mapping[str, str], *, providers=None, tr
         selection = ",".join(answer.statement_ids)
         if recognized is not None:
             required = selected_ids(recognized)
-            if required[0] not in answer.statement_ids or not set(answer.statement_ids).issubset(required):
+            if not set(required_selection(recognized)).issubset(answer.statement_ids) or not set(answer.statement_ids).issubset(required):
                 return False
         return check_selection(selection, evidence) is None and answer.answer == render(selection, evidence)
 

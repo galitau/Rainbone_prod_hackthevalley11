@@ -524,7 +524,9 @@ other questions use Gemini native function calls. At most four allowlisted read-
 run in either path. Rules also handle native triage failure. The writer receives only those tool outputs and
 selects approved statement IDs from an explicit ID list and request-specific example. A code critic
 requires the primary statement for recognized intents, reports safe fixed rejection categories and
-allows one bounded rewrite. Python renders exact cited statements,
+allows one bounded rewrite. Trace categories distinguish provider HTTP errors/cooldowns from
+code-critic rejections. Strength comparisons read both patient and MSF cohort evidence;
+prediction questions require the no-prediction statement, recorded follow-up and published ARF0. Python renders exact cited statements,
 never arbitrary model prose, within 120 words. The offline fallback handles common data/navigation
 questions; unsupported questions receive bounded site help. No uploaded scan is included.
 
