@@ -61,14 +61,14 @@ export function FractureRiskAnalysis({ state }: { state: RiskAnalysisState }) {
               label="Published fracture risk · ARF0"
               value={formatNumber(f.arf0_percent, 1)}
               unit="%"
-              note={`Higher than ${f.arf0_higher_than} of the other ${f.cohort_n - 1} women in the study${f.cohort_fractured > 0 ? `; the ${f.cohort_fractured} who fractured during follow-up had ${range(f.fractured_arf0_min_percent, f.fractured_arf0_max_percent, 1)}%` : ""}`}
+              note={`Higher than ${f.arf0_higher_than} of the ${f.cohort_n} women in the study${f.fractured_arf0_min_percent !== null && f.fractured_arf0_max_percent !== null ? `; the ${f.cohort_fractured} who fractured during follow-up had ${range(f.fractured_arf0_min_percent, f.fractured_arf0_max_percent, 1)}%` : ""}`}
             />
             <Fact
               icon={<Shield size={15} />}
               label="Sideways-fall strength · MSF"
               value={formatNumber(f.msf_newtons, 0)}
               unit="N"
-              note={`The sideways-fall load that would break it in the authors' model; weaker than ${f.msf_lower_than} of the other ${f.cohort_n - 1}`}
+              note={`The sideways-fall load that would break it in the authors' model; weaker than ${f.msf_lower_than} of the ${f.cohort_n}`}
             />
             <Fact
               icon={<ArrowDownToLine size={15} />}
@@ -87,7 +87,7 @@ export function FractureRiskAnalysis({ state }: { state: RiskAnalysisState }) {
               ARF0 (absolute risk of fracture at time 0) and MSF (minimum sidefall strength) are the HFValid authors&apos; finite-element results,{" "}
               <a href={doiUrl(analysis.source?.doi)} target="_blank" rel="noreferrer" title={analysis.source?.citation} className="font-medium text-link hover:underline">{FEMUR_AUTHORS}</a>
               , {analysis.source?.license || FEMUR_MODEL.license}. Fall forces:{" "}
-              <a href={FALL_FORCE_SOURCE} target="_blank" rel="noreferrer" className="font-medium text-link hover:underline">van den Kroonenberg et al. 1995</a>. Not a diagnosis.
+              <a href={FALL_FORCE_SOURCE} target="_blank" rel="noreferrer" className="font-medium text-link hover:underline">van den Kroonenberg et al. 1995</a>.
             </p>
           </div>
         </>

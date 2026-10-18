@@ -158,14 +158,14 @@ export type RiskFeNumbers = { peak_stress_mpa: number; load_newtons: number; str
 export type RiskFacts = {
   age: number;
   arf0_percent: number;
-  arf0_higher_than: number; // how many of the other subjects have a lower ARF0
+  arf0_higher_than: number; // how many subjects have a lower ARF0
   cohort_n: number;
   cohort_median_arf0_percent: number;
   cohort_fractured: number;
-  fractured_arf0_min_percent: number;
-  fractured_arf0_max_percent: number;
+  fractured_arf0_min_percent: number | null; // null when nobody in the cohort fractured
+  fractured_arf0_max_percent: number | null;
   msf_newtons: number;
-  msf_lower_than: number; // how many of the other subjects have a higher (stronger) MSF
+  msf_lower_than: number; // how many subjects have a higher (stronger) MSF
   fall_force_low_newtons: number;
   fall_force_high_newtons: number;
   factor_of_risk_low: number;
@@ -198,10 +198,11 @@ export type RiskAnalysisState =
 const RISK_TIMEOUT_MS = EXPLAIN_TIMEOUT_MS;
 
 const RISK_NUMBERS = [
-  "arf0_percent", "arf0_higher_than", "cohort_n", "cohort_fractured", "fractured_arf0_min_percent",
-  "fractured_arf0_max_percent", "msf_newtons", "msf_lower_than", "fall_force_low_newtons",
-  "fall_force_high_newtons", "factor_of_risk_low", "factor_of_risk_high",
+  "age", "arf0_percent", "arf0_higher_than", "cohort_n", "cohort_fractured", "msf_newtons", "msf_lower_than",
+  "fall_force_low_newtons", "fall_force_high_newtons", "factor_of_risk_low", "factor_of_risk_high",
 ] as const;
+const RISK_NULLABLE_NUMBERS = ["fractured_arf0_min_percent", "fractured_arf0_max_percent"] as const;
+const isFiniteNumber = (value: unknown) => typeof value === "number" && Number.isFinite(value);
 
 function isRiskAnalysis(body: unknown): body is RiskAnalysis {
   const answer = body as Partial<RiskAnalysis> | null;
@@ -209,7 +210,8 @@ function isRiskAnalysis(body: unknown): body is RiskAnalysis {
   return (
     typeof answer?.text === "string" && answer.text.trim() !== "" &&
     typeof facts === "object" && facts !== null &&
-    RISK_NUMBERS.every((name) => typeof facts[name] === "number" && Number.isFinite(facts[name]))
+    RISK_NUMBERS.every((name) => isFiniteNumber(facts[name])) &&
+    RISK_NULLABLE_NUMBERS.every((name) => facts[name] === null || isFiniteNumber(facts[name]))
   );
 }
 

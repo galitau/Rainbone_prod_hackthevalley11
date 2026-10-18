@@ -375,7 +375,7 @@ network: provider calls go to `httpx.MockTransport`.
 from the dataset authors' published numbers. It reads
 `public/models/hfvalid-risk.json` from the repository: per subject, the
 Absolute Risk of Fracture at time 0 (ARF0) and the Minimum Sidefall Strength
-(MSF) computed with the authors' validated finite-element model, and whether
+(MSF) computed with the authors' finite-element model, and whether
 a hip fracture was recorded in the follow-up (HFValid collection, Aldieri,
 La Mattina, Szyszko, Baruffaldi, Viceconti 2025, University of Bologna,
 DOI 10.6092/unibo/amsacta/8431, CC BY 4.0). Sideways-fall forces of 2,900 N
@@ -399,17 +399,17 @@ with `source` the dataset's citation, DOI and licence.
 `/api/explain`, with its own prompt and checker. The checker accepts a
 number only when it is a fact or a fact rounded to fewer decimals, and a
 number with a time unit only when it is the subject's age in years or the
-recorded days to her fracture. It rejects spelled-out quantities, time
-horizons ("next year", "lifetime"), "chance"/"probability", diagnosis,
-treatment, advice and "you". Fracture, risk, break and fall are allowed. A
+recorded days to her fracture. It rejects a rank stated in the wrong
+direction ("stronger than 75 women" when 75 women had a stronger femur),
+spelled-out quantities, time horizons ("next year", "lifetime"),
+"chance"/"probability", diagnosis, treatment, advice and "you". Fracture, risk, break and fall are allowed. A
 rejected text falls through to the next provider and finally to a
 deterministic template built only from the facts. Every `text` ends with
 "Published research data, not a diagnosis or medical advice."
 
-`tests/test_risk.py` uses a synthetic fixture in the same schema
-(`tests/fixtures/hfvalid-risk.json`) and no network. Its real-data checks
-(Pat001's facts, the template for all 101 subjects) run when
-`public/models/hfvalid-risk.json` is present.
+`tests/test_risk.py` reads the committed `public/models/hfvalid-risk.json`
+(Pat001's facts, a fractured subject, the template for all 101 subjects) and
+needs no network.
 
 ## Simulation history (TimescaleDB)
 

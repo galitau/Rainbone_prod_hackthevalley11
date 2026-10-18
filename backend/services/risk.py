@@ -3,7 +3,7 @@
 The numbers come from the HFValid collection (Aldieri, La Mattina, Szyszko,
 Baruffaldi, Viceconti 2025, University of Bologna, CC BY 4.0), read from
 public/models/hfvalid-risk.json: each subject's ARF0 and MSF as computed by the
-dataset authors' validated finite-element model, and the recorded follow-up.
+dataset authors' finite-element model, and the recorded follow-up.
 Sideways-fall forces are van den Kroonenberg et al. 1995 (PubMed 8618384).
 
 build_facts() computes every number a model may use: the subject's place among
@@ -68,6 +68,18 @@ BLOCKED_OUTPUT_PATTERNS: tuple[str, ...] = (
 )
 _TIME = tuple(re.compile(p, re.IGNORECASE) for p in TIME_PATTERNS)
 _BLOCKED = tuple(re.compile(p, re.IGNORECASE) for p in BLOCKED_OUTPUT_PATTERNS)
+# The direction of the two ranks. arf0_higher_than women had a lower ARF0 than this femur; msf_lower_than women had a
+# stronger femur (higher MSF). "stronger than 75 women" with msf_lower_than 75 states the opposite of the data.
+_UP = frozenset({"higher", "greater", "larger", "bigger", "stronger"})
+_DOWN = frozenset({"lower", "smaller", "less", "weaker"})
+_CMP = "|".join(sorted(_UP | _DOWN))
+_COUNT = r"(\d{1,3}(?:,\d{3})+(?!\d)|\d+)"  # a whole number, with or without thousands commas
+# This femur against N women: "higher than 56", "a stronger femur than 75 women".
+_SUBJECT_VS_N = re.compile(r"\b(" + _CMP + r")\b(?:\s+[\w-]+){0,3}?\s+than\s+(?:those\s+of\s+|that\s+of\s+)?" + _COUNT,
+                           re.IGNORECASE)
+# N women against this femur: "75 women had a stronger femur", "56 of the 101 women in the study had a lower ARF0".
+_N_VS_SUBJECT = re.compile(r"(?<![\d.,])" + _COUNT + r"\s+(?:of\s+the\s+\d[\d,]*\s+|other\s+)*women\b"
+                           r"(?:\s+(?:in|the|study|cohort|had|have|has|with|a|an))*\s+(" + _CMP + r")\b", re.IGNORECASE)
 
 SYSTEM_PROMPT = (
     "You explain to a reader with no medical or engineering background how likely one real thigh bone "
@@ -75,13 +87,15 @@ SYSTEM_PROMPT = (
     "belongs to one of cohort_n women in the HFValid study by Aldieri, La Mattina, Szyszko, Baruffaldi and "
     "Viceconti (University of Bologna), who CT-scanned each woman's femur and followed whether she later "
     "had a hip fracture. Fields: age is the woman's age at the CT scan. arf0_percent is her ARF0, the "
-    "Absolute Risk of Fracture that the study authors estimated with their validated finite-element model "
+    "Absolute Risk of Fracture that the study authors estimated with their finite-element model "
     "of this femur coupled with a model of falling; arf0_higher_than is how many women in the study had a "
     "lower ARF0; cohort_median_arf0_percent is the study's median ARF0; cohort_fractured women had a hip "
     "fracture during the follow-up, and their ARF0 ranged from fractured_arf0_min_percent to "
     "fractured_arf0_max_percent. msf_newtons is her Minimum Sidefall Strength (MSF): the smallest sideways-"
     "fall force, over many simulated fall directions, that the authors' model says would break this femur; "
-    "msf_lower_than is how many women in the study had a stronger femur. fall_force_low_newtons and "
+    "msf_lower_than is how many women in the study had a stronger femur (a higher MSF), so this femur is "
+    "weaker than that many women: write it as 'weaker than N of the cohort_n women' or 'N of the cohort_n "
+    "women had a stronger femur', never 'stronger than N'. fall_force_low_newtons and "
     "fall_force_high_newtons are the peak force on the side of the hip in a sideways fall for a small and "
     "a large woman (van den Kroonenberg and colleagues). factor_of_risk_low and factor_of_risk_high are "
     "those forces divided by msf_newtons: the fall would load the femur that many times its estimated "
@@ -95,7 +109,7 @@ SYSTEM_PROMPT = (
     "fall strength compared with typical fall forces means ('a sideways fall would load it X to Y times "
     "its estimated strength'), the outcome actually recorded in the follow-up, and, when fe is not null, "
     "that the stress index shown above is a different, simpler measure. Credit ARF0 and MSF to the HFValid "
-    "study authors' validated model. "
+    "study authors' finite-element model. "
     "Rules: use only numbers that appear in the JSON, written as digits, exactly as given or rounded to "
     "fewer decimals. Do not calculate any new number: no differences, shares of the cohort, or unit "
     "conversions such as kN. Never write a number as a word, and do not use words for quantities or "
@@ -267,6 +281,24 @@ def _time_number_ok(value: float, unit: str, facts: RiskFacts) -> bool:
     return False
 
 
+def _wrong_direction(scan: str, facts: RiskFacts) -> Optional[str]:
+    """The first phrase that compares this femur with a rank count in the wrong direction, if any. Skipped when the
+    two counts are equal, since the number then cannot tell which rank is meant."""
+    higher, lower = facts.arf0_higher_than, facts.msf_lower_than
+    if higher == lower:
+        return None
+    # (pattern, comparatives allowed with arf0_higher_than, comparatives allowed with msf_lower_than)
+    for pattern, arf0_ok, msf_ok in ((_SUBJECT_VS_N, _UP - {"stronger"}, _DOWN),
+                                     (_N_VS_SUBJECT, _DOWN - {"weaker"}, _UP)):
+        for match in pattern.finditer(scan):
+            word, count = (match.group(1), match.group(2)) if pattern is _SUBJECT_VS_N else (match.group(2), match.group(1))
+            value = _number_value(count)
+            allowed = arf0_ok if value == higher else msf_ok if value == lower else None
+            if allowed is not None and word.lower() not in allowed:
+                return match.group(0)
+    return None
+
+
 def check(text: str, facts: RiskFacts) -> Optional[str]:
     """None when `text` may be shown, else the reason it is rejected."""
     if not text.strip():
@@ -282,6 +314,9 @@ def check(text: str, facts: RiskFacts) -> Optional[str]:
             return f"time prediction: {match.group(0) + unit.group(0)!r}"
         if not any(math.isclose(value, a, rel_tol=1e-12, abs_tol=1e-9) for a in allowed):
             return f"number not in input: {match.group(0)}"
+    wrong = _wrong_direction(scan, facts)
+    if wrong:
+        return f"wrong direction: {wrong!r}"
     word = _NUMBER_WORDS.search(scan)
     if word:
         return f"spelled-out quantity: {word.group(0)!r}"
@@ -307,7 +342,7 @@ def template_text(facts: RiskFacts) -> str:
     """Deterministic wording of the facts. Every number it prints is a fact, or one rounded to fewer decimals."""
     f = facts
     parts = [
-        f"In the HFValid study of {f.cohort_n} women, the authors' validated model gave this femur, from a "
+        f"In the HFValid study of {f.cohort_n} women, the authors' finite-element model gave this femur, from a "
         f"{f.age}-year-old woman, a published fracture risk (ARF0) of {_dec(f.arf0_percent)}%: higher than "
         f"{f.arf0_higher_than} of the {f.cohort_n} women, against a study median of "
         f"{_dec(f.cohort_median_arf0_percent)}%.",
