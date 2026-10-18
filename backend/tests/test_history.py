@@ -101,6 +101,25 @@ class HistoryTestCase(unittest.TestCase):
 
 
 class SaveTests(HistoryTestCase):
+    def test_execution_uuid_and_content_hash_are_saved_without_a_new_schema(self):
+        conn = self.use_database()
+        run_id = str(uuid4())
+        result = {**RESULT, "run_id": run_id, "input_sha256": "a" * 64}
+        self.assertEqual(history.prepare_run_persistence(run_id), "pending")
+        self.assertTrue(history.save_simulation_run(result))
+        self.assertEqual(history.persistence_for_run(run_id), "saved")
+        [(_, params)] = conn.executed
+        self.assertEqual(params["run_id"], run_id)
+        self.assertEqual(params["solver_versions"].obj["input_sha256"], "a" * 64)
+
+    def test_failed_save_resolves_pending_to_unavailable(self):
+        self.use_database(error=psycopg.OperationalError("connection refused"))
+        run_id = str(uuid4())
+        self.assertEqual(history.prepare_run_persistence(run_id), "pending")
+        with self.assertLogs("rainbowbone.history", "WARNING"):
+            self.assertFalse(history.save_simulation_run({**RESULT, "run_id": run_id}))
+        self.assertEqual(history.persistence_for_run(run_id), "unavailable")
+
     def test_without_database_url_nothing_is_saved(self):
         self.assertFalse(history.save_simulation_run(RESULT, solve_ms=1.0))
         self.assertEqual(self.connector.urls, [])
@@ -114,7 +133,7 @@ class SaveTests(HistoryTestCase):
         self.assertTrue(sql.startswith("INSERT INTO simulation_runs ("))
         for name, value in RESULT.items():
             self.assertEqual(params[name], value, name)
-        self.assertEqual(set(main.SimulationResponse.model_fields), set(history.RESULT_COLUMNS))
+        self.assertTrue(set(history.RESULT_COLUMNS).issubset(main.SimulationResponse.model_fields))
         self.assertEqual(params["solver"], "services.fea_solver.simulate_fea")
         self.assertEqual(set(params["solver_versions"].obj), {*history.SOLVER_PACKAGES, "segmentation"})
         self.assertIsNone(params["solver_versions"].obj["segmentation"])
@@ -170,7 +189,7 @@ class FetchTests(HistoryTestCase):
         out = history.fetch_history(2)
         self.assertEqual(out["series"], [{"label": "Oct 18 02:04:13 UTC", "value": 10.0},
                                          {"label": "Oct 18 02:05:13 UTC", "value": 12.5}])
-        self.assertEqual(out["runs"], [oldest, newest])
+        self.assertEqual(out["runs"], [{**row, "input_sha256": None} for row in [oldest, newest]])
         self.assertEqual(out["hourly"], hourly)
         self.assertEqual([params for _, params in conn.executed], [(2,), (2,)])
 
@@ -205,6 +224,32 @@ class RouteTests(HistoryTestCase):
         response = self.client.get("/api/history")
         self.assertEqual(response.status_code, 503)
         self.assertIn("DATABASE_URL", response.json()["detail"])
+
+    def test_exact_run_lookup_wins_over_filename_and_acknowledges_hash(self):
+        run_id = str(uuid4())
+        run = {**RESULT, "time": datetime.now(timezone.utc), "run_id": run_id,
+               "solver": history.SOLVER, "solver_versions": {"input_sha256": "b" * 64}, "solve_ms": 3.0}
+        conn = self.use_database(FakeConnection(results=[[run], []]))
+        response = self.client.get("/api/history", params={"run_id": run_id, "source_filename": "renamed.nii"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(conn.executed[0], (history.RUN_ID_SQL, (run_id,)))
+        self.assertEqual(response.json()["persistence"], "saved")
+        self.assertEqual(response.json()["runs"][0]["run_id"], run_id)
+        self.assertEqual(response.json()["runs"][0]["input_sha256"], "b" * 64)
+        self.assertEqual(response.json()["runs"][0]["source_filename"], RESULT["source_filename"])
+
+    def test_exact_run_lookup_reports_pending_then_unavailable_without_inventing_rows(self):
+        self.use_database(FakeConnection(results=[[], [], [], [], [], []]))
+        run_id = str(uuid4())
+        history.prepare_run_persistence(run_id)
+        pending = self.client.get("/api/history", params={"run_id": run_id}).json()
+        self.assertEqual((pending["runs"], pending["persistence"]), ([], "pending"))
+        history._set_save_state(run_id, "unavailable")
+        unavailable = self.client.get("/api/history", params={"run_id": run_id}).json()
+        self.assertEqual((unavailable["runs"], unavailable["persistence"]), ([], "unavailable"))
+        unknown = self.client.get("/api/history", params={"run_id": str(uuid4())}).json()
+        self.assertEqual(unknown["persistence"], "unavailable")
+        self.assertEqual(self.client.get("/api/history", params={"run_id": "bad-id"}).status_code, 422)
 
     def test_history_shape(self):
         run = {**RESULT, "time": datetime(2026, 10, 18, 2, 5, 13, tzinfo=timezone.utc), "run_id": uuid4(),
@@ -254,7 +299,9 @@ class SimulateWiringTests(HistoryTestCase):
         with mock.patch.object(main, "simulate_fea", return_value=dict(RESULT)) as solve:
             first = self.post_scan()
             again = self.post_scan(reuse=True)
-        self.assertEqual((first.json(), again.json()), (RESULT, RESULT))
+        self.assertEqual({name: first.json()[name] for name in RESULT}, RESULT)
+        self.assertEqual(again.json(), {**first.json(), "persistence": "saved"})
+        self.assertEqual(first.json()["persistence"], "pending")
         self.assertEqual(solve.call_count, 1)
         self.assertEqual(len(conn.executed), 1)
 
@@ -263,7 +310,8 @@ class SimulateWiringTests(HistoryTestCase):
         with mock.patch.object(main, "simulate_fea", return_value=dict(RESULT)):
             response = self.post_scan()
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), RESULT)
+        self.assertEqual({name: response.json()[name] for name in RESULT}, RESULT)
+        self.assertEqual(response.json()["persistence"], "pending")
         [(sql, params)] = conn.executed
         self.assertEqual({name: params[name] for name in RESULT}, RESULT)
         self.assertGreaterEqual(params["solve_ms"], 0.0)
@@ -274,8 +322,12 @@ class SimulateWiringTests(HistoryTestCase):
             self.use_database(error=psycopg.OperationalError("connection refused"))
             with self.assertLogs("rainbowbone.history", "WARNING"):
                 with_dead_db = self.post_scan()
-        self.assertEqual((with_dead_db.status_code, with_dead_db.json()), (200, RESULT))
-        self.assertEqual((without_db.status_code, without_db.json()), (200, RESULT))
+        self.assertEqual(with_dead_db.status_code, 200)
+        self.assertEqual({name: with_dead_db.json()[name] for name in RESULT}, RESULT)
+        self.assertEqual(history.persistence_for_run(with_dead_db.json()["run_id"]), "unavailable")
+        self.assertEqual(without_db.status_code, 200)
+        self.assertEqual({name: without_db.json()[name] for name in RESULT}, RESULT)
+        self.assertEqual(without_db.json()["persistence"], "unavailable")
 
     def test_solver_error_is_not_saved(self):
         conn = self.use_database()
@@ -293,9 +345,13 @@ class SimulateWiringTests(HistoryTestCase):
         main._simulate_results.clear()  # solve again, so this run is saved
         with_db = self.client.post("/api/simulate", files=files)
         self.assertEqual(without_db.status_code, 200, without_db.text)
-        self.assertEqual((with_db.status_code, with_db.json()), (200, without_db.json()))
+        self.assertEqual(with_db.status_code, 200)
+        self.assertEqual({name: with_db.json()[name] for name in history.RESULT_COLUMNS},
+                         {name: without_db.json()[name] for name in history.RESULT_COLUMNS})
+        self.assertNotEqual(with_db.json()["run_id"], without_db.json()["run_id"])
         [(_, params)] = conn.executed
-        self.assertEqual({name: params[name] for name in history.RESULT_COLUMNS}, with_db.json())
+        self.assertEqual({name: params[name] for name in history.RESULT_COLUMNS},
+                         {name: with_db.json()[name] for name in history.RESULT_COLUMNS})
         self.assertIn(params["solver_versions"].obj["segmentation"], ("fsl", "numpy"))
 
 

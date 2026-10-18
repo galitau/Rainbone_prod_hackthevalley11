@@ -154,9 +154,11 @@ log (`backend/services/risk.py`, `explain.py`, `llm_providers.py`, `clinical_sto
 - **Checker.** Every number in an answer must be one of the facts; in the risk analysis
   it must also be its own kind of quantity (a percent only for ARF0, newtons only for
   forces, a count only for women). The risk-analysis checker also rejects ranks stated
-  the wrong way round, numbers written as words, statements about the future, "chance"
-  or "probability" for ARF0, diagnosis, advice, and any claim about where the recorded
-  fracture was. A rejected answer moves on to the next provider.
+  the wrong way round, number words (a count of women that is a fact, such as "four
+  women", is read as its digits and checked), statements about the future, "chance" or
+  "probability" for ARF0, diagnosis, advice, and wording that puts the recorded fracture
+  at the hip, since the follow-up does not record where it was. A rejected answer moves
+  on to the next provider.
 - **Answer cache and 429 memory.** An answer is kept in memory per case, grounding
   store, facts and chain (Gemini for 1 h, Groq or template for 60 s) and comes back as
   `served: "cached"`; concurrent equal requests share one model call. A model that failed

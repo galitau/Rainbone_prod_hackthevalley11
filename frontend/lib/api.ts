@@ -31,6 +31,10 @@ export type SimulationResult = {
   mesh_vertices?: number;
   mesh_faces?: number;
   source_filename?: string;
+  original_source_filename?: string;
+  run_id?: string;
+  input_sha256?: string;
+  persistence?: "pending" | "saved" | "unavailable";
   // Not in the JSON body: set from the X-Simulate-Reused header, true when the API had already solved these exact bytes
   // and returned that result instead of solving again.
   reused?: boolean;
@@ -54,6 +58,10 @@ export async function runSimulation(file: File): Promise<SimulationOutcome> {
     return { ok: false, reachedApi: false, message: `This page could not reach the simulation API at ${API_HOST}.` };
   }
   if (!response.ok) {
+    if (response.status === 429) {
+      const retry = Number(response.headers.get("Retry-After"));
+      return { ok: false, reachedApi: true, message: `The engine is busy. ${Number.isFinite(retry) && retry > 0 ? `Try again in ${retry} seconds.` : "Try again shortly."} Your file was not queued.` };
+    }
     let detail = "";
     try {
       const body = (await response.json()) as { detail?: unknown };
@@ -103,6 +111,7 @@ export type HistoryRun = {
   source_filename: string;
   // Optional for compatibility with older API deployments; never manufacture evidence.
   run_id?: string;
+  input_sha256?: string;
   load_newtons?: number;
   solve_ms?: number | null;
   solver?: string;
@@ -113,13 +122,14 @@ export type HistoryHour = { bucket: string; runs: number };
 // "unavailable": the API has no saved history (no database configured answers 503, an older API 404).
 export type HistoryState =
   | { status: "loading" }
-  | { status: "ready"; runs: HistoryRun[]; hourly?: HistoryHour[] }
+  | { status: "ready"; runs: HistoryRun[]; hourly?: HistoryHour[]; persistence?: "pending" | "saved" | "unavailable" }
   | { status: "unavailable"; reason: string };
 
 // GET /api/history: saved /api/simulate results, oldest first. Never throws.
-export async function fetchHistory(limit = 12, sourceFilename?: string, timeoutMs = SHORT_TIMEOUT_MS): Promise<HistoryState> {
+export async function fetchHistory(limit = 12, sourceFilename?: string, timeoutMs = SHORT_TIMEOUT_MS, runId?: string): Promise<HistoryState> {
   const query = new URLSearchParams({ limit: String(limit) });
-  if (sourceFilename !== undefined) query.set("source_filename", sourceFilename);
+  if (runId) query.set("run_id", runId);
+  else if (sourceFilename !== undefined) query.set("source_filename", sourceFilename);
   let response: Response;
   try {
     response = await fetch(apiUrl(`/api/history?${query}`), { cache: "no-store", signal: timeout(timeoutMs) });
@@ -144,6 +154,7 @@ export async function fetchHistory(limit = 12, sourceFilename?: string, timeoutM
         source_filename: row.source_filename,
         max_von_mises_stress_mpa: row.max_von_mises_stress_mpa,
         run_id: typeof row.run_id === "string" && row.run_id ? row.run_id : undefined,
+        input_sha256: typeof row.input_sha256 === "string" ? row.input_sha256 : undefined,
         load_newtons: typeof row.load_newtons === "number" && Number.isFinite(row.load_newtons) ? row.load_newtons : undefined,
         solve_ms: typeof row.solve_ms === "number" && Number.isFinite(row.solve_ms) && row.solve_ms >= 0 ? row.solve_ms : undefined,
         solver: typeof row.solver === "string" && row.solver ? row.solver : undefined,
@@ -159,7 +170,8 @@ export async function fetchHistory(limit = 12, sourceFilename?: string, timeoutM
           return [{ bucket: hour.bucket, runs: hour.runs }];
         })
       : undefined;
-    return { status: "ready", runs, ...(hourly === undefined ? {} : { hourly }) };
+    const persistence = "persistence" in body && (body.persistence === "pending" || body.persistence === "saved" || body.persistence === "unavailable") ? body.persistence : undefined;
+    return { status: "ready", runs, ...(hourly === undefined ? {} : { hourly }), ...(persistence ? { persistence } : {}) };
   } catch {
     // fall through
   }

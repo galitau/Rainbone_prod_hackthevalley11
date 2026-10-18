@@ -5,13 +5,15 @@ import logging
 import threading
 import time
 from collections import OrderedDict
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
+from uuid import uuid4
 
 import anyio
 import anyio.to_thread
 from fastapi import BackgroundTasks, FastAPI, File, HTTPException, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+from starlette.responses import JSONResponse
 from routes_bones import router as bones_router
 
 from routes_ai_log import router as ai_log_router
@@ -21,11 +23,37 @@ from routes_progression import router as progression_router
 from routes_risk import router as risk_router
 from services.fea_solver import MAX_UPLOAD_BYTES, FEASolverError, simulate_fea
 from services.fsl_segmentation import segmentation_tool
-from services.history import save_simulation_run
+from services.history import persistence_for_run, prepare_run_persistence, save_simulation_run
 from services.settings import runtime_env
 
 # One solve at a time: a full CT can hold several GB while it is segmented.
 SOLVE_LIMITER = anyio.CapacityLimiter(1)
+
+# Admission happens before FastAPI parses/spools multipart data, not merely before
+# UploadFile.read(). Keep the existing one-solve limit and bound queued uploads too.
+MAX_ADMITTED_UPLOADS = 3
+UPLOAD_ADMISSION = threading.BoundedSemaphore(MAX_ADMITTED_UPLOADS)
+UPLOAD_RETRY_SECONDS = 5
+
+
+class UploadAdmissionMiddleware:
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or scope.get("method") != "POST" or scope.get("path") != "/api/simulate":
+            return await self.app(scope, receive, send)
+        admission = UPLOAD_ADMISSION
+        if not admission.acquire(blocking=False):
+            response = JSONResponse(
+                {"detail": "The engine is busy with other uploads. Try again shortly."}, status_code=429,
+                headers={"Retry-After": str(UPLOAD_RETRY_SECONDS)},
+            )
+            return await response(scope, receive, send)
+        try:
+            await self.app(scope, receive, send)
+        finally:
+            admission.release()
 
 # Results of real solves by sha256 of the uploaded bytes. The solve reads only the bytes, so the same file always gives
 # the same numbers; posting it again (the dashboard's sample on every visit) answers at once instead of queueing behind
@@ -76,6 +104,7 @@ app = FastAPI(
     description="NIfTI bone segmentation and finite-element biomechanics API.",
 )
 app.include_router(bones_router)
+app.add_middleware(UploadAdmissionMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
@@ -83,7 +112,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["POST", "GET"],
     allow_headers=["*"],
-    expose_headers=[REUSED_HEADER],
+    expose_headers=[REUSED_HEADER, "Retry-After"],
 )
 app.include_router(explain_router)
 app.include_router(history_router)
@@ -112,6 +141,10 @@ class SimulationResponse(BaseModel):
     mesh_vertices: int
     mesh_faces: int
     source_filename: str
+    original_source_filename: str = Field(description="Filename of the execution whose result is returned.")
+    run_id: str = Field(description="Stable execution UUID, also used by the Tiger history row.")
+    input_sha256: str = Field(pattern=r"^[0-9a-f]{64}$", description="SHA256 of uploaded bytes; unchanged on cache reuse.")
+    persistence: Literal["pending", "saved", "unavailable"] = Field(description="Storage acknowledgement for this exact execution.")
 
 
 @app.get("/health")
@@ -140,7 +173,18 @@ async def simulate(file: Annotated[UploadFile, File(description="NIfTI .nii or .
 
         def solve_unless_kept() -> tuple[dict[str, Any], bool]:
             kept = _kept_result(digest)  # an identical upload may have been solved while this one queued
-            return (kept, False) if kept is not None else (simulate_fea(payload, filename=filename), True)
+            if kept is not None:
+                return kept, False
+            solved_result = {
+                **simulate_fea(payload, filename=filename),
+                "run_id": str(uuid4()), "input_sha256": digest, "original_source_filename": filename,
+                "source_filename": filename,
+            }
+            prepare_run_persistence(solved_result["run_id"])
+            # Publish while still holding the solve slot. A queued identical request
+            # must see this result before it can start another execution.
+            _keep_result(digest, solved_result)
+            return solved_result, True
 
         try:
             result, solved = await anyio.to_thread.run_sync(solve_unless_kept, limiter=SOLVE_LIMITER)
@@ -148,8 +192,8 @@ async def simulate(file: Annotated[UploadFile, File(description="NIfTI .nii or .
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         reused = not solved
         if solved:
-            _keep_result(digest, result)
             # Saved after the response is sent; a failed save is logged and never fails the simulation.
             background_tasks.add_task(save_simulation_run, result, solve_ms=(time.perf_counter() - started) * 1000.0)
     response.headers[REUSED_HEADER] = "1" if reused else "0"
-    return SimulationResponse(**{**result, "source_filename": filename})
+    return SimulationResponse(**{**result, "source_filename": filename,
+                                 "persistence": persistence_for_run(result["run_id"])})
