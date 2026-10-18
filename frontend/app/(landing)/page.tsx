@@ -3,7 +3,7 @@ import Link from "next/link";
 import { Activity, Box, Cloud, MessageSquareText } from "lucide-react";
 import manifest from "@/public/models/hfvalid-femur/manifest.json";
 import press from "@/public/models/femur-press/manifest.json";
-import { RainboneLogo } from "@/components/brand";
+import { RainboneLockup } from "@/components/brand";
 import { EnterShortcut } from "@/components/landing/enter-shortcut";
 import { ScanHero } from "@/components/landing/scan-hero";
 import { REPLAY_SLOT_ID, STRESS_PROFILE_P95, SWEEP_UNDERLINE_ID, rampColor } from "@/components/landing/stress-profile";
@@ -44,25 +44,27 @@ export default function Landing() {
   return (
     <main className="bg-canvas text-ink">
       <EnterShortcut />
-      <section aria-labelledby="hero-title" className="relative overflow-hidden bg-viewport text-white lg:h-[100svh] lg:max-h-[1000px] lg:min-h-[680px]">
+      <section aria-labelledby="hero-title" className="relative overflow-hidden bg-viewport text-white lg:flex lg:min-h-[clamp(680px,100svh,1000px)] lg:flex-col">
         <div aria-hidden className="rb-glow pointer-events-none absolute inset-0" />
         <div aria-hidden className="rb-ct-grid pointer-events-none absolute inset-0" />
         <div aria-hidden className="rb-vignette pointer-events-none absolute inset-0" />
         <div aria-hidden className="spectrum-line rb-draw-x absolute inset-x-0 top-0 h-[2px]" />
 
-        <header className="relative z-20 mx-auto flex h-16 max-w-[1440px] items-center justify-between px-4 lg:h-20 lg:px-12">
-          <Link href="/" aria-label="Rainbone home" className={`rounded-lg ${FOCUS_DARK}`}><RainboneLogo tone="dark" size="xl" /></Link>
+        {/* The brand lockup is the header's home link: at headline scale it opens the hero above the eyebrow.
+            The hero is at least one screen tall (680-1000 px) and grows on a short screen instead of clipping the stats. */}
+        <header className="relative z-20 mx-auto flex w-full max-w-[1440px] items-center justify-between gap-3 px-4 pt-4 lg:items-start lg:px-12 lg:pt-6">
+          <Link href="/" aria-label="Rainbone home" className={`rounded-xl ${FOCUS_DARK}`}><RainboneLockup /></Link>
           <div className="flex items-center gap-3">
-            <span className="hidden rounded-full border border-viewport-line px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.12em] text-nav-muted lg:inline-flex">Research prototype · not a medical device</span>
+            <span className="hidden rounded-full border border-viewport-line px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.12em] text-nav-muted xl:inline-flex">Research prototype · not a medical device</span>
             <Link href="/enter" className={`inline-flex h-9 items-center rounded-lg border border-nav-line px-4 text-[13px] font-medium text-nav-ink transition hover:bg-white/5 ${FOCUS_DARK}`}>Enter</Link>
           </div>
         </header>
 
         {/* No positioned ancestors here: on desktop the hero frame is absolute to the section. */}
-        <div className="rb-hero-column mx-auto max-w-[1440px] px-4 pb-10 pt-6 lg:flex lg:h-[calc(100%-80px)] lg:flex-col lg:px-12 lg:pb-0 lg:pt-0">
+        <div className="rb-hero-column mx-auto max-w-[1440px] px-4 pb-10 pt-6 lg:flex lg:w-full lg:flex-1 lg:flex-col lg:px-12 lg:pb-0 lg:pt-0">
           <div className="lg:max-w-[min(760px,calc(52vw-40px))]">
             <p className="rb-rise relative z-10 font-mono text-[11px] uppercase tracking-[0.14em] text-spectrum-cyan lg:text-[12px]">CT scan → finite elements → stress</p>
-            <h1 id="hero-title" className="relative z-10 mt-4 font-serif text-[36px] font-semibold leading-[1.02] tracking-[-0.02em] text-white lg:mt-5 lg:text-[clamp(44px,min(5.2vw,9vh),84px)] lg:leading-[0.95] lg:tracking-[-0.025em]">
+            <h1 id="hero-title" className="relative z-10 mt-3 font-serif text-[30px] font-semibold leading-[1.02] tracking-[-0.02em] text-white lg:mt-4 lg:text-[clamp(40px,min(4.3vw,7.5vh),70px)] lg:leading-[0.95] lg:tracking-[-0.025em]">
               <span className="rb-rise block" style={{ animationDelay: "100ms" }}>Watch a real femur</span>
               <span className="rb-rise block" style={{ animationDelay: "180ms" }}>
                 carry{" "}
@@ -78,17 +80,17 @@ export default function Landing() {
 
             <ScanHero maxMpa={m.max_nodal_von_mises_mpa} loadN={FACTS.loadN} lengthMm={FACTS.lengthMm} />
 
-            <p className="rb-rise relative z-10 mt-5 max-w-[52ch] text-[16px] leading-[1.6] text-viewport-ink lg:mt-6 lg:text-[18px]" style={{ animationDelay: "300ms" }}>
+            <p className="rb-rise relative z-10 mt-5 max-w-[52ch] text-[16px] leading-[1.6] text-viewport-ink lg:text-[18px]" style={{ animationDelay: "300ms" }}>
               A complete right femur from a real CT ({manifest.dataset} {manifest.case_id}), meshed into {FACTS.elements} tetrahedra and solved offline with {m.solver} under {FACTS.loadN}&nbsp;N on the hip. The colours are its computed von Mises stress, rendered live in your browser. Then the lab explains the result in plain words.
             </p>
 
-            <div className="rb-rise relative z-10 mt-6 flex flex-col gap-4 lg:mt-9 lg:flex-row lg:items-center lg:gap-6" style={{ animationDelay: "380ms" }}>
+            <div className="rb-rise relative z-10 mt-6 flex flex-col gap-4 lg:mt-8 lg:flex-row lg:items-center lg:gap-6 xl:gap-7" style={{ animationDelay: "380ms" }}>
               <Link
                 href="/enter"
-                className={`group relative inline-flex h-[52px] w-full items-center justify-center gap-3 rounded-xl bg-white px-6 text-[16px] font-semibold text-[#14212e] shadow-[0_12px_40px_-12px_rgb(var(--spectrum-cyan)/0.55)] transition hover:bg-white/95 lg:h-14 lg:w-auto lg:min-w-[232px] ${FOCUS_DARK}`}
+                className={`group relative inline-flex h-[60px] w-full items-center justify-center gap-3 rounded-xl bg-white px-7 text-[18px] font-semibold text-[#14212e] shadow-[0_14px_44px_-12px_rgb(var(--spectrum-cyan)/0.6)] transition hover:bg-white/95 lg:h-[72px] lg:w-auto lg:gap-4 lg:rounded-2xl lg:px-8 lg:text-[21px] xl:min-w-[300px] xl:px-10 ${FOCUS_DARK}`}
               >
                 Enter the lab
-                <kbd aria-hidden className="rounded-md border border-line px-1.5 font-mono text-[12px] font-normal text-muted">↵</kbd>
+                <kbd aria-hidden className="rounded-md border border-line px-2 font-mono text-[14px] font-normal text-muted lg:text-[16px]">↵</kbd>
                 <span aria-hidden className="spectrum-line absolute -bottom-2 left-4 right-4 h-[2px] origin-left scale-x-0 rounded-full transition-transform duration-200 group-hover:scale-x-100 group-focus-visible:scale-x-100" />
               </Link>
               <div className="flex items-center justify-center gap-6 lg:justify-start">
@@ -99,13 +101,13 @@ export default function Landing() {
             {/* Desktop: the hero's Replay button is portalled here, so it comes after the CTA in tab order but sits in the frame's corner. */}
             <div id={REPLAY_SLOT_ID} className="hidden lg:absolute lg:bottom-10 lg:right-[calc(max(0px,(100vw-1440px)/2)+40px)] lg:z-10 lg:block" />
 
-            <ul className="rb-rise relative z-10 mt-8 grid max-w-[640px] grid-cols-1 divide-y divide-viewport-line border-y border-viewport-line lg:mt-12 lg:grid-cols-3 lg:divide-x lg:divide-y-0" style={{ animationDelay: "460ms" }}>
+            <ul className="rb-rise relative z-10 mt-8 grid max-w-[640px] grid-cols-1 divide-y divide-viewport-line border-y border-viewport-line lg:mt-9 lg:grid-cols-3 lg:divide-x lg:divide-y-0" style={{ animationDelay: "460ms" }}>
               <Fact value={`${FACTS.loadN}\u00a0N`} label="on the femoral head" first />
               <Fact value={FACTS.elements} label={`tetrahedra · ${FACTS.nodes}\u00a0nodes`} />
               <Fact value={`0–${FACTS.maxNodal}\u00a0MPa`} label="nodal von Mises scale" />
             </ul>
 
-            <p className="relative z-10 mt-6 font-mono text-[10.5px] uppercase leading-relaxed tracking-[0.12em] text-nav-muted lg:mt-8 lg:text-[11px]">
+            <p className="relative z-10 mt-6 font-mono text-[10.5px] uppercase leading-relaxed tracking-[0.12em] text-nav-muted lg:text-[11px]">
               Research prototype · not a medical device<span className="lg:max-xl:hidden"> · solved offline with assumed material</span>
             </p>
           </div>
