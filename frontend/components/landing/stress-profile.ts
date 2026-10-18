@@ -15,6 +15,9 @@ export const PEAK_HEIGHT_MM = 241;
 // The hairline under "800 newtons" in the landing headline; the hero draws it as the scan rises.
 export const SWEEP_UNDERLINE_ID = "rb-sweep-underline";
 
+// Where the hero portals its desktop Replay button: after the CTA in the DOM, so the tab order follows the reading order.
+export const REPLAY_SLOT_ID = "rb-replay-slot";
+
 // The dashboard's blue → red data ramp, sampled at t in [0, 1].
 export function rampColor(t: number) {
   const x = Math.min(1, Math.max(0, t)) * (DATA_RAMP.length - 1);

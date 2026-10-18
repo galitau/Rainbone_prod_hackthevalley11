@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type vtkPolyData from "@kitware/vtk.js/Common/DataModel/PolyData";
 import { DATA_RAMP } from "@/lib/spectrum";
-import { PEAK_HEIGHT_MM, SWEEP_UNDERLINE_ID } from "@/components/landing/stress-profile";
+import { PEAK_HEIGHT_MM, REPLAY_SLOT_ID, SWEEP_UNDERLINE_ID } from "@/components/landing/stress-profile";
 
 type Phase = "standby" | "ready" | "sweeping" | "done" | "fallback";
 
@@ -51,6 +52,10 @@ export function ScanHero({ maxMpa, loadN, lengthMm }: Props) {
   const [phase, setPhase] = useState<Phase>("standby");
   const [reduced, setReduced] = useState(false);
   const [peak, setPeak] = useState({ mpa: maxMpa, heightMm: PEAK_HEIGHT_MM });
+  const [played, setPlayed] = useState(false); // the first sweep has finished, so Replay exists from here on
+  const [replaySlot, setReplaySlot] = useState<HTMLElement | null>(null);
+
+  useEffect(() => setReplaySlot(document.getElementById(REPLAY_SLOT_ID)), []);
 
   useEffect(() => {
     const hostEl = hostRef.current;
@@ -300,6 +305,7 @@ export function ScanHero({ maxMpa, loadN, lengthMm }: Props) {
           frame.setAttribute("data-flare", "");
           timers.push(window.setTimeout(() => frame.removeAttribute("data-flare"), 700));
           setPhase("done");
+          setPlayed(true);
         };
 
         const loop = () => {
@@ -484,9 +490,23 @@ export function ScanHero({ maxMpa, loadN, lengthMm }: Props) {
   const label = `Precomputed SfePy stress on the HFValid Pat001 femur, revealed from knee to head; peak nodal von Mises ${maxMpa.toFixed(2)} MPa, ${PEAK_HEIGHT_MM} mm above the distal end.`;
   const bracket = "pointer-events-none absolute h-4 w-4 border-white/20";
   const maxLabel = maxMpa.toFixed(2);
+  // Stays mounted while a replay sweeps (dimmed, inert) so keyboard focus is not dropped to <body>.
+  const showReplay = played && !reduced && (phase === "done" || phase === "sweeping");
+  const replayButton = (place: string) => (
+    <button
+      type="button"
+      aria-disabled={phase !== "done"}
+      onClick={() => {
+        if (phase === "done") replayRef.current();
+      }}
+      className={`rb-appear inline-flex items-center gap-1.5 rounded-lg border border-viewport-line bg-viewport/70 font-mono text-viewport-ink backdrop-blur-sm transition after:absolute after:-inset-2 after:content-[''] ${phase === "done" ? "hover:border-nav-line hover:text-white" : "cursor-default opacity-50"} ${FOCUS_DARK} ${place}`}
+    >
+      ↻ Replay scan
+    </button>
+  );
 
   return (
-    <div data-phase={phase} className="group relative -mx-4 mt-6 h-[200px] overflow-hidden md:h-[240px] lg:absolute lg:inset-y-0 lg:right-0 lg:z-0 lg:mx-0 lg:mt-0 lg:h-auto lg:w-[48vw] lg:min-w-[520px] lg:max-w-[760px]">
+    <div data-phase={phase} className="group relative -mx-4 mt-6 h-[200px] overflow-hidden md:h-[240px] lg:absolute lg:inset-y-0 lg:right-[max(0px,calc((100vw-1440px)/2))] lg:z-0 lg:mx-0 lg:mt-0 lg:h-auto lg:w-[48vw] lg:min-w-[520px] lg:max-w-[760px]">
       <div ref={frameRef} role="img" aria-label={label} className="absolute inset-0">
         <div ref={hostRef} aria-hidden className={`rb-fade pointer-events-none absolute inset-0 ${live ? "opacity-100" : "opacity-0"}`} />
 
@@ -546,15 +566,8 @@ export function ScanHero({ maxMpa, loadN, lengthMm }: Props) {
         </div>
       </div>
 
-      {phase === "done" && !reduced && (
-        <button
-          type="button"
-          onClick={() => replayRef.current()}
-          className={`rb-appear absolute bottom-[12px] left-[22px] z-10 inline-flex h-8 items-center gap-1.5 rounded-lg border border-viewport-line bg-viewport/70 px-2.5 font-mono text-[9.5px] text-viewport-ink lg:h-9 lg:px-3 lg:text-[11px] backdrop-blur-sm transition after:absolute after:-inset-2 after:content-[''] hover:border-nav-line hover:text-white lg:bottom-10 lg:left-auto lg:right-10 ${FOCUS_DARK}`}
-        >
-          ↻ Replay scan
-        </button>
-      )}
+      {showReplay && replayButton("absolute bottom-[12px] left-[22px] z-10 h-8 px-2.5 text-[9.5px] lg:hidden")}
+      {showReplay && replaySlot && createPortal(replayButton("relative h-9 px-3 text-[11px]"), replaySlot)}
     </div>
   );
 }

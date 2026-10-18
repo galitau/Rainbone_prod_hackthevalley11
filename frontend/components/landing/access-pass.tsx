@@ -8,11 +8,13 @@ import { STRESS_PROFILE_P95, rampColor } from "@/components/landing/stress-profi
 
 const FOCUS_DARK = "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-white";
 
+// SEAT matches the demo clinician the dashboard header shows next.
 const PASS_ROWS: [string, string][] = [
-  ["PASS", "Guest reviewer"],
+  ["SEAT", "Dr. Rowan · demo clinician"],
   ["ACCOUNT", "None"],
   ["STORED", "Nothing about you"],
   ["CASE", "HFValid Pat001 · right femur"],
+  ["USE", "Research only · not a medical device"],
   ["EVENT", "Hack the Valley 11"],
 ];
 
@@ -29,7 +31,8 @@ export function AccessPass({ maxMpa }: { maxMpa: number }) {
   useEffect(() => {
     router.prefetch("/dashboard");
     // autoFocus on an <a> only applies to server-rendered HTML; focus it after client navigations too.
-    enterRef.current?.focus({ preventScroll: true });
+    // Focusing scrolls it into view if a short screen puts it below the fold.
+    enterRef.current?.focus();
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape" && !busy.current) router.push("/");
     };
@@ -67,9 +70,9 @@ export function AccessPass({ maxMpa }: { maxMpa: number }) {
           </div>
 
           <p className="mt-5 font-mono text-[11px] uppercase tracking-[0.14em] text-nav-muted">Reading room · guest access</p>
-          <h1 className="mt-2 font-serif text-[34px] font-semibold leading-[1.05] tracking-[-0.015em] text-white sm:text-[40px]">Your pass is ready.</h1>
-          <p className="mt-3 text-[15px] leading-relaxed text-viewport-ink">
-            No account, no email, no password. This pass asks for nothing and stores nothing. The case inside is a real CT: HFValid Pat001, a complete right femur.
+          <h1 id="pass-title" className="mt-2 font-serif text-[34px] font-semibold leading-[1.05] tracking-[-0.015em] text-white sm:text-[40px]">Your pass is ready.</h1>
+          <p id="pass-note" className="mt-3 text-[15px] leading-relaxed text-viewport-ink">
+            Demo access: no account, no email, no password. The pass asks for nothing and stores nothing.
           </p>
 
           <dl className="mt-5 grid grid-cols-[auto_1fr] gap-x-5 gap-y-1.5 font-mono text-[12px]">
@@ -81,7 +84,8 @@ export function AccessPass({ maxMpa }: { maxMpa: number }) {
             ))}
           </dl>
 
-          <div className="mt-5">
+          {/* Decorative σ profile: dropped on short screens so the button stays above the fold. */}
+          <div className="mt-5 [@media(max-height:820px)]:hidden">
             <div aria-hidden className="flex h-14 items-end gap-[2px]">
               {STRESS_PROFILE_P95.map((value, i) => (
                 <span
@@ -101,14 +105,15 @@ export function AccessPass({ maxMpa }: { maxMpa: number }) {
             ref={enterRef}
             href="/dashboard"
             autoFocus
+            aria-describedby="pass-title pass-note"
             onClick={enter}
             className={`mt-5 inline-flex h-[52px] w-full items-center justify-center gap-3 rounded-xl bg-white text-[15px] font-semibold text-ink transition hover:bg-white/90 ${FOCUS_DARK}`}
           >
             Enter as guest
             <kbd aria-hidden className="rounded-md border border-line px-1.5 font-mono text-[12px] font-normal text-muted">↵</kbd>
           </Link>
-          <p role="status" aria-live="polite" className="mt-2 text-center font-mono text-[11px] text-nav-muted">
-            {phase === "opening" ? "Opening the lab…" : "Ready"}
+          <p role="status" aria-live="polite" className={phase === "opening" ? "mt-2 text-center font-mono text-[11px] text-nav-muted" : "sr-only"}>
+            {phase === "opening" ? "Opening the lab…" : ""}
           </p>
 
           <p className="mt-4 text-[12px] leading-relaxed text-nav-muted">

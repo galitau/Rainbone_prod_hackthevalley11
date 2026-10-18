@@ -1,19 +1,20 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Activity, Box, MessageSquareText } from "lucide-react";
+import { Activity, Box, Cloud, MessageSquareText } from "lucide-react";
 import manifest from "@/public/models/hfvalid-femur/manifest.json";
 import press from "@/public/models/femur-press/manifest.json";
 import { RainboneLogo } from "@/components/brand";
 import { EnterShortcut } from "@/components/landing/enter-shortcut";
 import { ScanHero } from "@/components/landing/scan-hero";
-import { STRESS_PROFILE_P95, SWEEP_UNDERLINE_ID, rampColor } from "@/components/landing/stress-profile";
+import { REPLAY_SLOT_ID, STRESS_PROFILE_P95, SWEEP_UNDERLINE_ID, rampColor } from "@/components/landing/stress-profile";
+import { ASSUMED_STRENGTH_MPA } from "@/lib/model";
 
 export const metadata: Metadata = {
   title: "Rainbone | Watch a real femur carry 800 newtons",
   description: "Patient-specific bone stress from CT: a real femur solved with finite elements and painted with its stress.",
 };
 
-// Every number on this page comes from the two model manifests the dashboard loads.
+// Every number on this page comes from the two model manifests the dashboard loads (and lib/model for the index).
 const m = manifest.metrics;
 const fmt = (value: number) => value.toLocaleString("en-US");
 const FACTS = {
@@ -61,7 +62,7 @@ export default function Landing() {
         <div className="mx-auto max-w-[1440px] px-4 pb-10 pt-6 lg:flex lg:h-[calc(100%-64px)] lg:flex-col lg:[justify-content:safe_center] lg:px-12 lg:pb-14 lg:pt-0">
           <div className="lg:max-w-[min(760px,calc(52vw-40px))]">
             <p className="rb-rise relative z-10 font-mono text-[11px] uppercase tracking-[0.14em] text-spectrum-cyan lg:text-[12px]">CT scan → finite elements → stress</p>
-            <h1 id="hero-title" className="relative z-10 mt-4 font-serif text-[36px] font-semibold leading-[1.02] tracking-[-0.02em] text-white lg:mt-5 lg:text-[clamp(44px,min(5.2vw,9vh),88px)] lg:leading-[0.95] lg:tracking-[-0.025em]">
+            <h1 id="hero-title" className="relative z-10 mt-4 font-serif text-[36px] font-semibold leading-[1.02] tracking-[-0.02em] text-white lg:mt-5 lg:text-[clamp(44px,min(5.2vw,9vh),84px)] lg:leading-[0.95] lg:tracking-[-0.025em]">
               <span className="rb-rise block" style={{ animationDelay: "100ms" }}>Watch a real femur</span>
               <span className="rb-rise block" style={{ animationDelay: "180ms" }}>
                 carry{" "}
@@ -78,7 +79,7 @@ export default function Landing() {
             <ScanHero maxMpa={m.max_nodal_von_mises_mpa} loadN={FACTS.loadN} lengthMm={FACTS.lengthMm} />
 
             <p className="rb-rise relative z-10 mt-5 max-w-[52ch] text-[16px] leading-[1.6] text-viewport-ink lg:mt-6 lg:text-[18px]" style={{ animationDelay: "300ms" }}>
-              A complete right femur from a real CT ({manifest.dataset} {manifest.case_id}), meshed into {FACTS.elements} tetrahedra and solved offline with {m.solver} under {FACTS.loadN} N on the hip. The colours are its computed von Mises stress, rendered live in your browser. Then it explains the result in plain words.
+              A complete right femur from a real CT ({manifest.dataset} {manifest.case_id}), meshed into {FACTS.elements} tetrahedra and solved offline with {m.solver} under {FACTS.loadN}&nbsp;N on the hip. The colours are its computed von Mises stress, rendered live in your browser. Then the lab explains the result in plain words.
             </p>
 
             <div className="rb-rise relative z-10 mt-6 flex flex-col gap-4 lg:mt-9 lg:flex-row lg:items-center lg:gap-6" style={{ animationDelay: "380ms" }}>
@@ -95,15 +96,17 @@ export default function Landing() {
                 <span className="hidden font-mono text-[12px] text-viewport-ink/60 lg:inline [@media(hover:none)]:hidden">or press ↵</span>
               </div>
             </div>
+            {/* Desktop: the hero's Replay button is portalled here, so it comes after the CTA in tab order but sits in the frame's corner. */}
+            <div id={REPLAY_SLOT_ID} className="hidden lg:absolute lg:bottom-10 lg:right-[calc(max(0px,(100vw-1440px)/2)+40px)] lg:z-10 lg:block" />
 
             <ul className="rb-rise relative z-10 mt-8 grid max-w-[640px] grid-cols-1 divide-y divide-viewport-line border-y border-viewport-line lg:mt-12 lg:grid-cols-3 lg:divide-x lg:divide-y-0" style={{ animationDelay: "460ms" }}>
-              <Fact value={`${FACTS.loadN} N`} label="on the femoral head" first />
-              <Fact value={FACTS.elements} label={`tetrahedra · ${FACTS.nodes} nodes`} />
-              <Fact value={`0–${FACTS.maxNodal} MPa`} label="nodal von Mises scale" />
+              <Fact value={`${FACTS.loadN}\u00a0N`} label="on the femoral head" first />
+              <Fact value={FACTS.elements} label={`tetrahedra · ${FACTS.nodes}\u00a0nodes`} />
+              <Fact value={`0–${FACTS.maxNodal}\u00a0MPa`} label="nodal von Mises scale" />
             </ul>
 
-            <p className="relative z-10 mt-6 font-mono text-[10.5px] uppercase leading-relaxed tracking-[0.12em] text-nav-muted lg:absolute lg:bottom-6 lg:left-[max(48px,calc((100vw-1440px)/2+48px))] lg:mt-0 lg:text-[11px]">
-              Research prototype · not a medical device · solved offline with assumed material
+            <p className="relative z-10 mt-6 font-mono text-[10.5px] uppercase leading-relaxed tracking-[0.12em] text-nav-muted lg:mt-8 lg:text-[11px]">
+              Research prototype · not a medical device<span className="lg:max-xl:hidden"> · solved offline with assumed material</span>
             </p>
           </div>
         </div>
@@ -125,25 +128,25 @@ export default function Landing() {
             </div>
             <h3 className="mt-5 flex items-center gap-2 text-[17px] font-semibold text-ink"><Box size={18} className="text-link" aria-hidden /> Stress map</h3>
             <p className="mt-2 flex-1 text-[15px] leading-relaxed text-body">
-              The complete right femur under {FACTS.loadN} N on the head, coloured from 0 to {FACTS.maxNodal} MPa. Rotate it, cut it open and read the stress on the cut face.
+              The complete right femur under {FACTS.loadN}&nbsp;N on the head, coloured from 0 to {FACTS.maxNodal}&nbsp;MPa. Rotate it, cut it open and read the stress on the cut face. Its peak against an assumed {ASSUMED_STRENGTH_MPA}&nbsp;MPa bone strength gives a fracture risk index: a research number, not a diagnosis.
             </p>
             <Link href="/enter" className="mt-4 w-fit rounded text-[15px] font-medium text-link hover:underline">Open the stress map →</Link>
           </article>
           <article className="flex flex-col rounded-2xl border border-line bg-surface p-6 shadow-card">
             <div aria-hidden className="flex h-[136px] flex-col justify-end rounded-xl bg-viewport px-4 pb-3 pt-4">
               <PressCurve loads={pressLoads} peak={pressPeak} peakFrame={pressPeakFrame} />
-              <p className="mt-2 flex flex-wrap justify-between gap-x-3 font-mono text-[10px] text-nav-muted"><span>force by frame</span><span className="text-viewport-ink">peak {fmt(Math.round(pressPeak))} N · frame {String(pressPeakFrame).padStart(2, "0")}</span></p>
+              <p className="mt-2 flex flex-wrap justify-between gap-x-3 font-mono text-[10px] text-nav-muted"><span>force by frame</span><span className="text-viewport-ink">peak {fmt(Math.round(pressPeak))}&nbsp;N · frame {String(pressPeakFrame).padStart(2, "0")}</span></p>
             </div>
             <h3 className="mt-5 flex items-center gap-2 text-[17px] font-semibold text-ink"><Activity size={18} className="text-link" aria-hidden /> Press test</h3>
             <p className="mt-2 flex-1 text-[15px] leading-relaxed text-body">
-              A virtual press loads the same femur over {pressLoads.length} solved frames. The force peaks at {fmt(Math.round(pressPeak))} N, then falls as elements pass an assumed strain limit.
+              A virtual press loads the same femur over {pressLoads.length} solved frames. The force peaks at {fmt(Math.round(pressPeak))}&nbsp;N, then falls as elements pass an assumed strain limit.
             </p>
             <Link href="/physics-simulations" className="mt-4 w-fit rounded text-[15px] font-medium text-link hover:underline">Open physics simulations →</Link>
           </article>
           <article className="flex flex-col rounded-2xl border border-line bg-surface p-6 shadow-card">
             <div aria-hidden className="flex h-[136px] flex-col justify-end rounded-xl bg-viewport px-4 pb-3 pt-4">
               <div className="flex h-16 flex-wrap content-end gap-1.5">
-                {[`${FACTS.loadN} N`, `${FACTS.maxNodal} MPa`, `${FACTS.youngsGpa} GPa`, `${FACTS.volume} cm³`].map(value => (
+                {[`${FACTS.loadN}\u00a0N`, `${FACTS.maxNodal}\u00a0MPa`, `${FACTS.youngsGpa}\u00a0GPa`, `${FACTS.volume}\u00a0cm³`].map(value => (
                   <span key={value} className="rounded-md border border-viewport-line bg-white/[0.03] px-2 py-1 font-mono text-[11px] text-white">{value}</span>
                 ))}
               </div>
@@ -156,6 +159,28 @@ export default function Landing() {
             <Link href="/enter" className="mt-4 w-fit rounded text-[15px] font-medium text-link hover:underline">Read it in the lab →</Link>
           </article>
         </div>
+
+        <p className={`${KICKER} mt-14`}>Also in the lab</p>
+        <article className="mt-4 flex flex-col gap-6 rounded-2xl border border-line bg-surface p-6 shadow-card lg:flex-row lg:items-center lg:gap-8">
+          <div aria-hidden className="rounded-xl bg-viewport px-4 py-5 lg:w-[520px] lg:shrink-0">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-2 font-mono text-[11px] text-white">
+              {["CTPelvic1K CT", "TotalSegmentator", "Vultr Object Storage", "pre-signed link", "your browser"].map((step, i, steps) => (
+                <span key={step} className="flex items-center gap-2">
+                  <span className="whitespace-nowrap rounded-md border border-viewport-line bg-white/[0.03] px-2 py-1">{step}</span>
+                  {i < steps.length - 1 && <span className="text-nav-muted">→</span>}
+                </span>
+              ))}
+            </div>
+            <p className="mt-3 font-mono text-[10px] text-nav-muted">pelvic bone meshes · private bucket</p>
+          </div>
+          <div className="flex flex-1 flex-col">
+            <h3 className="flex items-center gap-2 text-[17px] font-semibold text-ink"><Cloud size={18} className="text-link" aria-hidden /> Imaging library</h3>
+            <p className="mt-2 text-[15px] leading-relaxed text-body">
+              Pelvic bones segmented by TotalSegmentator from CTPelvic1K CT scans, kept in a private Vultr Object Storage bucket. The browser downloads each mesh through a pre-signed link that the API issues.
+            </p>
+            <Link href="/bones" className="mt-4 w-fit rounded text-[15px] font-medium text-link hover:underline">Open the imaging library →</Link>
+          </div>
+        </article>
       </section>
 
       <section id="how" aria-labelledby="how-title" className="scroll-mt-6 border-t border-line bg-surface">
@@ -164,14 +189,14 @@ export default function Landing() {
           <h2 id="how-title" className={H2}>From CT to stress, on a real pipeline.</h2>
           <div aria-hidden className="spectrum-line mt-10 hidden h-[2px] rounded-full lg:block" />
           <ol className="mt-8 grid gap-6 lg:mt-6 lg:grid-cols-5 lg:gap-5">
-            <Step n="01" title="CT">{manifest.dataset} {manifest.case_id}: {FACTS.voxels} voxels at {FACTS.spacing} mm.</Step>
-            <Step n="02" title="Surface">Segmented in 3D Slicer {manifest.slicer_version} and reduced to {FACTS.surfacePoints} surface points.</Step>
-            <Step n="03" title="Mesh">{manifest.mesher}: {FACTS.elements} tetrahedra, {FACTS.nodes} nodes, {FACTS.volume} cm³ of bone.</Step>
-            <Step n="04" title="Solve">{m.solver} linear elasticity: distal {FACTS.supportMm} mm fixed, {FACTS.loadN} N on the femoral head, E = {FACTS.youngsGpa} GPa, ν = {FACTS.poisson} (assumed).</Step>
-            <Step n="05" title="See">vtk.js paints nodal von Mises stress, 0–{FACTS.maxNodal} MPa, in your browser. The raw element peak, {FACTS.maxElement} MPa, stays in the downloadable mesh.</Step>
+            <Step n="01" title="CT">{manifest.dataset} {manifest.case_id}: {FACTS.voxels} voxels at {FACTS.spacing}&nbsp;mm.</Step>
+            <Step n="02" title="Surface">The dataset authors&apos; segmentation, exported as a closed surface in 3D Slicer {manifest.slicer_version} and decimated to {FACTS.surfacePoints} surface points.</Step>
+            <Step n="03" title="Mesh">{manifest.mesher}: {FACTS.elements} tetrahedra, {FACTS.nodes} nodes, {FACTS.volume}&nbsp;cm³ of bone.</Step>
+            <Step n="04" title="Solve">{m.solver} linear elasticity: distal {FACTS.supportMm}&nbsp;mm fixed, {FACTS.loadN}&nbsp;N on the femoral head, E&nbsp;=&nbsp;{FACTS.youngsGpa}&nbsp;GPa, ν&nbsp;=&nbsp;{FACTS.poisson} (assumed).</Step>
+            <Step n="05" title="See">vtk.js paints nodal von Mises stress, 0–{FACTS.maxNodal}&nbsp;MPa, in your browser. The raw element peak, {FACTS.maxElement}&nbsp;MPa, stays in the downloadable mesh.</Step>
           </ol>
           <p className="mt-8 rounded-xl bg-sunken p-5 text-[13px] leading-relaxed text-muted">
-            <span className="font-medium text-body">Limits:</span> homogeneous, uncalibrated material; illustrative loads, not a full musculoskeletal model; no mesh-convergence study or clinical validation. Everything is solved offline; nothing is solved in your browser.
+            <span className="font-medium text-body">Limits:</span> homogeneous, uncalibrated material; illustrative loads, not a full musculoskeletal model; no mesh-convergence study or clinical validation. The femur on this page was solved offline; the lab&apos;s live engine check solves a sample scan on the server. Nothing is solved in your browser.
           </p>
         </div>
       </section>
@@ -182,10 +207,14 @@ export default function Landing() {
           <h2 id="data-title" className={H2}>Built on open data.</h2>
           <dl className="mt-10 grid gap-x-12 gap-y-8 lg:grid-cols-2">
             <Credit term="HFValid">
-              One of 101 calibrated CT scans of whole femurs. Aldieri, La Mattina, Szyszko, Baruffaldi, Viceconti (2025), University of Bologna.{" "}
+              A collection of calibrated CT scans of whole femurs. Aldieri, La Mattina, Szyszko, Baruffaldi, Viceconti (2025), University of Bologna.{" "}
               <a href={manifest.source_url} target="_blank" rel="noreferrer" className="rounded text-link hover:underline">DOI 10.6092/unibo/amsacta/8431</a> · {manifest.license}.
             </Credit>
-            <Credit term="Tools">SfePy · {manifest.mesher} · 3D Slicer {manifest.slicer_version} · vtk.js · Next.js</Credit>
+            <Credit term="CTPelvic1K">
+              Pelvic CT scans for the imaging library. Liu et al. (2021), IJCARS.{" "}
+              <a href="https://doi.org/10.5281/zenodo.4588403" target="_blank" rel="noreferrer" className="rounded text-link hover:underline">DOI 10.5281/zenodo.4588403</a> · CC BY 4.0.
+            </Credit>
+            <Credit term="Tools">SfePy · {manifest.mesher} · 3D Slicer {manifest.slicer_version} · TotalSegmentator · vtk.js · Next.js</Credit>
             <Credit term="Team">Built at Hack the Valley 11 by Galit Tauber, Camila Rojas, Jisara Wuttikreekiat and Marco Anthony Ayuste.</Credit>
             <Credit term="Source">
               <a href="https://github.com/galitau/Rainbone_prod_hackthevalley11" target="_blank" rel="noreferrer" className="rounded text-link hover:underline">github.com/galitau/Rainbone_prod_hackthevalley11</a>
@@ -207,7 +236,7 @@ export default function Landing() {
 function Fact({ value, label, first }: { value: string; label: string; first?: boolean }) {
   return (
     <li className={`flex items-baseline justify-between gap-4 py-3 lg:block lg:px-5 lg:py-4 ${first ? "lg:pl-0" : ""}`}>
-      <p className="font-mono text-[18px] tabular-nums text-white lg:text-[20px]">{value}</p>
+      <p className="whitespace-nowrap font-mono text-[18px] tabular-nums text-white lg:text-[17px] xl:text-[20px]">{value}</p>
       <p className="text-right text-[12px] text-nav-muted lg:mt-1 lg:text-left">{label}</p>
     </li>
   );
