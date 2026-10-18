@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Box, Download, Maximize2, RotateCcw } from "lucide-react";
 import type vtkPolyData from "@kitware/vtk.js/Common/DataModel/PolyData";
+import { BONE, DATA_RAMP, VIEWPORT_BACKGROUND } from "@/lib/spectrum";
 import { parseTetMesh, sliceTets, type TetMesh } from "@/lib/vtu-cut";
 
 type Field = "stress" | "displacement" | "anatomy";
@@ -80,7 +81,7 @@ export function BoneViewer() {
           reader.delete();
           throw new Error("The model is missing its solved stress or displacement field.");
         }
-        const view = GenericRenderWindow.newInstance({ background: [0, 0, 0], listenWindowResize: false });
+        const view = GenericRenderWindow.newInstance({ background: VIEWPORT_BACKGROUND, listenWindowResize: false });
         const actor = Actor.newInstance();
         const mapper = Mapper.newInstance();
         const colors = ColorTransferFunction.newInstance();
@@ -116,7 +117,7 @@ export function BoneViewer() {
         actor.getProperty().setSpecularPower(24);
         actor.getProperty().setInterpolationToPhong();
         actor.getProperty().setEdgeColor(0.08, 0.13, 0.19);
-        actor.getProperty().setColor(0.9, 0.88, 0.82);
+        actor.getProperty().setColor(...BONE);
         // The cut face is a flat-shaded cap sliced from the solved tetrahedra, so stress inside the bone is real FEA output.
         capMapper.setInputData(capData);
         capMapper.setLookupTable(colors);
@@ -199,11 +200,7 @@ export function BoneViewer() {
           mapper.setScalarVisibility(nextField !== "anatomy");
           const max = nextField === "stress" ? info.metrics.max_nodal_von_mises_mpa : info.metrics.max_displacement_mm;
           colors.removeAllPoints();
-          colors.addRGBPoint(0, 0.16, 0.3, 0.85);
-          colors.addRGBPoint(max * 0.25, 0.1, 0.8, 0.9);
-          colors.addRGBPoint(max * 0.5, 0.35, 0.9, 0.55);
-          colors.addRGBPoint(max * 0.75, 1, 0.8, 0.2);
-          colors.addRGBPoint(max, 0.95, 0.24, 0.19);
+          DATA_RAMP.forEach((rgb, i) => colors.addRGBPoint(max * i / (DATA_RAMP.length - 1), ...rgb));
           mapper.setScalarRange(0, max);
           if (nextField === "stress") {
             mapper.setScalarModeToUsePointFieldData();
@@ -259,49 +256,68 @@ export function BoneViewer() {
     } catch { setError("Fullscreen is unavailable in this browser. Rotation and zoom remain available."); }
   }
   const maximum = field === "stress" ? model?.metrics.max_nodal_von_mises_mpa : model?.metrics.max_displacement_mm;
-  const buttonClass = "rounded-lg border border-line bg-panel px-3 py-2 text-xs text-muted transition hover:text-ink disabled:opacity-40";
+  const iconButton = "rounded-lg border border-line bg-surface p-2 text-muted transition hover:border-line-strong hover:text-ink disabled:opacity-40";
+  const fields: { value: Field; label: string }[] = [{ value: "anatomy", label: "Anatomy" }, { value: "stress", label: "Stress" }, { value: "displacement", label: "Displacement" }];
 
   return (
-    <section ref={sectionRef} aria-label="Interactive bone finite element visualization" className="overflow-hidden rounded-xl border border-line bg-[#0a121b] shadow-glow [&:fullscreen]:flex [&:fullscreen]:flex-col">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-4 py-3">
-        <div><h3 className="flex items-center gap-2 text-sm font-medium"><Box size={16} className="text-cyan" /> Femur · finite element analysis</h3><p className="mt-1 text-[10px] text-muted">{model ? `${model.dataset} ${model.case_id} · ${model.anatomy}` : "Loading the complete femur"}</p></div>
+    <section ref={sectionRef} aria-label="Interactive bone finite element visualization" className="overflow-hidden rounded-2xl border border-line bg-surface shadow-card [&:fullscreen]:flex [&:fullscreen]:flex-col [&:fullscreen]:rounded-none">
+      <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
+        <div className="min-w-0">
+          <h2 className="flex items-center gap-2 text-[15px] font-semibold text-ink"><Box size={17} className="text-link" aria-hidden /> Femur · finite element analysis</h2>
+          <p className="mt-0.5 text-[12px] text-muted">{model ? `${model.dataset} ${model.case_id} · ${model.anatomy}` : "Loading the complete femur"}</p>
+        </div>
         <div className="flex items-center gap-2">
-          <select aria-label="Displayed FEA field" value={field} disabled={status !== "ready"} onChange={event => setField(event.target.value as Field)} className={`${buttonClass} max-w-[170px]`}><option value="anatomy">Bone surface</option><option value="stress">FEA · von Mises stress</option><option value="displacement">FEA · displacement</option></select>
-          <button disabled={status !== "ready"} onClick={() => { controlsRef.current?.reset(); setDepth(0); if (cutRef.current) void controlsRef.current?.aim(true, 0).catch(() => undefined); }} className={buttonClass} aria-label="Reset bone view"><RotateCcw size={15} /></button>
-          <button onClick={maximize} className={buttonClass} aria-label="Toggle viewer fullscreen"><Maximize2 size={15} /></button>
+          <div role="radiogroup" aria-label="Displayed FEA field" className="flex rounded-lg border border-line bg-sunken p-0.5">
+            {fields.map(option => (
+              <button key={option.value} role="radio" aria-checked={field === option.value} disabled={status !== "ready"} onClick={() => setField(option.value)}
+                className={`rounded-md px-3 py-1.5 text-[12.5px] font-medium transition disabled:opacity-40 ${field === option.value ? "bg-surface text-ink shadow-card" : "text-muted hover:text-ink"}`}>{option.label}</button>
+            ))}
+          </div>
+          <button disabled={status !== "ready"} onClick={() => { controlsRef.current?.reset(); setDepth(0); if (cutRef.current) void controlsRef.current?.aim(true, 0).catch(() => undefined); }} className={iconButton} aria-label="Reset bone view" title="Reset view"><RotateCcw size={16} /></button>
+          <button onClick={maximize} className={iconButton} aria-label="Toggle viewer fullscreen" title="Fullscreen"><Maximize2 size={16} /></button>
         </div>
       </div>
-      <div className="relative min-h-[420px] flex-1 sm:min-h-[490px]">
+      <div className="relative mx-3 min-h-[420px] flex-1 overflow-hidden rounded-xl bg-viewport sm:min-h-[500px]">
         <div ref={containerRef} role="img" aria-label="Interactive complete femur with bone surface and computed FEA views" className="absolute inset-0 touch-none" />
         {status === "ready" && model && <>
-          <p className="pointer-events-none absolute bottom-4 left-4 right-4 text-center text-[10px] text-muted">Drag to rotate · Scroll / pinch to zoom · Shift + drag to pan</p>
+          <div className="pointer-events-none absolute left-3 top-3 rounded-lg border border-viewport-line bg-viewport/85 px-3 py-2 backdrop-blur">
+            <p className="text-[10.5px] font-medium uppercase tracking-[0.08em] text-viewport-ink/70">{field === "anatomy" ? "CT-derived femur" : `${model.metrics.solver} · solved`}</p>
+            <p className="mt-0.5 text-[12px] text-white">{field === "anatomy" ? "Bone surface" : field === "stress" ? "Nodal von Mises stress" : "Displacement magnitude"}</p>
+            {field !== "anatomy" && <div className="mt-2 w-44"><div className="spectrum-ramp h-1.5 rounded-full" /><div className="mt-1 flex justify-between font-mono text-[10px] text-viewport-ink"><span>0</span><span>{maximum?.toPrecision(4)} {field === "stress" ? "MPa" : "mm"}</span></div></div>}
+          </div>
+          <p className="pointer-events-none absolute inset-x-3 bottom-3 text-center text-[11px] text-viewport-ink/70">Drag to rotate · Scroll or pinch to zoom · Shift + drag to pan</p>
         </>}
-        {status === "loading" && <div role="status" className="absolute inset-0 flex items-center justify-center bg-[#0a121b] text-sm text-muted"><span className="mr-3 h-3 w-3 animate-pulse rounded-full bg-cyan" />Loading solved bone mesh…</div>}
-        {status === "error" && <div role="alert" className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-[#0a121b] p-8 text-center"><p className="max-w-sm text-sm text-warning">{error}</p><button className={buttonClass} onClick={() => setAttempt(value => value + 1)}>Retry model</button></div>}
+        {status === "loading" && <div role="status" className="absolute inset-0 flex items-center justify-center text-[13px] text-viewport-ink"><span className="spectrum-line mr-3 h-1 w-10 animate-pulse rounded-full" aria-hidden />Loading solved bone mesh…</div>}
+        {status === "error" && <div role="alert" className="absolute inset-0 flex flex-col items-center justify-center gap-4 p-8 text-center"><p className="max-w-sm text-[13px] text-white">{error}</p><button className="rounded-lg bg-white px-4 py-2 text-[13px] font-medium text-ink" onClick={() => setAttempt(value => value + 1)}>Retry model</button></div>}
       </div>
-      {status === "ready" && model && <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line px-4 py-3">
-        <div><p className="font-mono text-[10px] text-cyan">{field === "anatomy" ? "CT-DERIVED FEMUR" : `${model.metrics.solver.toUpperCase()} · SOLVED`}</p><p className="mt-1 text-[10px] text-muted">{field === "anatomy" ? "Select an FEA view to inspect stress or displacement" : `${model.metrics.elements.toLocaleString()} tetrahedra · ${model.metrics.load_newtons} N compression`}</p></div>
-        {field !== "anatomy" && <div><p className="text-[10px] text-ink">{field === "stress" ? "Nodal von Mises stress · MPa" : "Displacement magnitude · mm"}</p><div className="mt-2 h-2 w-44 rounded-full bg-[linear-gradient(to_right,#294dd9,#1acce6,#59e68c,#ffcc33,#f23d30)]" /><div className="mt-1 flex justify-between font-mono text-[10px] text-muted"><span>0</span><span>{maximum?.toPrecision(4)}</span></div></div>}
-      </div>}
-      <div className="flex flex-wrap items-center gap-4 border-t border-line px-4 py-3">
-        <label className="flex items-center gap-2 text-xs text-muted"><input type="checkbox" checked={edges} disabled={status !== "ready"} onChange={event => setEdges(event.target.checked)} className="accent-cyan" /> Show mesh</label>
-        <label className="flex items-center gap-2 text-xs text-muted"><input type="checkbox" checked={cut} disabled={status !== "ready"} onChange={event => setCut(event.target.checked)} className="accent-cyan" /> Cut-away</label>
-        {cut ? <label className="flex min-w-44 flex-1 items-center gap-3 text-xs text-muted">Depth<input type="range" min="-100" max="100" value={depth} onChange={event => setDepth(Number(event.target.value))} aria-label="Cut depth along the viewing direction" className="min-w-16 flex-1 accent-cyan" /><span className="w-9 font-mono text-[10px]">{depth}%</span></label>
-          : <span className="text-[10px] text-muted">Drag to rotate · scroll to zoom into the cut face</span>}
-        {model && <a className="flex items-center gap-1.5 text-xs text-cyan hover:underline" href={`${MODEL_PATH}/bone-fea.vtu`} download><Download size={14} /> FEA mesh</a>}
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-3 px-5 py-3.5">
+        <Toggle checked={cut} disabled={status !== "ready"} onChange={setCut} label="Cut-away" />
+        <Toggle checked={edges} disabled={status !== "ready"} onChange={setEdges} label="Show mesh" />
+        {cut ? <label className="flex min-w-48 flex-1 items-center gap-3 text-[12.5px] text-body">Depth<input type="range" min="-100" max="100" value={depth} onChange={event => setDepth(Number(event.target.value))} aria-label="Cut depth along the viewing direction" className="min-w-16 flex-1 accent-primary" /><span className="w-10 text-right font-mono text-[11px] text-muted tabular-nums">{depth}%</span></label>
+          : <span className="flex-1 text-[12px] text-muted">Cut-away slices the bone facing you; scroll to zoom into the cut face.</span>}
+        {model && <a className="flex items-center gap-1.5 text-[12.5px] font-medium text-link hover:underline" href={`${MODEL_PATH}/bone-fea.vtu`} download><Download size={15} aria-hidden /> FEA mesh</a>}
       </div>
-      {model && <details className="border-t border-line px-4 py-3 text-[11px] text-muted">
-        <summary className="cursor-pointer text-ink">Model, load & provenance</summary>
-        <div className="mt-3 space-y-2 leading-5">
+      {error && status === "ready" && <p role="status" className="mx-5 mb-3 rounded-lg border border-caution/25 bg-caution/[0.07] px-3 py-2 text-[12px] text-caution">{error}</p>}
+      {model && <details className="group border-t border-line px-5 py-3.5 text-[12px] text-body">
+        <summary className="cursor-pointer font-medium text-ink marker:text-muted">Model, load &amp; provenance</summary>
+        <div className="mt-3 space-y-2 leading-5 text-muted">
           <p>Complete patient-derived femur from HFValid, processed in 3D Slicer {model.slicer_version}. The tetrahedral mesh follows the Slicer surface: {model.metrics.elements.toLocaleString()} elements and {model.metrics.nodes.toLocaleString()} nodes. Smooth lighting does not move the mesh or alter stress values.</p>
           <p>Distal 15 mm fixed in all directions; {model.metrics.load_newtons} N distributed over the superior femoral-head surface in −Z. Homogeneous, isotropic linear elasticity: E = {model.metrics.youngs_modulus_mpa / 1000} GPa, ν = {model.metrics.poisson_ratio}. Undeformed geometry; FEA colors show solved values.</p>
-          <p>Stress contours use volume-weighted nodal averages. The download retains raw element stresses, with a peak of {model.metrics.max_von_mises_mpa.toFixed(2)} MPa.</p>
+          <p>Stress contours use volume-weighted nodal averages. The download retains raw element stresses, with a peak of {model.metrics.max_von_mises_mpa.toFixed(2)} MPa. The cut-away face is sliced from the solved tetrahedra.</p>
           <p>Research example with assumed material and loading, without mesh-convergence or clinical validation. Nearby dashboard cards and history are separate demo data.</p>
-          <p>HFValid: Aldieri, La Mattina, Szyszko, Baruffaldi & Viceconti (2025), University of Bologna · CC BY 4.0.</p>
-          <div className="flex flex-wrap gap-x-4 gap-y-1 text-cyan"><a href={model.source_url} target="_blank" rel="noreferrer" className="hover:underline">CT dataset & attribution</a><a href={`${MODEL_PATH}/bone.seg.nrrd`} download className="hover:underline">Slicer segmentation</a><a href={`${MODEL_PATH}/manifest.json`} download className="hover:underline">Solver report</a></div>
+          <p>HFValid: Aldieri, La Mattina, Szyszko, Baruffaldi &amp; Viceconti (2025), University of Bologna · CC BY 4.0.</p>
+          <div className="flex flex-wrap gap-x-4 gap-y-1 font-medium text-link"><a href={model.source_url} target="_blank" rel="noreferrer" className="hover:underline">CT dataset &amp; attribution</a><a href={`${MODEL_PATH}/bone.seg.nrrd`} download className="hover:underline">Slicer segmentation</a><a href={`${MODEL_PATH}/manifest.json`} download className="hover:underline">Solver report</a></div>
         </div>
       </details>}
-      {error && status === "ready" && <p role="status" className="px-4 pb-3 text-xs text-warning">{error}</p>}
     </section>
+  );
+}
+
+function Toggle({ checked, disabled, onChange, label }: { checked: boolean; disabled?: boolean; onChange: (value: boolean) => void; label: string }) {
+  return (
+    <button role="switch" aria-checked={checked} disabled={disabled} onClick={() => onChange(!checked)} className="flex items-center gap-2 text-[12.5px] font-medium text-body disabled:opacity-40">
+      <span className={`relative h-5 w-9 rounded-full transition ${checked ? "bg-primary" : "bg-line-strong"}`}><span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all ${checked ? "left-[18px]" : "left-0.5"}`} /></span>
+      {label}
+    </button>
   );
 }
