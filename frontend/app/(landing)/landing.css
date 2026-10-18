@@ -33,17 +33,26 @@
   }
 
   /* Hero text column: centred on the band the femur stands in (scan-hero.tsx: 172 px from the section's top,
-     48 px from its bottom; the header takes 80), so the gap above is 44 px taller than the gap below.
-     On a short screen the gap above gives way first and the research-prototype line keeps 24 px. */
+     48 px from its bottom). Centring needs the gap below to exceed the gap above by (header height - 124 px):
+     the header with the brand lockup is 123 px tall on lg, so the gaps are equal, and 149 px from xl, so the gap
+     below starts 25 px taller. On a short screen the eyebrow keeps 32 px below the lockup (the text may then
+     sit a few px low) and the research-prototype line keeps 24 px. */
   .rb-hero-column::before {
     content: "";
-    flex: 1 1 44px;
+    flex: 1 1 0px;
+    min-height: 32px;
   }
 
   .rb-hero-column::after {
     content: "";
     flex: 1 1 0px;
     min-height: 24px;
+  }
+}
+
+@media (min-width: 1280px) {
+  .rb-hero-column::after {
+    flex-basis: 25px;
   }
 }
 

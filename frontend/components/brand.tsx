@@ -45,3 +45,18 @@ export function RainboneLogo({ tone = "dark", subtitle = "Clinical biomechanics"
     </div>
   );
 }
+
+// The landing hero's lockup, the biggest thing on the first screen: mark / wordmark 56 / 46 px on phones (48 / 40 below
+// 380 px wide, so it still fits beside the header's Enter button), 72 / 64 from sm, 88 / 80 from lg and 112 / 104 from xl.
+// Its text sizes avoid the pixel sizes globals.css raises, so the class value is the rendered size.
+export function RainboneLockup({ subtitle = "Clinical biomechanics" }: { subtitle?: string }) {
+  return (
+    <div className="flex items-center gap-3 max-[379px]:gap-2.5 sm:gap-4 lg:gap-5 xl:gap-6">
+      <RainboneMark size={112} className="h-14 w-14 max-[379px]:h-12 max-[379px]:w-12 sm:h-[72px] sm:w-[72px] lg:h-[88px] lg:w-[88px] xl:h-28 xl:w-28" />
+      <div>
+        <p className="whitespace-nowrap font-serif text-[46px] font-semibold leading-[0.9] tracking-[-0.02em] text-nav-ink max-[379px]:text-[40px] sm:text-[64px] lg:text-[80px] xl:text-[104px]">Rainbone</p>
+        <p className="mt-1.5 whitespace-nowrap text-[14px] font-medium leading-[1.2] tracking-[0.04em] text-nav-muted max-[379px]:text-[12px] sm:mt-2 sm:text-[16px] xl:mt-2.5 xl:text-[18px]">{subtitle}</p>
+      </div>
+    </div>
+  );
+}
