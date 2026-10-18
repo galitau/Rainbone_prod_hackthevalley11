@@ -8,3 +8,5 @@ sfepy
 numpy
 scipy
 pydantic
+python-multipart
+httpx2

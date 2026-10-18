@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -24,13 +25,18 @@ app.add_middleware(
 
 
 class SimulationResponse(BaseModel):
-    max_von_mises_stress_mpa: float = Field(description="Maximum Von Mises stress in MPa.")
-    average_youngs_modulus_gpa: float = Field(description="Mean apparent Young's modulus in GPa.")
-    bone_volume_cm3: float = Field(description="Segmented bone volume in cm³.")
+    max_von_mises_stress_mpa: float = Field(
+        description="99.5th percentile of element Von Mises stress in MPa from the SfePy solve."
+    )
+    average_youngs_modulus_gpa: float = Field(
+        description="Volume-weighted mean element Young's modulus in GPa from the HU mapping."
+    )
+    bone_volume_cm3: float = Field(description="Finite-element mesh volume in cm³.")
     fracture_risk_index_percent: float = Field(
         ge=0,
         le=100,
-        description="Estimated fracture risk index from 0 to 100 percent.",
+        description="Illustrative index: stress / assumed 150 MPa strength x 100, clipped to 0-100. "
+        "Not a validated fracture risk.",
     )
     load_newtons: float = Field(default=800, description="Applied compressive load.")
     mesh_vertices: int
@@ -53,7 +59,7 @@ async def simulate(file: Annotated[UploadFile, File(description="NIfTI .nii or .
         raise HTTPException(status_code=400, detail="The uploaded NIfTI file is empty.")
 
     try:
-        result = simulate_fea(payload, filename=file.filename)
+        result = await run_in_threadpool(simulate_fea, payload, filename=file.filename)
     except FEASolverError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 

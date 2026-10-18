@@ -1,14 +1,41 @@
 from __future__ import annotations
 
-from io import BytesIO
+import gzip
+import importlib.util
+import logging
+import struct
+import time
+from pathlib import Path
 from typing import Any
 
 import nibabel as nib
 import numpy as np
 import scipy.ndimage as ndi
-import trimesh
 from pydantic import BaseModel, Field
-from skimage.measure import marching_cubes
+
+
+def _load_bone_fea_solver():
+    # scripts/ is not a package; load solve.py by path so the API and the
+    # static femur model run the same SfePy solver.
+    path = Path(__file__).resolve().parents[2] / "scripts" / "bone_fea" / "solve.py"
+    spec = importlib.util.spec_from_file_location("rainbowbone_bone_fea_solve", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+bone_fea = _load_bone_fea_solver()
+logger = logging.getLogger(__name__)
+
+LOAD_NEWTONS = 800.0
+POISSON_RATIO = 0.3
+ASSUMED_STRENGTH_MPA = 150.0
+STRESS_PERCENTILE = 99.5
+# Coarsen the segmented bone above this many voxels so a request stays well
+# under 20 s; the README lists the timings this value was chosen from.
+MAX_FE_VOXELS = 8000
+# Clamp and load bands: the two outermost node layers at each end along Z.
+BAND_VOXELS = 1.5
 
 
 class FEASolverError(ValueError):
@@ -27,15 +54,21 @@ class FEAResult(BaseModel):
 
 
 def _load_nifti(payload: bytes) -> tuple[np.ndarray, np.ndarray]:
+    # nibabel 5 cannot nib.load() a BytesIO; parse the (decompressed) bytes.
     try:
-        image = nib.load(BytesIO(payload))
+        raw = gzip.decompress(payload) if payload[:2] == b"\x1f\x8b" else payload
+        nifti2 = raw[:4] in (struct.pack("<i", 540), struct.pack(">i", 540))
+        image = (nib.Nifti2Image if nifti2 else nib.Nifti1Image).from_bytes(raw)
         volume = np.asarray(image.get_fdata(dtype=np.float32))
+        spacing_mm = np.asarray(image.header.get_zooms()[:3], dtype=float)
     except Exception as exc:
         raise FEASolverError("Unable to read the uploaded NIfTI volume.") from exc
 
     if volume.ndim != 3 or not np.isfinite(volume).any():
         raise FEASolverError("NIfTI input must contain a finite 3D scalar volume.")
-    return volume, np.asarray(image.header.get_zooms()[:3], dtype=float)
+    if spacing_mm.shape != (3,) or not np.all(np.isfinite(spacing_mm) & (spacing_mm > 0)):
+        raise FEASolverError("NIfTI input must declare a positive voxel size.")
+    return volume, spacing_mm
 
 
 def threshold_bone_hu(volume: np.ndarray, minimum_hu: float = 150.0) -> np.ndarray:
@@ -58,87 +91,149 @@ def hu_to_apparent_density_and_modulus(
     return density[bone_mask], modulus_gpa[bone_mask]
 
 
-def generate_bone_mesh(mask: np.ndarray, spacing_mm: np.ndarray) -> trimesh.Trimesh:
-    if min(mask.shape) < 2 or int(mask.sum()) < 8:
-        raise FEASolverError("The NIfTI volume does not contain enough bone voxels to mesh.")
-    padded = np.pad(mask.astype(np.uint8), 1, mode="constant")
-    vertices, faces, _, _ = marching_cubes(padded, level=0.5, spacing=spacing_mm)
-    vertices -= spacing_mm
-    mesh = trimesh.Trimesh(vertices=vertices, faces=faces, process=True)
-    if mesh.is_empty:
-        raise FEASolverError("Bone surface meshing produced an empty mesh.")
-    return mesh
+def largest_component(mask: np.ndarray) -> np.ndarray:
+    """Keep the largest face-connected component of a binary mask."""
+    labels, count = ndi.label(mask)
+    if count == 0:
+        return np.zeros(mask.shape, dtype=bool)
+    sizes = np.bincount(labels.ravel())
+    sizes[0] = 0
+    return labels == sizes.argmax()
 
 
-def _solve_von_mises(
+def coarsen_bone(
+    mask: np.ndarray,
     modulus_gpa: np.ndarray,
-    bone_mask: np.ndarray,
-    load_newtons: float = 800.0,
-) -> np.ndarray:
-    """Compute a stable stress surrogate for the 800 N boundary condition.
+    factors: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Merge blocks of factors[0] x factors[1] x factors[2] voxels.
 
-    The production solver seam is kept explicit: SfePy consumes this material
-    field when a volumetric domain is supplied. For the API's lightweight
-    mock NIfTI workflow, scipy smooths local stiffness gradients and applies
-    the compressive traction analytically.
+    A block is bone when at least half of its voxels are bone. Its modulus is
+    the mean modulus of those bone voxels.
     """
-    if modulus_gpa.size == 0:
-        raise FEASolverError("Cannot solve stress without segmented bone.")
+    fx, fy, fz = (int(f) for f in factors)
+    padding = [(0, -size % f) for size, f in zip(mask.shape, (fx, fy, fz))]
+    shape = [(size + pad) // f for size, (_, pad), f in zip(mask.shape, padding, (fx, fy, fz))]
 
-    stiffness = ndi.gaussian_filter(bone_mask.astype(np.float32), sigma=1.0)
-    gradient = np.asarray(np.gradient(stiffness), dtype=np.float32)
-    gradient_magnitude = np.sqrt(np.sum(np.square(gradient), axis=0))
-    mean_modulus = float(np.mean(modulus_gpa))
-    stress = (load_newtons / max(float(bone_mask.sum()), 1.0)) * (
-        1.0 + 2.5 * gradient_magnitude
-    ) * (25.0 / max(mean_modulus, 10.0))
-    return stress[bone_mask]
+    def block_sum(values: np.ndarray) -> np.ndarray:
+        padded = np.pad(values, padding)
+        return padded.reshape(shape[0], fx, shape[1], fy, shape[2], fz).sum(axis=(1, 3, 5))
+
+    bone_count = block_sum(mask.astype(np.float64))
+    modulus_sum = block_sum(np.where(mask, modulus_gpa, 0.0))
+    coarse_modulus = np.divide(modulus_sum, bone_count, out=np.zeros(shape), where=bone_count > 0)
+    return bone_count >= 0.5 * fx * fy * fz, coarse_modulus
 
 
-def _sfepy_solver_metadata(mesh: trimesh.Trimesh) -> dict[str, Any]:
-    """Return metadata used by the full SfePy domain assembly.
+def _fe_grid(
+    bone: np.ndarray,
+    modulus_gpa: np.ndarray,
+    spacing_mm: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Return the FE voxel mask, its moduli and the per-axis coarsening factors.
 
-    Keeping the SfePy import here avoids importing its optional compiled
-    extensions during API discovery while making the solver dependency
-    explicit and verifiable in production environments.
+    Above MAX_FE_VOXELS, voxels are merged into blocks that are as close to
+    cubic as the scan spacing allows, growing the block edge until the
+    largest remaining component fits under the cap.
     """
-    try:
-        from sfepy.base.base import Struct
-    except ImportError as exc:
+    factors = np.ones(3, dtype=int)
+    count = int(bone.sum())
+    if count <= MAX_FE_VOXELS:
+        return bone, modulus_gpa, factors
+    edge_mm = float((count * np.prod(spacing_mm) / MAX_FE_VOXELS) ** (1.0 / 3.0))
+    while True:
+        factors = np.maximum(1, np.rint(edge_mm / spacing_mm)).astype(int)
+        mask, mask_modulus = coarsen_bone(bone, modulus_gpa, factors)
+        mask = largest_component(mask)
+        if int(mask.sum()) <= MAX_FE_VOXELS:
+            return mask, mask_modulus, factors
+        edge_mm *= 1.1
+
+
+def analyze_bone_volume(
+    volume: np.ndarray,
+    spacing_mm: np.ndarray,
+    filename: str = "mock-bone.nii",
+) -> tuple[FEAResult, dict[str, Any]]:
+    """Segment, mesh and solve one CT volume; return API fields and solver details."""
+    started = time.perf_counter()
+    bone = largest_component(threshold_bone_hu(volume))
+    if int(bone.sum()) < 8:
+        raise FEASolverError("The NIfTI volume does not contain enough bone voxels to mesh.")
+    # Work on the bounding box of the bone so large scans stay cheap.
+    box = ndi.find_objects(bone.astype(np.uint8))[0]
+    bone = bone[box]
+    modulus_gpa = np.zeros(bone.shape)
+    modulus_gpa[bone] = hu_to_apparent_density_and_modulus(volume[box], bone)[1]
+
+    mask, mask_modulus, factors = _fe_grid(bone, modulus_gpa, spacing_mm)
+    voxel_mm = np.asarray(spacing_mm, dtype=float) * factors
+    layers = np.flatnonzero(mask.any(axis=(0, 1)))
+    if int(mask.sum()) < 8 or layers.size == 0 or layers[-1] - layers[0] + 1 < 4:
         raise FEASolverError(
-            "SfePy is required to run the finite-element solver. Install backend/requirements.txt."
-        ) from exc
-    boundary_condition = Struct(name="compression_800N", load_newtons=800.0)
-    return {
-        "solver": "sfepy",
-        "boundary_condition": boundary_condition.name,
-        "mesh_vertices": len(mesh.vertices),
-        "mesh_faces": len(mesh.faces),
+            "The meshed bone needs at least 8 voxels spanning at least 4 voxels along Z "
+            "to place separate support and load bands."
+        )
+
+    try:
+        points, tets = bone_fea.tetrahedralize(mask, np.diag([*voxel_mm, 1.0]))
+        voxel_index = np.rint(points[tets].mean(axis=1) / voxel_mm).astype(int)
+        element_modulus_mpa = 1000.0 * mask_modulus[tuple(voxel_index.T)]
+        band_mm = BAND_VOXELS * voxel_mm[2]
+        solved = bone_fea.solve_elasticity(
+            points,
+            tets,
+            load_newtons=LOAD_NEWTONS,
+            poisson_ratio=POISSON_RATIO,
+            support_depth_mm=band_mm,
+            load_depth_mm=band_mm,
+            element_youngs_modulus_mpa=element_modulus_mpa,
+            save_results=False,
+        )
+    except (ValueError, RuntimeError) as exc:
+        raise FEASolverError(f"Finite-element solve failed: {exc}") from exc
+
+    metrics = solved["metrics"]
+    von_mises = solved["von_mises"]
+    # A percentile, not the single-element peak, so a few corner elements of
+    # the voxel mesh do not set the value. All tetrahedra have equal volume
+    # (six per voxel), so the unweighted percentile is also volume-weighted.
+    max_stress = float(np.percentile(von_mises, STRESS_PERCENTILE))
+    fracture_risk = float(np.clip((max_stress / ASSUMED_STRENGTH_MPA) * 100.0, 0.0, 100.0))
+    surface = solved["faces"]
+    result = FEAResult(
+        max_von_mises_stress_mpa=round(max_stress, 2),
+        average_youngs_modulus_gpa=round(metrics["youngs_modulus_mpa"] / 1000.0, 2),
+        bone_volume_cm3=round(metrics["volume_cm3"], 2),
+        fracture_risk_index_percent=round(fracture_risk, 2),
+        load_newtons=LOAD_NEWTONS,
+        mesh_vertices=int(np.unique(surface).size),
+        mesh_faces=len(surface),
+        source_filename=filename,
+    )
+    details = {
+        "input_shape": [int(v) for v in volume.shape],
+        "input_spacing_mm": [float(v) for v in spacing_mm],
+        "coarsening_factors": [int(v) for v in factors],
+        "effective_voxel_mm": [float(v) for v in voxel_mm],
+        "thresholded_component_voxels": int(bone.sum()),
+        "thresholded_component_volume_cm3": float(bone.sum() * np.prod(spacing_mm) / 1000.0),
+        "fe_voxels": int(mask.sum()),
+        "band_mm": float(band_mm),
+        "max_element_von_mises_mpa": float(von_mises.max()),
+        "seconds": time.perf_counter() - started,
+        **{key: metrics[key] for key in (
+            "nodes", "elements", "loaded_area_mm2", "volume_cm3", "max_displacement_mm",
+            "min_youngs_modulus_mpa", "max_youngs_modulus_mpa", "reaction_newtons",
+            "relative_free_residual", "relative_force_balance_error",
+        )},
     }
+    logger.info("FE solve for %s: %s", filename, details)
+    return result, details
 
 
 def simulate_fea(payload: bytes, filename: str = "mock-bone.nii") -> dict[str, Any]:
-    """Run segmentation, material mapping, meshing, and the FEA estimate."""
+    """Segment the CT volume and run a linear-elastic SfePy solve under 800 N."""
     volume, spacing_mm = _load_nifti(payload)
-    bone_mask = threshold_bone_hu(volume)
-    density, modulus = hu_to_apparent_density_and_modulus(volume, bone_mask)
-    mesh = generate_bone_mesh(bone_mask, spacing_mm)
-    _sfepy_solver_metadata(mesh)
-    von_mises = _solve_von_mises(modulus, bone_mask)
-
-    voxel_volume_cm3 = float(np.prod(spacing_mm) / 1000.0)
-    bone_volume_cm3 = float(bone_mask.sum() * voxel_volume_cm3)
-    max_stress = float(np.percentile(von_mises, 99.5))
-    average_modulus = float(np.mean(modulus))
-    fracture_risk = float(np.clip((max_stress / 150.0) * 100.0, 0.0, 100.0))
-
-    result = FEAResult(
-        max_von_mises_stress_mpa=round(max_stress, 2),
-        average_youngs_modulus_gpa=round(average_modulus, 2),
-        bone_volume_cm3=round(bone_volume_cm3, 2),
-        fracture_risk_index_percent=round(fracture_risk, 2),
-        mesh_vertices=len(mesh.vertices),
-        mesh_faces=len(mesh.faces),
-        source_filename=filename,
-    )
+    result, _ = analyze_bone_volume(volume, spacing_mm, filename)
     return result.model_dump()
