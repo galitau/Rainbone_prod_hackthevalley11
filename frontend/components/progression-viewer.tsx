@@ -26,12 +26,15 @@ export function ProgressionViewer({ frame, active = true }: { frame: Progression
     async function load() {
       try {
         await import("@kitware/vtk.js/Rendering/Profiles/Geometry");
-        const [{ default: GenericRenderWindow }, { default: Actor }, { default: Mapper }, { default: Reader }, { default: SphereSource }] = await Promise.all([
+        const [{ default: GenericRenderWindow }, { default: Actor }, { default: Mapper }, { default: Reader }, { default: SphereSource }, { default: CleanPolyData }, { default: WindowedSinc }, { default: PolyDataNormals }] = await Promise.all([
           import("@kitware/vtk.js/Rendering/Misc/GenericRenderWindow"),
           import("@kitware/vtk.js/Rendering/Core/Actor"),
           import("@kitware/vtk.js/Rendering/Core/Mapper"),
           import("@kitware/vtk.js/IO/XML/XMLPolyDataReader"),
           import("@kitware/vtk.js/Filters/Sources/SphereSource"),
+          import("@kitware/vtk.js/Filters/Core/CleanPolyData"),
+          import("@kitware/vtk.js/Filters/General/WindowedSincPolyDataFilter"),
+          import("@kitware/vtk.js/Filters/Core/PolyDataNormals"),
         ]);
         const buffer = await getProgressionFrame(frame.frameIndex);
         if (disposed || !container.current) return;
@@ -80,7 +83,25 @@ export function ProgressionViewer({ frame, active = true }: { frame: Progression
         lesionActor.getProperty().setAmbient(0.35);
         lesionActor.getProperty().setDiffuse(0.65);
         lesionActor.getProperty().setSpecular(0.2);
-        mapper.setInputData(data);
+        // The frames are voxel-derived surfaces: merge shared corners, smooth the staircase steps
+        // (display only; the frame data and its metrics are unchanged), then shade with point normals.
+        // If smoothing fails on a frame, show the raw surface instead.
+        let surface = data;
+        try {
+          const clean = CleanPolyData.newInstance({ pointMerging: true });
+          const smooth = WindowedSinc.newInstance({ numberOfIterations: 10, passBand: 0.1, featureEdgeSmoothing: false, boundarySmoothing: true, nonManifoldSmoothing: true, normalizeCoordinates: true });
+          const normals = PolyDataNormals.newInstance({ computePointNormals: true });
+          resources.push(clean, smooth, normals);
+          clean.setInputData(data);
+          smooth.setInputConnection(clean.getOutputPort());
+          normals.setInputConnection(smooth.getOutputPort());
+          normals.update();
+          const smoothed = normals.getOutputData();
+          if (smoothed?.getNumberOfPoints()) surface = smoothed;
+        } catch {
+          surface = data;
+        }
+        mapper.setInputData(surface);
         actor.setMapper(mapper);
         actor.getProperty().setColor(0.72, 0.79, 0.83);
         actor.getProperty().setAmbient(0.25);
@@ -96,7 +117,7 @@ export function ProgressionViewer({ frame, active = true }: { frame: Progression
         const center = frame.point;
         camera.setFocalPoint(...center);
         // Pull back along the same sightline to show the surrounding anatomy.
-        camera.setPosition(center[0] + diagonal * 0.77, center[1] - diagonal * 0.77, center[2] + diagonal * 0.495);
+        camera.setPosition(center[0] + diagonal * 1.15, center[1] - diagonal * 1.15, center[2] + diagonal * 0.74);
         camera.setViewUp(0, 0, 1);
         renderer.resetCameraClippingRange();
         renderWindow.getRenderWindow().render();
