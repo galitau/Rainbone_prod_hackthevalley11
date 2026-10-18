@@ -63,7 +63,8 @@ export default function Home() {
     while (mounted.current && id === latestRun.current && Date.now() < deadline) {
       const next = await fetchHistory(12, input.name, Math.max(1, deadline - Date.now()));
       if (!mounted.current || id !== latestRun.current) return;
-      setHistory(next);
+      // A final short-deadline timeout must not erase rows already read back.
+      setHistory((previous) => next.status === "ready" || previous.status !== "ready" ? next : previous);
       if (Date.now() >= deadline) return;
       await new Promise((resolve) => window.setTimeout(resolve, Math.min(500, deadline - Date.now())));
     }
