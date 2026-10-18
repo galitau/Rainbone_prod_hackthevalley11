@@ -94,3 +94,70 @@ Source data and derived assets are attributed under
 Changes: Slicer import/export, surface reduction, tetrahedral meshing, new
 illustrative FEA, and browser visualization. Original source hashes and the
 processing settings are included in the manifest.
+
+## Hydraulic press demonstration
+
+The `/physics-simulations` route uses its own displacement-controlled solve;
+it does not scale the overview's 800 N field. Generate its assets with:
+
+```powershell
+python scripts/bone_fea/test_press.py
+python scripts/bone_fea/build_press.py --checkpoint <local-checkpoint.npz>
+```
+
+The same femur tetrahedra are used. All distal nodes within 15 mm of minimum Z
+are fixed; a prescribed negative-Z stroke is applied to the head cap (top 8 mm,
+within 25 mm of the head center). Lateral motion of that cap remains free.
+Reaction force is recovered from the constrained DOFs, not guessed from an
+animation. The visible rig is schematic: contact and hydraulic fluid mechanics
+are not solved.
+
+Material damage is an illustrative irreversible scalar stiffness reduction.
+The driver uses volume-weighted strain tensors averaged over a 3 mm radius
+around element centroids. Its asymmetric principal-strain limits are 0.0073
+in tension and 0.0104 in compression. These limits are motivated by published
+bone FE methods, including this [published experimental protocol](https://www.jove.com/t/64947/imaging-of-the-microstructural-failure-mechanism-in-the-human-hip),
+but this material/softening model has not been calibrated or validated against
+that protocol or this patient. The softening coefficient (3), residual stiffness
+(0.5%), averaging length (3 mm), and fixture exclusion distances are explicit
+model assumptions in the generated report.
+
+Each loading step alternates an equilibrium solve and a damage update until
+the damage residual is below 0.002. Every exported step passes free-DOF and
+force-balance checks (relative tolerance 1e-6). The first assumed strain limit
+sets the stroke schedule; it is not a clinical fracture-load estimate.
+Each run allows up to 200 damage iterations per step and refuses to write a
+completed manifest if convergence fails. An optional `--checkpoint` path outside
+`public/` preserves progress; it is valid only for the exact same mesh and scripts.
+
+For the failure preview, elements with damage at least 0.95 are removed only
+from the rendered surface. Newly exposed tetrahedral faces come from that
+actual damaged region. The mechanical solve retains residual stiffness, so
+the visible gap is not a discrete crack, detached-fragment, or contact result.
+The FEA steps do not use a hand-authored crack plane.
+
+The viewer replays the saved loading history, with one fixed color range per
+field across all steps. Stress colors use the largest per-step 99th percentile
+of visible nodal stress as their cap, so isolated numerical peaks do not hide
+changes elsewhere. Higher values saturate red, as labeled in the legend;
+the reported peaks and stored stress arrays are not clipped.
+Von Mises stress is not this model's failure criterion. The default
+`failure_index` view (Failure proximity) colors each surface face with its owning
+element's historical principal-strain / limit ratio (`element_failure_index`).
+It uses the exact
+averaged strain, asymmetric limits, and fixture exclusions from the damage
+law. The scale is fixed at 0–1; red means the assumed initiation limit has
+been reached, not high current stress or a clinical risk probability. Fixture
+elements excluded from failure are gray using `element_failure_eligible`; they
+are not presented as low-strain blue. The original nodal fields remain in the
+files for inspection, but do not drive the default failure colors. The surface
+map shows damage initiation, not a guarantee of a later crack path.
+The Before break shortcut shows the last converged step before visible
+erosion, not an interpolated estimate of the instant of fracture.
+Display deformation defaults to 10x and is explicitly
+labeled; all numbers remain unamplified. Selecting an earlier step is playback,
+not an unloading/healing simulation. Early detection would require calibrated
+patient material properties, a validated failure model, and independent
+clinical validation, none of which is claimed by this demonstration.
+
+Playback stops at the final solved FEA step.
