@@ -288,6 +288,7 @@ def analyze_bone_volume(
         "input_spacing_mm": [float(v) for v in spacing_mm],
         "segmentation": segmentation,
         "surface_extraction_backend": metrics["surface_extraction_backend"],
+        "surface_cpp_standard": metrics["surface_cpp_standard"],
         "coarsening_factors": [int(v) for v in factors],
         "effective_voxel_mm": [float(v) for v in voxel_mm],
         "thresholded_component_voxels": int(bone.sum()),
@@ -307,7 +308,8 @@ def analyze_bone_volume(
     }
     logger.info("FE solve for %s: %s", filename, details)
     logging.getLogger("uvicorn.error").info(
-        "FEA surface extraction: %s; elements=%d", metrics["surface_extraction_backend"], len(tets)
+        "FEA surface extraction: %s; standard=%s; elements=%d",
+        metrics["surface_extraction_backend"], metrics["surface_cpp_standard"], len(tets)
     )
     return result, details
 

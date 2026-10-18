@@ -51,12 +51,15 @@ served. The full CT and TetGen intermediate files need not be committed.
 
 ## Optional native surface extraction
 
-`solve.py` can use a small C++17 kernel for boundary-face extraction, including
+`solve.py` can use a small C++ kernel for boundary-face extraction, including
 the live API's solver. It preserves NumPy's face order, orientation and owning
 tetrahedron exactly; the material model and SfePy solve are unchanged.
 
 At module import, one background thread builds the repository's C++ source with
-`c++`, `g++` or `clang++` and caches it under `.native/` by source hash and platform.
+`c++`, `g++` or `clang++`, preferring **C++23 → C++20 → C++17**. It caches the
+library under `.native/` by source hash, language mode and platform, so a cached
+C++17 library cannot mask a supported newer build. Compilation has a total
+20-second budget across language modes.
 Startup and requests never wait for compilation. Until ready, or if the compiler,
 build directory or shared library is unavailable, the original NumPy path runs.
 Set `RAINBONE_NATIVE_SURFACE=0` before starting Python to disable it. No native
@@ -73,7 +76,7 @@ reports two warm-ups and the median of seven runs, including Python wrapper
 validation. Optional positional VTU paths benchmark additional tetrahedral meshes.
 This is a surface-extraction benchmark; it excludes file loading, compilation,
 FEA solving and network latency. API logs record the path actually used per solve
-(`cpp` or `numpy`). On macOS, a mismatched local SDK may require `SDKROOT` to point
+(`cpp` or `numpy`) and the compiled language mode. On macOS, a mismatched local SDK may require `SDKROOT` to point
 to an installed compatible SDK; otherwise the NumPy fallback still works.
 
 ## STL for 3D printing

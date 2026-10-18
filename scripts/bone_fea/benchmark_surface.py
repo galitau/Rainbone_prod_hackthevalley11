@@ -71,10 +71,11 @@ def main():
     args = parser.parse_args()
     if args.repeats < 1:
         parser.error("--repeats must be positive")
-    if not _native_surface.wait_until_ready(timeout=25) or not _native_surface.available():
+    if _native_surface is None or not _native_surface.wait_until_ready(timeout=25) or not _native_surface.available():
         parser.error("Native kernel unavailable; install a supported C++ compiler and retry")
     paths = args.paths or [Path(__file__).resolve().parents[2] / "frontend/public/models/hfvalid-femur/bone-fea.vtu"]
     print(json.dumps({"scope": "surface extraction only; includes wrapper validation; not end-to-end solve latency",
+                      "cpp_standard": _native_surface.cpp_standard(),
                       "warmups": 2, "repeats": args.repeats,
                       "cases": [benchmark(path, args.repeats) for path in paths]}, indent=2))
 

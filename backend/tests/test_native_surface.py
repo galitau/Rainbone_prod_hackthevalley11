@@ -47,6 +47,9 @@ class NativeSurfaceParityTests(unittest.TestCase):
             cls.solve = load_file("_tested_surface_solve", "solve.py")
         cls.solve._native_surface = cls.native
 
+    def test_compiled_library_reports_its_actual_supported_standard(self):
+        self.assertIn(self.native.cpp_standard(), {"c++23", "c++20", "c++17"})
+
     def assert_native_matches(self, tets):
         expected, faces, owners = reference(tets)
         actual = self.native.boundary_face_indices(tets)
@@ -187,7 +190,9 @@ class NativeSurfaceFallbackTests(unittest.TestCase):
     def fake_subprocess(run):
         # Replace only this disabled wrapper's module binding, never globals
         # another solver's background compiler may currently be using.
-        return SimpleNamespace(run=run, PIPE=subprocess.PIPE, SubprocessError=subprocess.SubprocessError)
+        return SimpleNamespace(run=run, PIPE=subprocess.PIPE, SubprocessError=subprocess.SubprocessError,
+                               CalledProcessError=subprocess.CalledProcessError,
+                               TimeoutExpired=subprocess.TimeoutExpired)
 
     def test_compiler_failure_and_timeout_preserve_numpy_fallback(self):
         for failure in (subprocess.CalledProcessError(1, "c++"), subprocess.TimeoutExpired("c++", 20)):
@@ -201,11 +206,88 @@ class NativeSurfaceFallbackTests(unittest.TestCase):
                      mock.patch.object(self.native, "subprocess", self.fake_subprocess(run)):
                     kernel = self.native._load_kernel()
                 self.assertIsNone(kernel)
-                run.assert_called_once()
-                self.assertLessEqual(run.call_args.kwargs["timeout"], 20)
+                self.assertEqual(run.call_count, 1 if isinstance(failure, subprocess.TimeoutExpired) else 3)
+                for call in run.call_args_list:
+                    self.assertGreater(call.kwargs["timeout"], 0)
+                    self.assertLessEqual(call.kwargs["timeout"], 20)
                 self.assertEqual(list((source.parent / ".native").iterdir()), [])
                 with mock.patch.object(self.native, "_kernel", kernel):
                     self.assert_solver_fallback(np.array([[0, 1, 2, 3]], dtype=np.int32))
+
+    def test_cpp23_success_stops_and_compile_rejections_try_cpp20_then_cpp17(self):
+        preferred = ["c++23", "c++20", "c++17"]
+        for accepted in preferred:
+            with self.subTest(accepted=accepted), tempfile.TemporaryDirectory() as temporary:
+                source = Path(temporary) / "native_surface.cpp"
+                source.write_text("// isolated standards fixture\n")
+                attempted = []
+
+                def compile_fixture(command, **kwargs):
+                    standard = next(arg.split("=", 1)[1] for arg in command if arg.startswith("-std="))
+                    attempted.append(standard)
+                    if standard != accepted:
+                        raise subprocess.CalledProcessError(1, command)
+                    Path(command[command.index("-o") + 1]).write_bytes(standard.encode())
+                    return subprocess.CompletedProcess(command, 0)
+
+                with mock.patch.dict(os.environ, {"RAINBONE_NATIVE_SURFACE": "1"}), \
+                     mock.patch.object(self.native, "SOURCE", source), \
+                     mock.patch.object(self.native, "shutil", SimpleNamespace(which=lambda _: "fake-c++")), \
+                     mock.patch.object(self.native, "subprocess", self.fake_subprocess(mock.Mock(side_effect=compile_fixture))):
+                    result = self.native.build_native()
+                self.assertIsNotNone(result)
+                self.assertEqual(result.read_bytes(), accepted.encode())
+                self.assertEqual(attempted, preferred[:preferred.index(accepted) + 1])
+                self.assertEqual(list(result.parent.iterdir()), [result], "failed temporary builds are removed")
+
+    def test_cached_standard_priority_uses_cpp23_without_a_compiler(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary) / "native_surface.cpp"
+            source.write_text("// isolated cache priority fixture\n")
+            paths = []
+            with mock.patch.dict(os.environ, {"RAINBONE_NATIVE_SURFACE": "1"}), \
+                 mock.patch.object(self.native, "SOURCE", source), \
+                 mock.patch.object(self.native, "shutil", SimpleNamespace(which=lambda _: "fake-c++")):
+                # Build lower-standard fixtures first so all three cache files
+                # coexist, then prove newest-standard cache preference.
+                for accepted in ("c++17", "c++20", "c++23"):
+                    def compile_fixture(command, **kwargs):
+                        standard = next(arg.split("=", 1)[1] for arg in command if arg.startswith("-std="))
+                        if standard != accepted:
+                            raise subprocess.CalledProcessError(1, command)
+                        Path(command[command.index("-o") + 1]).write_bytes(standard.encode())
+                        return subprocess.CompletedProcess(command, 0)
+                    with mock.patch.object(self.native, "subprocess", self.fake_subprocess(mock.Mock(side_effect=compile_fixture))):
+                        paths.append(self.native.build_native())
+                run = mock.Mock(side_effect=AssertionError("cached library must not compile"))
+                with mock.patch.object(self.native, "shutil", SimpleNamespace(which=lambda _: None)), \
+                     mock.patch.object(self.native, "subprocess", self.fake_subprocess(run)):
+                    result = self.native.build_native()
+                    self.assertEqual(result, paths[-1])
+                    self.assertEqual(result.read_bytes(), b"c++23")
+                    # Only isolated temporary fixtures are removed, never the
+                    # repository's real compiled artifacts.
+                    paths[-1].unlink()
+                    self.assertEqual(self.native.build_native(), paths[1])
+                    paths[1].unlink()
+                    self.assertEqual(self.native.build_native(), paths[0])
+            self.assertEqual(len(set(paths)), 3, "each standard gets a distinct cache entry")
+            run.assert_not_called()
+
+    def test_compile_attempts_share_one_twenty_second_budget(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary) / "native_surface.cpp"
+            source.write_text("// isolated total-budget fixture\n")
+            run = mock.Mock(side_effect=subprocess.CalledProcessError(1, "fake-c++"))
+            clock = mock.Mock(side_effect=[100.0, 101.0, 110.0, 121.0])
+            with mock.patch.dict(os.environ, {"RAINBONE_NATIVE_SURFACE": "1"}), \
+                 mock.patch.object(self.native, "SOURCE", source), \
+                 mock.patch.object(self.native, "shutil", SimpleNamespace(which=lambda _: "fake-c++")), \
+                 mock.patch.object(self.native, "time", SimpleNamespace(monotonic=clock)), \
+                 mock.patch.object(self.native, "subprocess", self.fake_subprocess(run)):
+                self.assertIsNone(self.native.build_native())
+            self.assertEqual([call.kwargs["timeout"] for call in run.call_args_list], [19.0, 10.0])
+            self.assertEqual(run.call_count, 2, "expired total budget prevents the third attempt")
 
     def test_read_only_build_directory_preserves_numpy_fallback(self):
         source = mock.MagicMock()

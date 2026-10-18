@@ -16,6 +16,7 @@ bool equal_key(const Face& left, const Face& right) noexcept {
 }
 
 extern "C" int rb_surface_abi_version() noexcept { return 1; }
+extern "C" long rb_surface_cpp_standard() noexcept { return __cplusplus; }
 
 // Return boundary count, -1 invalid arguments/overflow, -2 insufficient output capacity,
 // or -3 allocation/internal failure. No exceptions cross the C boundary; no partial output on errors.

@@ -165,6 +165,7 @@ def solve_elasticity(points, tets, load_newtons=800.0, youngs_modulus_mpa=10000.
         'metrics': {
             'solver': 'SfePy', 'element_type': '4-node linear tetrahedron',
             'surface_extraction_backend': surface_backend,
+            'surface_cpp_standard': _native_surface.cpp_standard() if surface_backend == 'cpp' else None,
             'nodes': len(points), 'elements': len(tets),
             'load_newtons': load_newtons, 'youngs_modulus_mpa': youngs_modulus_mpa,
             'poisson_ratio': poisson_ratio, 'loaded_area_mm2': float(area),
