@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import {
   Activity,
   Bell,
@@ -25,9 +25,11 @@ import { BoneViewer } from "@/components/BoneViewer";
 import { LiveRun, ALL_NUMBERS_ID } from "@/components/live-run";
 import { PlainExplanation } from "@/components/plain-explanation";
 import { FractureRiskAnalysis } from "@/components/risk-analysis";
+import { LesionProgression } from "@/components/lesion-progression";
 import { API_BASE_URL, type ExplanationState, type HistoryState, type RiskAnalysisState, type SimulationResult } from "@/lib/api";
 import { FEMUR_AUTHORS, FEMUR_INSTITUTION, FEMUR_MODEL } from "@/lib/model";
 import { REDUCE_MOTION_CLASS } from "@/lib/preferences-script";
+import { prefetchProgressionFrames } from "@/lib/progression-cache";
 const PhysicsSimulations = dynamic(() => import("@/components/physics-simulations").then(module => module.PhysicsSimulations));
 const CloudBones = dynamic(() => import("@/components/CloudBones").then(module => module.CloudBones));
 const SecureDatasets = dynamic(() => import("@/components/secure-datasets").then(module => module.SecureDatasets));
@@ -53,13 +55,15 @@ type OverviewProps = {
 };
 
 // app/physics-simulations/page.tsx renders <Dashboard view="physics" />, app/bones/page.tsx <Dashboard view="imaging" />,
-// app/datasets/page.tsx <Dashboard view="datasets" /> and app/preferences/page.tsx <Dashboard view="preferences" />.
-type DashboardProps = OverviewProps | { view: "physics" | "imaging" | "datasets" | "preferences" };
+// app/lesion-progression/page.tsx <Dashboard view="progression" />, app/datasets/page.tsx <Dashboard view="datasets" />
+// and app/preferences/page.tsx <Dashboard view="preferences" />.
+type DashboardProps = OverviewProps | { view: "physics" | "imaging" | "progression" | "datasets" | "preferences" };
 
 const VIEW_TITLES = {
   overview: "Patient overview",
   physics: "Physics simulations",
   imaging: "Imaging library",
+  progression: "Lesion progression",
   datasets: "Secure datasets",
   preferences: "Preferences",
 } as const;
@@ -69,6 +73,10 @@ const isWorkspaceView = (view: keyof typeof VIEW_TITLES) => view === "datasets" 
 export function Dashboard(props: DashboardProps) {
   const view = "run" in props ? "overview" : props.view;
   const health = "run" in props ? props.health : undefined;
+  useEffect(() => {
+    void prefetchProgressionFrames();
+  }, []);
+
   return (
     <main className="min-h-screen bg-canvas text-ink">
       <div className="flex min-h-screen">
@@ -77,9 +85,10 @@ export function Dashboard(props: DashboardProps) {
           <div className="px-5 pb-2 pt-6"><RainboneLogo /></div>
           <nav aria-label="Workspace" className="mt-8 space-y-1 px-3">
             <p className="px-3 pb-2 text-[11px] font-medium uppercase tracking-[0.08em] text-nav-muted">Analysis</p>
-            <NavItem active={view === "overview"} href="/" icon={<LayoutDashboard size={17} />} label="Patient overview" />
+            <NavItem active={view === "overview"} href="/dashboard" icon={<LayoutDashboard size={17} />} label="Patient overview" />
             <NavItem active={view === "physics"} href="/physics-simulations" icon={<Activity size={17} />} label="Physics simulations" />
             <NavItem active={view === "imaging"} href="/bones" icon={<FolderOpen size={17} />} label="Imaging library" />
+            <NavItem active={view === "progression"} href="/lesion-progression" icon={<ScanLine size={17} />} label="Lesion progression" />
           </nav>
           <nav aria-label="Account" className="mt-8 space-y-1 px-3">
             <p className="px-3 pb-2 text-[11px] font-medium uppercase tracking-[0.08em] text-nav-muted">Workspace</p>
@@ -121,9 +130,10 @@ export function Dashboard(props: DashboardProps) {
               </div>
             </div>
             <nav aria-label="Mobile workspace navigation" className="flex gap-1 overflow-x-auto border-t border-line px-4 py-2 scrollbar-hide [mask-image:linear-gradient(to_right,transparent,#000_20px,#000_calc(100%-20px),transparent)] lg:hidden">
-              <MobileNavItem active={view === "overview"} href="/" label="Patient overview" />
+              <MobileNavItem active={view === "overview"} href="/dashboard" label="Patient overview" />
               <MobileNavItem active={view === "physics"} href="/physics-simulations" label="Physics simulations" />
               <MobileNavItem active={view === "imaging"} href="/bones" label="Imaging library" />
+              <MobileNavItem active={view === "progression"} href="/lesion-progression" label="Lesion progression" />
               <MobileNavItem active={view === "datasets"} href="/datasets" label="Secure datasets" />
               <MobileNavItem active={view === "preferences"} href="/preferences" label="Preferences" />
             </nav>
@@ -131,6 +141,7 @@ export function Dashboard(props: DashboardProps) {
 
           {"run" in props ? <Overview {...props} />
             : props.view === "physics" ? <PhysicsSimulations />
+            : props.view === "progression" ? <LesionProgression />
             : props.view === "datasets" ? <SecureDatasets />
             : props.view === "preferences" ? <PreferencesPanel />
             : <div className="mx-auto max-w-[1440px] p-5 md:p-8"><CloudBones /></div>}

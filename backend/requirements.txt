@@ -6,9 +6,11 @@ scikit-learn
 sfepy
 numpy
 scipy
+scikit-image
 pydantic
 python-multipart
 httpx2
 httpx
 python-dotenv
+boto3
 psycopg[binary]
