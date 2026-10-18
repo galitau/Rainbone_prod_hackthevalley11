@@ -1,52 +1,85 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Dashboard } from "@/components/dashboard";
-import { mockMetrics, type ClinicalMetrics } from "@/lib/mock-data";
-import { apiUrl, fetchExplanation, type ExplanationState } from "@/lib/api";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Dashboard, type ApiHealth, type RunInput, type RunState } from "@/components/dashboard";
+import {
+  checkHealth,
+  fetchExplanation,
+  fetchHistory,
+  runSimulation,
+  type ExplanationState,
+  type HistoryState,
+} from "@/lib/api";
 
-type SimulationResponse = {
-  max_von_mises_stress_mpa: number;
-  average_youngs_modulus_gpa: number;
-  bone_volume_cm3: number;
-  fracture_risk_index_percent: number;
-};
+const SAMPLE: RunInput = { name: "sample_bone.nii.gz", kind: "sample" };
+const HEALTH_POLL_MS = 15_000;
+
+async function loadSample(): Promise<File> {
+  const scan = await fetch(`/${SAMPLE.name}`);
+  if (!scan.ok) throw new Error("Sample scan unavailable");
+  return new File([await scan.blob()], SAMPLE.name, { type: "application/gzip" });
+}
 
 export default function Home() {
-  const [metrics, setMetrics] = useState<ClinicalMetrics>(mockMetrics);
-  const [simulationStatus, setSimulationStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [run, setRun] = useState<RunState>({ status: "loading", input: SAMPLE });
   const [explanation, setExplanation] = useState<ExplanationState>({ status: "idle" });
+  const [history, setHistory] = useState<HistoryState>({ status: "loading" });
+  const [health, setHealth] = useState<ApiHealth>("checking");
+  const latestRun = useRef(0);
 
-  useEffect(() => {
-    let cancelled = false;
-    async function fetchSimulation() {
-      try {
-        const scan = await fetch("/sample_bone.nii.gz");
-        if (!scan.ok) throw new Error("Sample scan unavailable");
-        const formData = new FormData();
-        formData.append("file", new File([await scan.blob()], "sample_bone.nii.gz", { type: "application/gzip" }));
-        const response = await fetch(apiUrl("/api/simulate"), { method: "POST", body: formData });
-        if (!response.ok) throw new Error(`Simulation request failed (${response.status})`);
-        const result = (await response.json()) as SimulationResponse;
-        if (!cancelled) {
-          setMetrics({
-            maxStress: result.max_von_mises_stress_mpa.toFixed(1),
-            youngsModulus: result.average_youngs_modulus_gpa.toFixed(1),
-            boneVolume: result.bone_volume_cm3.toFixed(1),
-            fractureRisk: Math.round(result.fracture_risk_index_percent),
-          });
-          setSimulationStatus("ready");
-          setExplanation({ status: "loading" });
-          const explained = await fetchExplanation(result);
-          if (!cancelled) setExplanation(explained);
-        }
-      } catch {
-        if (!cancelled) setSimulationStatus("error");
-      }
-    }
-    void fetchSimulation();
-    return () => { cancelled = true; };
+  const refreshHealth = useCallback(async () => {
+    setHealth((await checkHealth()) ? "online" : "offline");
   }, []);
 
-  return <Dashboard metrics={metrics} simulationStatus={simulationStatus} explanation={explanation} />;
+  const simulate = useCallback(async (getFile: () => Promise<File>, input: RunInput) => {
+    const id = ++latestRun.current;
+    setRun({ status: "loading", input });
+    setExplanation({ status: "idle" });
+    let file: File;
+    try {
+      file = await getFile();
+    } catch {
+      if (id === latestRun.current) setRun({ status: "error", input, message: "The sample scan could not be loaded from this site." });
+      return;
+    }
+    const outcome = await runSimulation(file);
+    if (id !== latestRun.current) return;
+    if (!outcome.ok) {
+      setRun({ status: "error", input, message: outcome.message });
+      void refreshHealth();
+      return;
+    }
+    setRun({ status: "ready", input, result: outcome.result, ms: outcome.ms });
+    void refreshHealth(); // the API answered, so don't leave an older "offline" on screen until the next poll
+    setExplanation({ status: "loading" });
+    const explained = await fetchExplanation(outcome.result);
+    if (id === latestRun.current) setExplanation(explained);
+    // The API saves a run after it has answered, so read the history once that save has had time to finish.
+    window.setTimeout(() => void fetchHistory().then(setHistory), 1500);
+  }, [refreshHealth]);
+
+  const runSample = useCallback(() => simulate(loadSample, SAMPLE), [simulate]);
+  const runUpload = useCallback((file: File) => simulate(async () => file, { name: file.name, kind: "upload" }), [simulate]);
+
+  useEffect(() => {
+    void refreshHealth();
+    void runSample();
+    void fetchHistory().then(setHistory);
+    const timer = window.setInterval(() => void refreshHealth(), HEALTH_POLL_MS);
+    return () => {
+      window.clearInterval(timer);
+      latestRun.current += 1; // ignore a run that finishes after unmount
+    };
+  }, [refreshHealth, runSample]);
+
+  return (
+    <Dashboard
+      run={run}
+      explanation={explanation}
+      history={history}
+      health={health}
+      onRunSample={runSample}
+      onUpload={runUpload}
+    />
+  );
 }
