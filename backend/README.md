@@ -420,21 +420,21 @@ in its own transaction. Every file is idempotent, so re-running is safe.
 ### `GET /api/history?limit=N`
 
 `N` is 1–500 (default 10). Response to `?limit=1` from a local TimescaleDB
-container after four uploads of `public/sample_bone.nii.gz` (two with curl,
-two from the dashboard):
+container after four uploads with curl (`public/sample_bone.nii.gz` three
+times, the femur-shaped volume once), with FSL making the bone mask:
 
 ```json
 {
   "series": [
     {
-      "label": "Oct 18 02:54:44 UTC",
+      "label": "Oct 18 03:52:11 UTC",
       "value": 17.71
     }
   ],
   "runs": [
     {
-      "time": "2026-10-18T02:54:44.927713Z",
-      "run_id": "5d2049c1-3a90-4a62-b579-c3c3704ac14c",
+      "time": "2026-10-18T03:52:11.625499Z",
+      "run_id": "29d93785-16b3-4bc1-82f8-adf8f6325606",
       "source_filename": "sample_bone.nii.gz",
       "max_von_mises_stress_mpa": 17.71,
       "average_youngs_modulus_gpa": 22.79,
@@ -448,16 +448,17 @@ two from the dashboard):
         "numpy": "2.5.4",
         "scipy": "1.18.1",
         "sfepy": "2026.3",
-        "nibabel": "5.4.2"
+        "nibabel": "5.4.2",
+        "segmentation": "fsl"
       },
-      "solve_ms": 1418.8740420067916
+      "solve_ms": 1432.8533750085626
     }
   ],
   "hourly": [
     {
-      "bucket": "2026-10-18T02:00:00Z",
+      "bucket": "2026-10-18T03:00:00Z",
       "runs": 4,
-      "avg_max_von_mises_stress_mpa": 17.71,
+      "avg_max_von_mises_stress_mpa": 16.435000000000002,
       "max_max_von_mises_stress_mpa": 17.71
     }
   ]
