@@ -18,13 +18,14 @@ from typing import Literal, Mapping, Optional
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from services import ai_log, ask_tools, ask_triage, clinical_store, explain, risk
+from services.ask_usage import UsageCollector, WorkflowUsage, empty_usage
 from services.ai_log import Logged
 from services.clinical_store import Grounding
 from services.explain import Fallback
 from services.llm_providers import AnswerCache, answer_ttl, ask_models, chain_signature
 
 PAGES = frozenset({"/dashboard", "/physics-simulations", "/lesion-progression", "/bones", "/datasets", "/preferences"})
-VERSION = "ask-tools-4"
+VERSION = "ask-tools-5"
 PROVIDER_BUDGET_S = 25.0  # includes time already spent gathering evidence; audit has its own short bound
 MAX_PENDING = 4  # computations remain bounded even when all original HTTP callers disconnect
 _evidence_workers = ThreadPoolExecutor(max_workers=MAX_PENDING, thread_name_prefix="ask-evidence")
@@ -125,6 +126,8 @@ class AskResponse(BaseModel):
     steps: list[str]
     trace: list[TraceEvent] = Field(default_factory=list)
     tools_used: list[str] = Field(default_factory=list)
+    usage: Optional[explain.Usage] = None
+    workflow_usage: Optional[WorkflowUsage] = None
     statement_ids: list[str] = Field(default_factory=list, exclude=True)
 
 
@@ -325,6 +328,8 @@ async def ask(request: AskRequest, env: Mapping[str, str], *, providers=None, tr
                            "question_sha256": _hash(request.question), "page": request.page}, sort_keys=True)
     recognized = known_selection(request.question)
     async def produce() -> AskResponse:
+        collector = UsageCollector()
+        writer_usage = None
         fallbacks: list[Fallback] = []
         trace: list[TraceEvent] = []
         def event(stage: str, summary: str, began: float, tool: Optional[str] = None) -> None:
@@ -337,7 +342,9 @@ async def ask(request: AskRequest, env: Mapping[str, str], *, providers=None, tr
             event("triage", "Rules triage: recognized Rainbone question; selected its matching evidence tools", began)
         else:
             routed = await ask_triage.triage(tiers.get("gemini", []) if "gemini" in order else [],
-                                            request.question, request.page, started + PROVIDER_BUDGET_S)
+                                            request.question, request.page, started + PROVIDER_BUDGET_S,
+                                            on_usage=lambda provider, model, usage: collector.record("triage", provider, model, usage),
+                                            on_failure=collector.mark_incomplete)
             calls = routed.calls or ask_tools.rules_plan("unavailable")
             event("triage", routed.summary, began)
         # All plans are validated before executing any call, including deterministic fallback plans.
@@ -411,8 +418,11 @@ async def ask(request: AskRequest, env: Mapping[str, str], *, providers=None, tr
                     try:
                         reply = await asyncio.wait_for(ask_models(
                             tiers[name], SYSTEM, writer_user, critic,
-                            failed, kind="ask", facts=writer_identity), timeout=max(.001, remaining))
+                            failed, kind="ask", facts=writer_identity,
+                            on_usage=lambda provider, model, usage: collector.record("writer", provider, model, usage),
+                            on_failure=collector.mark_incomplete), timeout=max(.001, remaining))
                     except asyncio.TimeoutError:
+                        collector.mark_incomplete("request_timeout")
                         failed(None, "request time budget exhausted")
                     status = ("reused saved checked statement selection" if reply and reply.served == "saved" else
                               "returned checked statement selection" if reply else "produced no accepted selection")
@@ -430,6 +440,7 @@ async def ask(request: AskRequest, env: Mapping[str, str], *, providers=None, tr
                 if reply is None:
                     continue
                 selection, model, served, saved_at = reply.text, reply.model, reply.served, reply.saved_at
+                writer_usage = explain.usage_for(name, reply)
             reason = critic(selection)
             if reason:
                 raise RuntimeError(f"Ask statement catalogue is invalid: {reason}")
@@ -451,7 +462,8 @@ async def ask(request: AskRequest, env: Mapping[str, str], *, providers=None, tr
             steps = [*evidence.steps, *(f"{e.stage.capitalize()}: {e.summary} · {e.ms:g} ms" for e in trace)]
             response = AskResponse(answer=answer, provider=name, model=model, served=served, saved_at=saved_at,
                                    sources=[evidence.sources[i] for i in source_ids], grounding=evidence.grounding,
-                                   logged=logged, steps=steps, trace=trace, tools_used=tools_used, statement_ids=selected_ids(selection))
+                                   logged=logged, steps=steps, trace=trace, tools_used=tools_used, statement_ids=selected_ids(selection),
+                                   usage=writer_usage, workflow_usage=collector.snapshot())
             return response
         raise RuntimeError("Ask chain ended without template")
 
@@ -476,8 +488,12 @@ async def ask(request: AskRequest, env: Mapping[str, str], *, providers=None, tr
         valid=valid_response)
     if was_kept or response.served == "cached":
         # Current request loaded/verified the evidence; generation and audit happened earlier.
-        response = response.model_copy(update={"steps": [*evidence.steps, "Reused a cached checked statement selection",
+        response = response.model_copy(update={"workflow_usage": empty_usage("cache"),
+            "usage": explain.served_usage(response.usage, "cached"),
+            "steps": [*evidence.steps, "Reused a cached checked statement selection",
             f"Original selection: {response.provider}" + (f" · {response.model}" if response.model else "")],
             "trace": [TraceEvent(stage="cache", summary="Reused prior checked answer; tools and writer were not run again",
                                  ms=round(max(0, time.perf_counter() - cache_started) * 1000, 2))]})
+    if can_join and not was_kept:
+        response = response.model_copy(update={"workflow_usage": empty_usage("in_flight")})
     return response

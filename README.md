@@ -235,6 +235,13 @@ Pat001 follow-up outcome, never a forecast. The
 server rejects unknown IDs, sources, routes and answers over 120 words, then renders exact
 statements. The UI discloses that models select checked statements; a provider label does
 not imply unrestricted generated prose. Unsupported requests get a bounded site-help response.
+Ask also shows `workflow_usage`: provider-reported tokens from returned native triage and
+writer generations for the current request, including rejected selections and the bounded rewrite.
+The deterministic critic makes no model call. Original accepted-writer `usage` is a separate reference;
+cached and coalesced requests report no additional initiated model work, while a saved writer can
+still follow a fresh triage call. Missing reports and failed attempts make the subtotal incomplete.
+These are reported-generation subtotals, not billing totals or measured energy/carbon footprints.
+
 This limits model output to the catalogue; it does not guarantee the most relevant selection
 for every question or constitute clinical validation.
 
