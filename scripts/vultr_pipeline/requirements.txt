@@ -1,0 +1,6 @@
+# scripts/vultr_pipeline/pipeline.py (Python 3.9 or newer).
+# TotalSegmentator is installed separately because it brings PyTorch: see README.md.
+boto3
+nibabel
+numpy
+scikit-image

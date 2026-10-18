@@ -6,6 +6,7 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
+from routes_bones import router as bones_router
 from services.fea_solver import FEASolverError, simulate_fea
 
 app = FastAPI(
@@ -13,6 +14,7 @@ app = FastAPI(
     version="0.1.0",
     description="NIfTI bone segmentation and finite-element biomechanics API.",
 )
+app.include_router(bones_router)
 
 app.add_middleware(
     CORSMiddleware,

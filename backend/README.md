@@ -34,3 +34,77 @@ Example response:
   "source_filename": "RB-24081-femur.nii.gz"
 }
 ```
+
+## Bone assets from Vultr Object Storage (`GET /api/bones`)
+
+`scripts/vultr_pipeline/pipeline.py` segments CTPelvic1K scans with TotalSegmentator
+and uploads bone masks, surface meshes and `ctpelvic1k/manifest.json` to a Vultr
+Object Storage bucket as private objects (see `scripts/vultr_pipeline/README.md`).
+`GET /api/bones` (`routes_bones.py`) reads that manifest and returns it with a
+pre-signed GET URL for every file, valid for 15 minutes. The browser downloads the
+files straight from the bucket; the keys stay on the server.
+
+### Configuration
+
+The route reads four environment variables from the process environment. Only
+the names are documented here and in `scripts/vultr_pipeline/.env.example`; never
+commit values.
+
+| Variable | Value |
+|---|---|
+| `VULTR_S3_ENDPOINT` | Object Storage hostname, e.g. `https://<region>.vultrobjects.com` |
+| `VULTR_S3_ACCESS_KEY` | S3 access key |
+| `VULTR_S3_SECRET_KEY` | S3 secret key |
+| `VULTR_S3_BUCKET` | Bucket the pipeline uploaded to |
+
+```bash
+cd backend
+( set -a; . /path/outside/repo/vultr-objstore.env; set +a; uvicorn main:app --reload )
+```
+
+### Responses
+
+| Status | When |
+|---|---|
+| 200 | The manifest, with `url` added to each file and `expires_in_seconds: 900` |
+| 503 | A `VULTR_S3_*` variable is unset; `detail` names the missing variables (never their values) |
+| 404 | The bucket has no `ctpelvic1k/manifest.json` yet: run the pipeline |
+| 502 | The bucket could not be read, or the manifest is not valid JSON |
+
+Abridged 200 response (placeholder values):
+
+```json
+{
+  "expires_in_seconds": 900,
+  "expires_at": "<UTC time>",
+  "manifest_key": "ctpelvic1k/manifest.json",
+  "dataset": {"title": "CTPelvic1K Dataset", "licence": "cc-by-4.0", "doi": "10.5281/zenodo.4588403"},
+  "segmentation_tool": {"name": "TotalSegmentator", "licence": "Apache-2.0 (...)", "citation": "..."},
+  "cases": [
+    {
+      "case_id": "<case>",
+      "files": [
+        {"kind": "mesh", "bone": "sacrum", "key": "ctpelvic1k/<case>/meshes/sacrum.vtp",
+         "bytes": 0, "sha256": "<hex>", "content_type": "application/xml",
+         "url": "https://<region>.vultrobjects.com/<bucket>/ctpelvic1k/<case>/meshes/sacrum.vtp?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Expires=900&..."}
+      ]
+    }
+  ]
+}
+```
+
+Only keys under `ctpelvic1k/` are signed. A SigV4 pre-signed URL carries the
+access key ID in `X-Amz-Credential` (that is how S3 identifies the signer); the
+secret key is never sent. The route logs only S3 error codes. For the browser to
+fetch the URLs, the bucket needs a CORS rule for the front end's origin
+(`pipeline.py --cors-origin <origin>`).
+
+### Tests
+
+No network or bucket: moto stands in for Object Storage.
+
+```bash
+cd backend
+python -m pip install -r requirements.txt python-multipart httpx "moto[s3]"
+python -m unittest tests.test_bones -v
+```
