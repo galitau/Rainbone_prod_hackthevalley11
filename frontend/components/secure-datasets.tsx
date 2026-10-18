@@ -61,7 +61,7 @@ export function SecureDatasets() {
 
       <p role="note" className="mt-6 flex gap-3 rounded-xl border border-caution/25 bg-caution/[0.06] px-4 py-3 text-[12.5px] leading-5 text-ink">
         <Info size={16} className="mt-0.5 shrink-0 text-caution" aria-hidden />
-        <span><strong className="font-semibold">Research prototype — not a medical device.</strong> The built-in scans come from public research datasets (HFValid, CTPelvic1K), and the sample the overview runs is a synthetic test volume. There are no real patient accounts: the clinician in the header is a demo profile. Only import scans you are allowed to share.</span>
+        <span><strong className="font-semibold">Research prototype — not a medical device.</strong> The HFValid femur and CTPelvic1K pelvic scans come from public research datasets, and the sample the overview runs is a synthetic test volume. There are no real patient accounts: the clinician in the header is a demo profile. Only import scans you are allowed to share.</span>
       </p>
 
       <div className="mt-6 grid gap-6 xl:grid-cols-2">
@@ -207,7 +207,7 @@ function KeysCard() {
       badge={<Badge tone="success" icon={<KeyRound size={12} />}>Server only</Badge>}
     >
       <Row icon={<KeyRound size={14} />} label="Where they live">
-        The keys are set only on the API server: the Gemini and Groq keys and the database connection string in its environment or <Mono>backend/.env</Mono>, the <Mono>VULTR_S3_*</Mono> storage keys in its process environment. The API never logs or returns a secret: the signed storage links carry only the access key ID, as S3 requires, never the secret key. The only setting built into the browser code is the API&apos;s address.
+        The keys are set only on the API server: the Gemini and Groq keys, the database connection string and the lesion-progression storage keys in its environment, <Mono>backend/.env</Mono> or a <Mono>.env</Mono> at the repository root; the <Mono>VULTR_S3_*</Mono> storage keys in its process environment. The API never logs or returns a secret: the signed storage links carry only the access key ID, as S3 requires, never the secret key. The only setting built into the browser code is the API&apos;s address.
       </Row>
       <Row icon={<Link2 size={14} />} label="Same origin">
         With <Mono>API_PROXY_TARGET</Mono> set and <Mono>NEXT_PUBLIC_API_BASE_URL</Mono> pointing at the site, the site forwards <Mono>/api/*</Mono> and <Mono>/health</Mono> to the API, so API calls stay on the site&apos;s own origin. The pelvic meshes still come straight from the Vultr bucket through signed links. This page calls the API at <Mono>{API_HOST}</Mono>.
