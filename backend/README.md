@@ -29,8 +29,8 @@ python scripts/bone_fea/test_element_moduli.py
 ```
 
 `test_solve.py` keeps the solver's default output and leaves a `domain.vtk`
-in the working directory; delete it rather than committing it. The API and
-the other tests pass `save_results=False` and write no files.
+in the working directory; `.gitignore` lists it so it is not committed. The
+API and the other tests pass `save_results=False` and write no files.
 
 ## What `/api/simulate` computes
 
@@ -199,8 +199,8 @@ nibabel read 4 bytes short and every upload of it returned 422. It was
 rewritten with nibabel from its own 348-byte header and voxels. The voxel
 bytes are unchanged (sha256 `9c2d7ae8adbdf8c40acede58f47e473492a3845d162e41577ab8080bbbc0e1a5`,
 checked by `tests/test_simulate.py`), and so is the affine. nibabel
-normalised two header fields that meant the same thing: `pixdim[0]` from 0
-to 1, and `scl_slope`/`scl_inter` from 0 to NaN (no scaling either way).
+normalised two header fields: `pixdim[0]` from 0 to 1, and `scl_slope` from 0
+to 1 (`scl_inter` stays 0). Both values mean no scaling.
 
 ## Example response
 
