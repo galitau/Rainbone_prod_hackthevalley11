@@ -34,8 +34,8 @@ from services.fea_solver import (MAX_FE_VOXELS, _load_nifti, analyze_bone_volume
                                  bone_weighted_percentile)
 
 REPO = BACKEND.parent
-SAMPLE = REPO / "public" / "sample_bone.nii.gz"
-FEMUR_LABELMAP = REPO / "public" / "models" / "hfvalid-femur" / "bone.seg.nrrd"
+SAMPLE = REPO / "frontend" / "public" / "sample_bone.nii.gz"
+FEMUR_LABELMAP = REPO / "frontend" / "public" / "models" / "hfvalid-femur" / "bone.seg.nrrd"
 # sha256 of the sample's float32 voxels in file (Fortran) order. The damaged
 # original stored these same bytes from byte 348 of the decompressed file.
 SAMPLE_VOXELS_SHA256 = "9c2d7ae8adbdf8c40acede58f47e473492a3845d162e41577ab8080bbbc0e1a5"
