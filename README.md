@@ -500,8 +500,10 @@ optional FSL bone segmentation.
 
 ## Limitations
 
-- **A research prototype, not a medical device.** It gives no forecast and no
-  diagnosis, and nothing in it has been validated for clinical use.
+- **A research prototype, not a medical device.** The fracture-risk figure it surfaces early
+  (ARF0) is the HFValid authors' published model estimate for this femur, shown so a care team
+  can see where she stands among 101 women before a fall. Rainbone makes no forecast of its own
+  and no diagnosis, and nothing in it has been validated for clinical use.
 - **The fall numbers are published, not computed from a scan.** ARF0 and MSF are the
   HFValid authors' results for one case, Pat001. Importing a CT runs our standing-load
   solve; it does not produce an ARF0 or an MSF.
