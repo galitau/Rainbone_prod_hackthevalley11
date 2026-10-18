@@ -42,7 +42,7 @@ export type SimulationResult = {
 
 export type SimulationOutcome =
   | { ok: true; result: SimulationResult; ms: number }
-  | { ok: false; message: string; reachedApi: boolean };
+  | { ok: false; message: string; reachedApi: boolean; busy?: boolean };
 
 // Posts one NIfTI file to /api/simulate. Never throws.
 export async function runSimulation(file: File): Promise<SimulationOutcome> {
@@ -60,7 +60,7 @@ export async function runSimulation(file: File): Promise<SimulationOutcome> {
   if (!response.ok) {
     if (response.status === 429) {
       const retry = Number(response.headers.get("Retry-After"));
-      return { ok: false, reachedApi: true, message: `The engine is busy. ${Number.isFinite(retry) && retry > 0 ? `Try again in ${retry} seconds.` : "Try again shortly."} Your file was not queued.` };
+      return { ok: false, reachedApi: true, busy: true, message: `Engine busy, your file wasn't started; ${Number.isFinite(retry) && retry > 0 ? `try again in ${Math.ceil(retry)} s.` : "try again shortly."}` };
     }
     let detail = "";
     try {

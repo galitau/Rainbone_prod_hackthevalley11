@@ -44,7 +44,7 @@ export type RunState =
   | { status: "idle"; input: RunInput } // the automatic sample run is off in Preferences
   | { status: "loading"; input: RunInput }
   | { status: "ready"; input: RunInput; result: SimulationResult; ms: number }
-  | { status: "error"; input: RunInput; message: string };
+  | { status: "error"; input: RunInput; message: string; busy?: boolean };
 
 type OverviewProps = {
   view?: "overview";
