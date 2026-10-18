@@ -27,20 +27,19 @@ import math
 import os
 import re
 import time
-from pathlib import Path
 from typing import TYPE_CHECKING, Literal, Mapping, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from services.llm_providers import (GEMINI_FALLBACK_MODEL, GeminiProvider, GroqProvider, ProviderError,
                                     env_value)
+from services.settings import runtime_env  # noqa: F401 - routes_explain depends on it from here
 
 if TYPE_CHECKING:  # pragma: no cover
     import httpx
 
 log = logging.getLogger("rainbowbone.explain")
 
-BACKEND_DIR = Path(__file__).resolve().parents[1]
 PROVIDER_NAMES: tuple[str, ...] = ("gemini", "groq", "template")
 DEFAULT_ORDER: tuple[str, ...] = PROVIDER_NAMES
 DISPLAY_DECIMALS = 2
@@ -124,19 +123,6 @@ class ExplainResponse(BaseModel):
 
 
 # ----------------------------------------------------------------------------- environment and order
-def runtime_env() -> dict[str, str]:
-    """backend/.env (when present and python-dotenv is installed), overridden by the process environment."""
-    env: dict[str, str] = {}
-    try:
-        from dotenv import dotenv_values
-    except ImportError:
-        dotenv_values = None
-    if dotenv_values is not None and (BACKEND_DIR / ".env").is_file():
-        env.update({k: v for k, v in dotenv_values(BACKEND_DIR / ".env").items() if v is not None})
-    env.update(os.environ)
-    return env
-
-
 def chain_order(env: Mapping[str, str]) -> tuple[str, ...]:
     offline = env_value(env, "AI_OFFLINE")
     if offline not in (None, "0", "1"):

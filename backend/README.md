@@ -8,7 +8,8 @@ python -m pip install -r requirements.txt
 uvicorn main:app --reload
 ```
 
-The API exposes `GET /health` and `POST /api/simulate`. The simulation endpoint
+The API exposes `GET /health`, `POST /api/simulate`, `POST /api/explain` and
+`GET /api/history`. The simulation endpoint
 accepts a multipart form upload named `file` containing a `.nii` or `.nii.gz`
 NIfTI volume. The dashboard posts `public/sample_bone.nii.gz` to
 `http://127.0.0.1:8000/api/simulate`, uvicorn's default port.
@@ -272,8 +273,134 @@ with `AI_OFFLINE=1`:
 
 ### Tests
 
-No network: provider calls go to `httpx.MockTransport`. From `backend/`:
+`tests/test_explain.py` runs with the backend tests above and needs no
+network: provider calls go to `httpx.MockTransport`.
 
-```bash
-python -m unittest discover -s tests -v
+## Simulation history (TimescaleDB)
+
+Each successful `POST /api/simulate` is also saved as one row of the
+`simulation_runs` TimescaleDB hypertable, and `GET /api/history` returns the
+latest runs. History is optional: without `DATABASE_URL` nothing is saved,
+`/api/history` answers 503, and `/api/simulate` behaves exactly as before.
+
+### Configuration
+
+One variable, listed without a value in `backend/.env.example`. Put it in
+`backend/.env` (gitignored; never commit it) or set it in the shell; the shell
+wins, as for the explanation keys.
+
+- `DATABASE_URL`: PostgreSQL connection string of a database with TimescaleDB,
+  e.g. a Tiger Cloud service (the connection string from the Tiger console,
+  with its options such as `?sslmode=require`) or a local
+  `timescale/timescaledb` container.
+
+Apply the schema once, then start the API (the same commands work in bash):
+
+```powershell
+cd backend
+python -m services.history migrate
+uvicorn main:app --reload
 ```
+
+The schema is applied only by `python -m services.history migrate`, never at
+API start. The command runs every `migrations/*.sql` file in name order, each
+in its own transaction. Every file is idempotent, so re-running is safe.
+
+### What is stored
+
+`migrations/001_simulation_runs.sql` creates:
+
+- `simulation_runs`, a hypertable on `time` with 7-day chunks: the run time,
+  a `run_id`, every `SimulationResponse` field exactly as returned, and solver
+  information: `solver` (the function that produced the values,
+  `services.fea_solver.simulate_fea`), `solver_versions` (installed versions of
+  nibabel, numpy, scipy and sfepy) and `solve_ms` (wall
+  time of that call in the API process).
+- `simulation_runs_hourly`, a real-time continuous aggregate: per UTC hour, the
+  number of runs and the average and maximum of `max_von_mises_stress_mpa`. A
+  refresh policy materializes buckets between 30 days and 1 hour old, hourly;
+  newer rows are read from the hypertable at query time.
+- No retention or compression policy.
+
+### `GET /api/history?limit=N`
+
+`N` is 1–500 (default 10). Response to `?limit=1` from a local TimescaleDB
+container after four uploads of `public/sample_bone.nii.gz` (two with curl,
+two from the dashboard):
+
+```json
+{
+  "series": [
+    {
+      "label": "Oct 18 02:54:44 UTC",
+      "value": 17.71
+    }
+  ],
+  "runs": [
+    {
+      "time": "2026-10-18T02:54:44.927713Z",
+      "run_id": "5d2049c1-3a90-4a62-b579-c3c3704ac14c",
+      "source_filename": "sample_bone.nii.gz",
+      "max_von_mises_stress_mpa": 17.71,
+      "average_youngs_modulus_gpa": 22.79,
+      "bone_volume_cm3": 3.05,
+      "fracture_risk_index_percent": 11.81,
+      "load_newtons": 800.0,
+      "mesh_vertices": 1610,
+      "mesh_faces": 3216,
+      "solver": "services.fea_solver.simulate_fea",
+      "solver_versions": {
+        "numpy": "2.5.4",
+        "scipy": "1.18.1",
+        "sfepy": "2026.3",
+        "nibabel": "5.4.2"
+      },
+      "solve_ms": 1418.8740420067916
+    }
+  ],
+  "hourly": [
+    {
+      "bucket": "2026-10-18T02:00:00Z",
+      "runs": 4,
+      "avg_max_von_mises_stress_mpa": 17.71,
+      "max_max_von_mises_stress_mpa": 17.71
+    }
+  ]
+}
+```
+
+- `series` has the shape of `mockStressSeries` in `lib/mock-data.ts`: one
+  point per run, `value` = `max_von_mises_stress_mpa`, `label` = run time in
+  UTC.
+- `runs` are the same runs with every stored column; `hourly` holds the latest
+  `N` hourly buckets. All lists are oldest first.
+- 503 when `DATABASE_URL` is unset, the database is unreachable, or the
+  migration has not been run; `detail` says which.
+
+Assumptions and limits:
+
+- History stores what `/api/simulate` returns. It does not change how those
+  values are computed and adds no interpretation of them.
+- The save runs as a FastAPI background task after the response is sent. A
+  failed save is logged as a warning (password masked) and does not change the
+  response. A history request sent right after a simulate response may not
+  include that run yet.
+- Each save and each history request opens one short-lived connection (5 s
+  connect timeout). There is no connection pool.
+- The dashboard chart still uses `mockStressSeries`; it does not call
+  `/api/history`.
+
+### Tests
+
+These run with the backend tests above. `tests/test_history.py` uses a fake
+connection. `tests/test_history_timescale.py` starts a throwaway
+`timescale/timescaledb:latest-pg16` container on a free 127.0.0.1 port,
+migrates it, saves runs through `/api/simulate`, reads `/api/history`, and
+removes the container. It is skipped, with the reason, when Docker is not
+available. Both files override `DATABASE_URL` for their own run, so they never
+connect to the database configured in your shell or `backend/.env`;
+`tests/test_simulate.py` sets it empty, so it saves nothing. Docker is
+found from the `DOCKER` environment variable, then `docker` on `PATH`, then
+`~/.docker/bin/docker`. Most tests that need a successful solve replace
+`simulate_fea` with fixed test values; one test in `tests/test_history.py`
+posts the bundled sample through the real solver.

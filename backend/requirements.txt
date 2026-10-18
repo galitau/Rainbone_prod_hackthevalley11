@@ -12,3 +12,4 @@ python-multipart
 httpx2
 httpx
 python-dotenv
+psycopg[binary]

@@ -14,6 +14,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import nibabel as nib
 import numpy as np
@@ -57,6 +58,10 @@ class SimulateEndpointTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.client = TestClient(app)
+        # No history saves from these tests, even with DATABASE_URL in the shell or backend/.env.
+        no_history = mock.patch.dict(os.environ, {"DATABASE_URL": ""})
+        no_history.start()
+        cls.addClassCleanup(no_history.stop)
         # Run from an empty directory to catch solver output files.
         cls.previous_cwd = os.getcwd()
         cls.workdir = tempfile.TemporaryDirectory()

@@ -26,6 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from routes_explain import router  # noqa: E402
 from services import explain as ex  # noqa: E402
+from services import settings  # noqa: E402
 from services.explain import (ChainConfigError, ExplainRequest, build_facts, check, explain,  # noqa: E402
                               template_text)
 from services.llm_providers import OUTPUT_SCHEMA, GeminiProvider, GroqProvider  # noqa: E402
@@ -428,14 +429,14 @@ class RuntimeEnvTests(unittest.TestCase):
     def test_backend_env_file_is_read_and_process_env_wins(self):
         with tempfile.TemporaryDirectory() as folder:
             Path(folder, ".env").write_text("GROQ_MODEL=from-file\nAI_OFFLINE=1\n", encoding="utf-8")
-            with umock.patch.object(ex, "BACKEND_DIR", Path(folder)), \
+            with umock.patch.object(settings, "BACKEND_DIR", Path(folder)), \
                     umock.patch.dict(os.environ, {"AI_OFFLINE": "0"}, clear=True):
                 env = ex.runtime_env()
         self.assertEqual((env["GROQ_MODEL"], env["AI_OFFLINE"]), ("from-file", "0"))
 
     def test_no_env_file_is_fine(self):
         with tempfile.TemporaryDirectory() as folder:
-            with umock.patch.object(ex, "BACKEND_DIR", Path(folder)), \
+            with umock.patch.object(settings, "BACKEND_DIR", Path(folder)), \
                     umock.patch.dict(os.environ, {"AI_CHAIN": "template"}, clear=True):
                 self.assertEqual(ex.runtime_env(), {"AI_CHAIN": "template"})
 
