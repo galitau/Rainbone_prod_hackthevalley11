@@ -52,12 +52,12 @@ export function FractureRiskAnalysis({ state }: { state: RiskAnalysisState }) {
         <div>
           <p className="text-[11px] font-medium uppercase tracking-[0.06em] text-muted">AI fracture risk analysis</p>
           <h2 id="risk-analysis-title" className="mt-1 text-[17px] font-semibold leading-snug text-ink">Sideways fall: {range(fall.low, fall.high, 1)}× this femur&apos;s strength</h2>
-          <p className="mt-0.5 text-[12px] text-muted">Published {FEMUR_MODEL.dataset} model · {FEMUR_MODEL.caseId}{f ? ` · age ${f.age} at CT · ${outcome(f)}` : ""}</p>
+          <p className="mt-0.5 text-[12px] text-muted">{FEMUR_MODEL.dataset} MSF against published fall forces · {FEMUR_MODEL.caseId}{f ? ` · age ${f.age} at CT · ${outcome(f)}` : ""}</p>
         </div>
         <Sparkles size={17} className="mt-0.5 shrink-0 text-link" aria-hidden />
       </div>
       <p className="border-b border-line bg-link/[0.05] px-5 py-2.5 text-[12.5px] leading-5 text-body">
-        <span className="font-semibold text-ink">For a care team:</span> where this resident&apos;s bone sits among {fall.women} older women, before a fall happens. Research data, not a diagnosis or medical advice.
+        <span className="font-semibold text-ink">For a care team:</span> where a resident&apos;s femur would sit among the study&apos;s {fall.women} women, shown here for {FEMUR_MODEL.dataset} subject {FEMUR_MODEL.caseId}. Research data, not a diagnosis or medical advice.
       </p>
 
       {state.status === "loading" && <p className="px-5 py-4 text-[13px] leading-6 text-muted">Analysing this femur&apos;s published fracture risk…</p>}
@@ -68,8 +68,8 @@ export function FractureRiskAnalysis({ state }: { state: RiskAnalysisState }) {
           <p className="flex gap-2 border-b border-line px-5 py-3 text-[12px] leading-5 text-body">
             <Info size={14} className="mt-0.5 shrink-0 text-muted" aria-hidden />
             <span>
-              Two different measures. The fracture risk above and the numbers below are the {FEMUR_MODEL.dataset} authors&apos; fall-based results from their
-              finite-element model. The {formatNumber(FEMUR_INDEX_PERCENT, 1)}% standing-load stress ratio above is our own simpler check: peak stress under{" "}
+              Two different measures. ARF0 and MSF, above and below, are the {FEMUR_MODEL.dataset} authors&apos; results from their finite-element and
+              falling models; the fall-load ratio divides published sideways-fall forces (van den Kroonenberg et al. 1995) by that MSF. The {formatNumber(FEMUR_INDEX_PERCENT, 1)}% standing-load stress ratio above is our own simpler check: peak stress under{" "}
               {formatNumber(FEMUR_MODEL.loadNewtons, 0)}&nbsp;N on the femoral head against an assumed {ASSUMED_STRENGTH_MPA}&nbsp;MPa strength, not a fall and not a
               likelihood of breaking.
             </span>

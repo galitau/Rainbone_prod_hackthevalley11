@@ -50,6 +50,10 @@ export function ClinicalMetrics() {
             <p className="text-[12px] text-muted">ARF0 as published</p>
           </div>
         </div>
+        <p className="mt-3 text-[12px] leading-5 text-body">
+          The study authors&apos; model estimate, not a personal probability: {r.cohortFractured} of the {r.cohortN} women fractured during the study&apos;s
+          follow-up, while the median ARF0 was {percent(r.cohortArf0Median)}.
+        </p>
 
         <div role="img" aria-label={rampLabel} className="mt-6">
           <div className="relative h-[26px] text-[11px] font-medium text-critical">

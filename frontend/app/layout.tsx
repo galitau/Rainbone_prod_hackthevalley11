@@ -15,22 +15,22 @@ const plexMono = IBM_Plex_Mono({
 });
 
 const description =
-  "For senior-living care teams: turns a resident's existing hip CT into a fall-fracture check before a fall becomes an emergency. Research prototype built at Hack the Valley 11, not a medical device.";
+  "For senior-living care teams: a prototype of a fall-fracture check from a hip CT, shown on one published HFValid femur with the study authors' fall-risk results. Research prototype built at Hack the Valley 11, not a medical device.";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://rainbone.health"),
-  title: "Rainbone | Fall-fracture check for senior-living care teams",
+  title: "Rainbone | Fall-fracture check prototype for care teams",
   description,
   openGraph: {
     type: "website",
     url: "https://rainbone.health",
     siteName: "Rainbone",
-    title: "Rainbone: check a hip for fall fracture before the fall",
+    title: "Rainbone: a hip CT fall-fracture check, prototyped on a published femur",
     description,
   },
   twitter: {
-    card: "summary",
-    title: "Rainbone: check a hip for fall fracture before the fall",
+    card: "summary_large_image",
+    title: "Rainbone: a hip CT fall-fracture check, prototyped on a published femur",
     description,
   },
 };

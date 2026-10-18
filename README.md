@@ -2,8 +2,9 @@
 
 Rainbone is for care teams in senior living. The problem it targets is the hip fracture
 from a fall: by the time a resident falls and breaks a hip, it is already an emergency.
-Rainbone is built to turn a hip CT the resident already has into a fall-fracture check
-the team can act on beforehand. Today it runs on one woman's femur CT from the published
+Rainbone aims to turn a hip CT a resident already has into a fall-fracture check; today
+the fall numbers come from the HFValid authors' published results, not from an uploaded
+scan. It runs on one woman's femur CT from the published
 HFValid study (case Pat001, age 78 at the scan): it shows the femur in 3D under an 800 N
 standing load, then sets the study authors' own fall results beside it. Their absolute
 risk of fracture at time 0 (ARF0), from a finite-element model coupled with a fall
@@ -90,7 +91,8 @@ The dashboard (`/dashboard`; `/` is the landing page and `/enter` the guest pass
    posts it to `POST /api/simulate`.
 4. The API keeps voxels at or above 150 HU, maps HU to stiffness, meshes the bone into
    tetrahedra, solves an 800 N compression with SfePy, and returns peak stress, mean
-   stiffness, bone volume and the fracture risk index for the metrics panel.
+   stiffness, bone volume and the standing-load stress ratio (peak stress / assumed
+   150 MPa); the page's "All numbers and method" panel shows the first three.
 5. After answering, the API saves the run to TimescaleDB (Tiger Cloud) when
    `DATABASE_URL` is set; `GET /api/history` reads the runs back.
 
