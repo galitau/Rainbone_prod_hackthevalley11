@@ -8,6 +8,7 @@ function timestamp(value: string) {
 // The caller selects an input filename. Repeated executions are not patient follow-up scans.
 export function StressChart({ runs, name, hourly }: { runs: HistoryRun[]; name: string; hourly?: HistoryHour[] }) {
   if (runs.length === 0) return null;
+  const isSample = name === "sample_bone.nii.gz";
   const values = runs.map((run) => run.max_von_mises_stress_mpa);
   const max = Math.max(...values);
   const points = values.map((value, index) => `${(index / Math.max(1, values.length - 1)) * 100},${100 - (max > 0 ? (value / max) * 78 : 0) - 8}`).join(" ");
@@ -19,13 +20,14 @@ export function StressChart({ runs, name, hourly }: { runs: HistoryRun[]; name: 
     <section aria-label="Saved simulation runs" className="rounded-2xl border border-line bg-surface p-5 shadow-card md:p-6">
       <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
         <div>
-          <h2 className="text-[15px] font-semibold text-ink">Saved simulation runs</h2>
+          <h2 className="text-[15px] font-semibold text-ink">{isSample ? "Engine test history" : "Simulation history by input"}</h2>
           <p className="mt-1 text-[12px] text-muted">{runs.length} returned runs for <span className="break-all font-mono">{name}</span></p>
-          <p className="mt-2 text-[12px] leading-5 text-body">Simulation execution history, not patient progression. Matching filenames do not confirm identical scans or settings.</p>
+          <p className="mt-2 text-[12px] leading-5 text-body">{isSample ? "The bundled sample is a synthetic test volume, not the HFValid femur above. Runs are matched by filename only; matching names do not prove identical contents. This is execution history, not patient change." : "Saved engine executions, not patient progression. Matching filenames do not confirm identical scans or settings."}</p>
         </div>
         <p className="shrink-0 text-right"><span className="font-mono text-[22px] font-medium text-ink tabular-nums">{values[values.length - 1].toFixed(1)}</span><span className="ml-1 text-[11px] text-muted">MPa · latest returned</span></p>
       </div>
-      {runs.length > 1 ? <>
+      {runs.length > 1 ? <details className="mt-4">
+        <summary className="cursor-pointer text-[12px] font-medium text-link">Compare returned executions · peak stress</summary>
         <div className="relative mt-5 h-32">
           <div className="absolute inset-0">
             {ticks.map((tick, index) => <div key={index} className="absolute inset-x-0 flex -translate-y-1/2 items-center gap-2" style={{ top: `${tick.top}%` }}><span className="w-8 text-right font-mono text-[10px] text-muted">{tick.label}</span><span className="h-px flex-1 bg-line" /></div>)}
@@ -35,7 +37,7 @@ export function StressChart({ runs, name, hourly }: { runs: HistoryRun[]; name: 
           </svg>
         </div>
         <div className="ml-10 mt-2 flex justify-between gap-2 text-[10px] text-muted"><span>Oldest returned</span><span>Run order · equal spacing</span><span>Newest returned</span></div>
-      </> : <p className="mt-4 text-[12px] text-muted">One saved run returned. Another execution will allow a run-order comparison.</p>}
+      </details> : <p className="mt-4 text-[12px] text-muted">One saved run returned. Another execution will allow a run-order comparison.</p>}
       <div className="mt-5 overflow-x-auto rounded-lg border border-line" role="region" aria-label="Recent saved run evidence" tabIndex={0}>
         <table className="w-full text-left text-[11px]">
           <caption className="border-b border-line bg-sunken/60 px-3 py-2 text-left font-medium text-ink">Latest {recent.length} returned {recent.length === 1 ? "run" : "runs"} · newest first</caption>
