@@ -38,13 +38,23 @@ def fsl_tools() -> Optional[dict[str, Path]]:
     fsldir = runtime_env().get("FSLDIR", "").strip()
     if not fsldir:
         return None
-    tools = {name: Path(fsldir) / "bin" / name for name in FSL_COMMANDS}
+    tools = {name: Path(fsldir).expanduser() / "bin" / name for name in FSL_COMMANDS}
     missing = [name for name, path in tools.items() if not path.is_file()]
     if missing:
         log.warning("FSLDIR is set but %s is missing from $FSLDIR/bin; segmenting bone with numpy/scipy",
                     ", ".join(missing))
         return None
     return tools
+
+
+def segmentation_tool() -> str:
+    """Which tool will make the bone mask, and why, for the startup log."""
+    if not runtime_env().get("FSLDIR", "").strip():
+        return "numpy/scipy (FSLDIR is not set)"
+    tools = fsl_tools()
+    if tools is None:
+        return "numpy/scipy (fslmaths or connectedcomp is missing from $FSLDIR/bin)"
+    return f"FSL ({', '.join(FSL_COMMANDS)} in {tools['fslmaths'].parent})"
 
 
 def _largest_label(labels: np.ndarray) -> np.ndarray:

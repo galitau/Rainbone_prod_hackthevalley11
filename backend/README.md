@@ -123,9 +123,9 @@ allocate a large buffer. Crop a larger scan to the bone of interest first.
 
 ## Bone segmentation with FSL
 
-When `FSLDIR` (shell or `backend/.env`) points at an FSL install, step 2 runs
-as two FSL commands on a temporary copy of the volume
-(`services/fsl_segmentation.py`):
+When `FSLDIR` (shell or `backend/.env`; a leading `~` is expanded) points at
+an FSL install, step 2 runs as two FSL commands on a temporary copy of the
+volume (`services/fsl_segmentation.py`):
 
 ```bash
 fslmaths ct.nii -thr 150 -bin mask.nii -odt char   # voxels at or above 150 HU
@@ -137,20 +137,31 @@ as `scipy.ndimage.label` numbers them. NaN voxels are written as −1000 HU and
 ±inf as the largest finite values, which is how the numpy path treats them.
 Without `FSLDIR`, or when a command is missing, fails or runs over 60 s, the
 numpy/scipy path runs instead, with a warning when `FSLDIR` was set. The
-`segmentation` entry of the INFO log says which one ran. The response fields
-do not change.
+response fields do not change. To see which one runs:
+
+- At startup uvicorn prints `INFO:     Bone segmentation: FSL (fslmaths,
+  connectedcomp in <FSLDIR>/bin)`, or `Bone segmentation: numpy/scipy
+  (FSLDIR is not set)`.
+- A request that falls back prints a warning.
+- Each saved history run stores `segmentation` (`fsl` or `numpy`) in
+  `solver_versions`.
 
 FSL does not make the mask more accurate: it runs the same threshold and
-connected-component steps. Measured with the FSL packages `fsl-avwutils`
-2209.8 and `fsl-cluster` 2201.0, segmentation only, 3 runs each:
+connected-component steps, and it is slower. Measured with the FSL packages
+`fsl-avwutils` 2209.8 and `fsl-cluster` 2201.0, segmentation only, 3 runs
+each:
 
 | Volume | Bone voxels kept | Same mask as numpy/scipy | FSL | numpy/scipy |
 |---|---|---|---|---|
 | `public/sample_bone.nii.gz` | 3,048 | yes | 0.04–0.08 s | under 0.01 s |
-| Femur-shaped volume (see Example response), 256 × 331 × 220 | 413,475 | yes | 1.18–1.27 s | 0.26–0.31 s |
+| Femur-shaped volume (see Example response), 256 × 331 × 220 | 413,475 | yes | 1.14–1.20 s | 0.29–0.31 s |
+| Public pelvic CT (CTPelvic1K), 512 × 512 × 350, int32 | 1,905,792 | yes | 6.66–7.17 s | 2.09–2.19 s |
 
-The femur-shaped volume gives the same response either way (12.61 MPa,
-22.35 GPa, 408.83 cm³, index 8.4).
+FSL writes the whole volume and its mask and labels to temporary files on
+every request. Whole requests for that pelvic CT (curl, 2 runs each) took
+12.79 s and 12.63 s with FSL and 6.79 s and 6.05 s without, with the same
+response. The femur-shaped volume gives the same response either way
+(12.61 MPa, 22.35 GPa, 408.83 cm³, index 8.4).
 
 FSL is optional and is not in `requirements.txt`. It runs on macOS and Linux,
 and on Windows only through WSL. It is free for non-commercial use under its
@@ -165,7 +176,8 @@ micromamba create -y -p ~/fsl-bone --override-channels \
   fsl-avwutils fsl-cluster
 ```
 
-Then set `FSLDIR` to that folder (`~/fsl-bone`). A full FSL install also
+Then put `FSLDIR=~/fsl-bone` in `backend/.env` (or set it in the shell) and
+restart uvicorn; the startup line should say FSL. A full FSL install also
 works.
 
 `tests/test_fsl_segmentation.py` always checks the fallback. When `FSLDIR` is

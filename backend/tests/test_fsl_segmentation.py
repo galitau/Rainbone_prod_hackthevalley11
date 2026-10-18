@@ -70,6 +70,23 @@ class WithoutFslTests(unittest.TestCase):
         self.assertEqual(method, "numpy")
         np.testing.assert_array_equal(mask, numpy_mask(edge_case_volume()))
 
+    def test_startup_line_names_the_tool_and_fsldir_may_start_with_a_tilde(self):
+        with tempfile.TemporaryDirectory() as home:
+            bin_dir = Path(home, "fsl-bone", "bin")
+            bin_dir.mkdir(parents=True)
+            with mock.patch.dict(os.environ, {"HOME": home, "USERPROFILE": home}), \
+                    mock.patch.object(fsl_segmentation, "runtime_env", return_value={"FSLDIR": "~/fsl-bone"}):
+                with self.assertLogs(fsl_segmentation.log, "WARNING"):
+                    self.assertEqual(fsl_segmentation.segmentation_tool(),
+                                     "numpy/scipy (fslmaths or connectedcomp is missing from $FSLDIR/bin)")
+                for name in fsl_segmentation.FSL_COMMANDS:
+                    (bin_dir / name).touch()
+                self.assertEqual(fsl_segmentation.segmentation_tool(),
+                                 f"FSL (fslmaths, connectedcomp in {bin_dir})")
+                self.assertEqual(fsl_segmentation.fsl_tools()["fslmaths"], bin_dir / "fslmaths")
+        with mock.patch.object(fsl_segmentation, "runtime_env", return_value={}):
+            self.assertEqual(fsl_segmentation.segmentation_tool(), "numpy/scipy (FSLDIR is not set)")
+
 
 @unittest.skipUnless(fsl_segmentation.fsl_tools(), "FSL not found: set FSLDIR to an install with fslmaths and "
                                                    "connectedcomp to run these")
