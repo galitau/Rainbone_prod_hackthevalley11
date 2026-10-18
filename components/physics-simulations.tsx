@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ArrowDownToLine, ChevronLeft, ChevronRight, FlaskConical, Pause, Play, RotateCcw } from "lucide-react";
 import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { PressViewer } from "@/components/press-viewer";
+import { BoneReconstructionExport } from "@/components/bone-reconstruction-export";
 import { PRESS_PATH, pressStage, type PressField, type PressModel } from "@/lib/press-model";
 
 const inputStyle = "w-full rounded-lg border border-line bg-surface px-3 py-2 text-xs text-ink outline-none focus:border-focus";
@@ -94,6 +95,7 @@ export function PhysicsSimulations() {
             </div>
             <div className="mt-5 border-t border-line pt-4"><div className="flex items-center justify-between text-xs"><span className="text-muted">Damaged volume</span><span className={damaged ? "text-caution" : "text-ink"}>{frame.damaged_volume_percent.toFixed(2)}%</span></div><div className="mt-2 h-1.5 overflow-hidden rounded-full bg-line"><div className="h-full bg-spectrum-amber transition-[width]" style={{ width: `${frame.damaged_volume_percent}%` }} /></div><p className="mt-2 text-[10px] leading-4 text-muted">Volume with more than 5% stiffness loss. This is a model damage measure, not a fracture-risk probability.</p></div>
           </section>
+          <BoneReconstructionExport frameIndex={frameIndex} frame={frame} firstBreak={firstBreak} onSelectFrame={scrub} onPause={() => setPlaying(false)} />
           <section className="space-y-4 rounded-2xl border border-line bg-surface shadow-card p-5">
             <h3 className="text-sm font-medium">View controls</h3>
             <label className="block text-xs text-muted">Color field<select aria-label="Press color field" value={field} onChange={event => setField(event.target.value as PressField)} className={`${inputStyle} mt-2`}><option value="failure_index">Failure proximity · strain / limit</option><option value="stress_mpa">Von Mises stress · MPa</option><option value="damage">Material damage</option><option value="displacement_mm">Displacement</option><option value="anatomy">Bone surface</option></select></label>
