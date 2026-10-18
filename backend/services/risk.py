@@ -8,11 +8,15 @@ Sideways-fall forces are van den Kroonenberg et al. 1995 (PubMed 8618384).
 
 build_facts() computes every number a model may use: the subject's place among
 the cohort, the factor of risk (fall force / MSF) and the cohort figures. No
-model computes a number. check() rejects text that uses a number which is not a
-fact (or a fact rounded to fewer decimals), spells a quantity out, predicts a
-time, calls ARF0 a chance or probability, diagnoses or advises. A rejected or
+model computes a number, and the request's own FE numbers (fe) are echoed in
+the facts but never sent to a model or allowed in its text. check() rejects
+text that uses a number which is not a fact (or a fact rounded to fewer
+decimals), uses a fact as the wrong quantity (the age as a percent, a rank as a
+risk), states a rank the wrong way round, spells a quantity out, predicts a
+time, calls ARF0 a chance or likelihood, diagnoses or advises. A rejected or
 failed provider falls through to the next, and finally to a deterministic
-template built only from the facts.
+template built only from the facts. An AI answer is kept per case, facts and
+chain, so a reload does not spend another model call.
 
 The chain order, providers, timeouts and fallback reasons are the ones
 POST /api/explain uses (AI_CHAIN, AI_OFFLINE, GEMINI_*, GROQ_*).
@@ -43,28 +47,39 @@ if TYPE_CHECKING:  # pragma: no cover
 log = logging.getLogger("rainbowbone.risk")
 
 DATA_PATH = Path(__file__).resolve().parents[2] / "public" / "models" / "hfvalid-risk.json"
-MAX_CHARS = 1000  # the prompt asks for 850; the template's longest text stays below this
+MAX_CHARS = 600  # the prompt asks for 420; the template's longest text stays below this
 NOTE = "Published research data, not a diagnosis or medical advice."
 
 # Named terms whose digits are not quantities: the dataset's ARF0 ("Absolute Risk of Fracture at time 0").
 _NAMED_TERMS = re.compile(r"\bARF0\b|\btime 0\b", re.IGNORECASE)
-# A number followed by a time unit ("5 years", "78-year-old", "1,529 days").
-_TIME_UNIT_AFTER = re.compile(r"\s*-?\s*(day|week|month|year|yr|decade)s?\b", re.IGNORECASE)
-# Time horizons without a number ("next year", "within a decade", "lifetime").
+# A number followed by a time unit ("5 years", "78-year-old", "1,529 days", "4 y").
+_TIME_UNIT_AFTER = re.compile(r"\s*-?\s*(day|d|week|wk|month|year|yr|y|decade)s?\b", re.IGNORECASE)
+# The age is the only number allowed with years, and only written as an age: "78-year-old", "78 years old", "aged 78".
+_YEARS_OLD_AFTER = re.compile(r"[- ]old\b", re.IGNORECASE)
+_AGED_BEFORE = re.compile(r"\b(?:aged|age(?:\s+of)?)\s+$", re.IGNORECASE)
+# Time horizons without a number ("next year", "within a decade", "lifetime", "in her eighties").
 TIME_PATTERNS: tuple[str, ...] = (
     r"\b(?:next|coming|following|upcoming)\s+(?:\w+\s+)?(?:days?|weeks?|months?|years?|decades?)\b",
     r"\b(?:per|each|every|a|an)\s+(?:day|week|month|year|decade)\b",
     r"\b(?:few|several|many|some)\s+(?:days|weeks|months|years|decades)\b",
     r"\bannual", r"\blifetime\b", r"\byears?\s+to\s+come\b", r"\bin\s+the\s+future\b", r"\bsoon\b",
+    r"\bwithin\b", r"\b(?:weeks?|months?|decades?)\b", r"\beventual", r"\blater\b", r"\bahead\b",
+    r"\b(?:long|short)[- ]term\b", r"\b(?:yearly|monthly|weekly)\b",
+    r"\b(?:twenties|thirties|forties|fifties|sixties|seventies|eighties|nineties)\b",
 )
-# Diagnosis, treatment, advice, probabilities and certainty. Fracture, risk, break and fall are allowed.
+# Diagnosis, treatment, advice, referrals, probabilities and certainty. Fracture, risk, break and fall are allowed.
 BLOCKED_OUTPUT_PATTERNS: tuple[str, ...] = (
-    "diagnos", "osteopor", "osteopen", r"\bprognos", r"\btreat", r"\btherap", r"\bsurg", r"\bprescri",
-    r"\bmedicat", r"\bdrugs?\b", r"\bsupplement", r"\bvitamin", r"\bcalcium", r"\bexercis", r"\bshould\b",
-    r"\bmust\b", r"\bought\b", r"\brecommend", r"\badvi[cs]", r"\bconsult", r"\bdoctor", r"\bphysician",
-    r"\bclinician", r"\bspecialist", r"\byour?\b", r"\bchance", r"\bprobab", r"\bodds\b", r"\bcertain",
-    r"\bdefinitely\b", r"\bguarantee", r"\binevitabl", r"\bwill\s+(?:\w+\s+)?(?:break|fractur|fail|crack|snap)",
-    r"\bcancer", r"\bmetasta", r"\btumou?r",
+    "diagnos", "osteopor", "osteopen", r"\bprognos", r"\btreat", r"therap", r"\bphysio", r"\bsurg", r"\bprescri",
+    r"\bmedicat", r"\bdrugs?\b", r"\bsupplement", r"\bvitamin", r"\bcalcium", r"\bexercis", r"\btraining",
+    r"\bbisphosphon", r"\bdenosumab", r"\bteriparatide", r"\balendron", r"\bzoledron", r"\bhip\s+protector",
+    r"\b(?:bone\s+density|DXA|DEXA)\b", r"\bbone\s+(?:loss|mass)", r"\bdisease", r"\bshould\b", r"\bmust\b",
+    r"\bought\b", r"\bneeds?\s+(?:to|a|an)\b", r"\brecommend", r"\badvi[cs]", r"\bconsult", r"\bdoctor",
+    r"\bphysician", r"\bclinician", r"\bspecialist", r"\bGP\b", r"\bnurse", r"\bhealth\s*care", r"\bmedical",
+    r"\bhospital", r"\bemergenc", r"\bprevent", r"\bavoid", r"\bhelps?\b",
+    r"(?:^|[.!?]\s+)(?:Ask|Talk|Go|Get|See|Seek|Call|Book|Try|Consider|Wear|Take)\b", r"\byour?\b",
+    r"\bchance", r"\bprobab", r"\bodds\b", r"\blikelihood", r"(?:%|percent)\s+likely", r"\bcertain",
+    r"\bdefinitely\b", r"\bguarantee", r"\binevitabl", r"\bsure(?:ly)?\b", r"\bgoing\s+to\b",
+    r"\bbound\s+to\b", r"\bexpected\s+to\b", r"\bwill\b", r"\bcancer", r"\bmetasta", r"\btumou?r",
 )
 _TIME = tuple(re.compile(p, re.IGNORECASE) for p in TIME_PATTERNS)
 _BLOCKED = tuple(re.compile(p, re.IGNORECASE) for p in BLOCKED_OUTPUT_PATTERNS)
@@ -80,46 +95,62 @@ _SUBJECT_VS_N = re.compile(r"\b(" + _CMP + r")\b(?:\s+[\w-]+){0,3}?\s+than\s+(?:
 # N women against this femur: "75 women had a stronger femur", "56 of the 101 women in the study had a lower ARF0".
 _N_VS_SUBJECT = re.compile(r"(?<![\d.,])" + _COUNT + r"\s+(?:of\s+the\s+\d[\d,]*\s+|other\s+)*women\b"
                            r"(?:\s+(?:in|the|study|cohort|had|have|has|with|a|an))*\s+(" + _CMP + r")\b", re.IGNORECASE)
+# What a number is a quantity of, read from the words around it. A number of a kind may only be a fact of that kind,
+# so the age cannot appear as a percent, a rank as a fracture risk, or a factor of risk as a percent.
+_KINDS: tuple[tuple[str, re.Pattern], ...] = (
+    ("percent", re.compile(r"\s*(?:%|per\s?cent\b)", re.IGNORECASE)),
+    ("force in kN", re.compile(r"\s*(?:kN\b|kilonewtons?\b)", re.IGNORECASE)),
+    ("force in newtons", re.compile(r"\s*(?:N\b|[Nn]ewtons?\b)")),
+    ("stress", re.compile(r"\s*(?:MPa\b|megapascals?\b)", re.IGNORECASE)),
+    ("multiple of the strength", re.compile(r"\s*(?:\u00d7|x\b|times\b)", re.IGNORECASE)),
+    ("count of women", re.compile(r"\s+(?:of\s+(?:the\s+)?\d|(?:other\s+)?women\b)", re.IGNORECASE)),
+)
+_COUNT_BEFORE = re.compile(r"\bthan\s+(?:those\s+of\s+|that\s+of\s+)?$", re.IGNORECASE)
+# "Its ARF0 is 47.1%", "an ARF0 of 47.1%", "(ARF0) is 47.1%" state this woman's own ARF0, unless a word just before
+# names another one ("the median ARF0 of 44.3%", "the women who fractured had an ARF0 of 53.7%"). Runs on the text
+# after _NAMED_TERMS has taken the 0 out of ARF0.
+_ARF0_VALUE = re.compile(r"\bARF0?\b\)?\s*(?:\([^)]*\)\s*)?(?:is|was|of|at|=|:)\s*(?:about\s+|around\s+|roughly\s+|"
+                         r"nearly\s+|just\s+)?(\d+(?:\.\d+)?)\s*(?:%|per\s?cent\b)", re.IGNORECASE)
+_OTHER_ARF0_BEFORE = re.compile(r"\b(?:median|average|mean|typical|fractured|lowest|highest|minimum|maximum|cohort|"
+                                r"range[ds]?|ranging|other)\b[^.;]*$", re.IGNORECASE)
 
 SYSTEM_PROMPT = (
     "You explain to a reader with no medical or engineering background how likely one real thigh bone "
     "(femur) is to break, using only published research data about it. The user message is JSON. The femur "
-    "belongs to one of cohort_n women in the HFValid study by Aldieri, La Mattina, Szyszko, Baruffaldi and "
-    "Viceconti (University of Bologna), who CT-scanned each woman's femur and followed whether she later "
-    "had a hip fracture. Fields: age is the woman's age at the CT scan. arf0_percent is her ARF0, the "
-    "Absolute Risk of Fracture that the study authors estimated with their finite-element model "
-    "of this femur coupled with a model of falling; arf0_higher_than is how many women in the study had a "
-    "lower ARF0; cohort_median_arf0_percent is the study's median ARF0; cohort_fractured women had a hip "
-    "fracture during the follow-up, and their ARF0 ranged from fractured_arf0_min_percent to "
-    "fractured_arf0_max_percent. msf_newtons is her Minimum Sidefall Strength (MSF): the smallest sideways-"
-    "fall force, over many simulated fall directions, that the authors' model says would break this femur; "
-    "msf_lower_than is how many women in the study had a stronger femur (a higher MSF), so this femur is "
-    "weaker than that many women: write it as 'weaker than N of the cohort_n women' or 'N of the cohort_n "
-    "women had a stronger femur', never 'stronger than N'. fall_force_low_newtons and "
-    "fall_force_high_newtons are the peak force on the side of the hip in a sideways fall for a small and "
-    "a large woman (van den Kroonenberg and colleagues). factor_of_risk_low and factor_of_risk_high are "
-    "those forces divided by msf_newtons: the fall would load the femur that many times its estimated "
-    "strength. fractured_within_followup says whether this woman had a hip fracture during the study's "
-    "follow-up, and days_ct_to_fracture is then the days from the CT scan to the fracture. fe, when not "
-    "null, is a different and simpler simulation of ours: a standing load of fe.load_newtons newtons gave "
-    "a peak stress of fe.peak_stress_mpa MPa, and fe.stress_index_percent compares that stress with an "
-    "assumed bone strength; it does not use a fall or the study's model, so it is not comparable with ARF0. "
-    "Write 4 to 6 short plain sentences on how likely this femur is to break and why: where its ARF0 sits "
-    "among the women in the study (for example 'higher than N of the cohort_n women'), what its sideways-"
-    "fall strength compared with typical fall forces means ('a sideways fall would load it X to Y times "
-    "its estimated strength'), the outcome actually recorded in the follow-up, and, when fe is not null, "
-    "that the stress index shown above is a different, simpler measure. Credit ARF0 and MSF to the HFValid "
-    "study authors' finite-element model. "
+    "belongs to one of cohort_n women in the HFValid study, who had a CT scan of the femur and were followed "
+    "to record whether they had a hip fracture afterwards. Fields: age is the woman's age at the CT scan. "
+    "msf_newtons is the femur's Minimum Sidefall Strength (MSF): the smallest sideways-fall force, over many "
+    "fall directions, that the study authors' finite-element model says would break it. msf_lower_than is how "
+    "many women in the study had a stronger femur (a higher MSF): write 'N of the cohort_n women had a "
+    "stronger femur' or 'weaker than N of the cohort_n women', never 'stronger than N'. "
+    "fall_force_low_newtons and fall_force_high_newtons are the peak force on the side of the hip in a "
+    "sideways fall for a small and a large woman (van den Kroonenberg and colleagues). factor_of_risk_low and "
+    "factor_of_risk_high are those forces divided by msf_newtons: the fall would load the femur that many "
+    "times its strength. cohort_msf_max_newtons is the strongest MSF in the study; when "
+    "fall_force_low_newtons is above it, a sideways fall exceeds the MSF of every femur in the study: say "
+    "that, and let msf_lower_than show how this femur compares. arf0_percent is its ARF0, the absolute risk of "
+    "fracture the study authors estimated from that model coupled with a model of falling; arf0_higher_than "
+    "is how many women in the study had a lower ARF0. cohort_median_arf0_percent is the study's median ARF0; "
+    "cohort_fractured women had a hip fracture during the follow-up, with ARF0 from "
+    "fractured_arf0_min_percent to fractured_arf0_max_percent. fractured_within_followup says whether this "
+    "woman had a hip fracture during the follow-up, and days_ct_to_fracture is then the days from the CT scan "
+    "to it. "
+    "Write 2 or 3 short plain sentences, at most 420 characters, on how likely this femur is to break: first "
+    "what a sideways fall would do to it (factor_of_risk_low to factor_of_risk_high times its strength), then "
+    "where its ARF0 sits among the cohort_n women, then what the follow-up recorded. Credit ARF0 and MSF to "
+    "'the study authors' model' without naming the authors, and add no disclaimer (the page adds one). "
     "Rules: use only numbers that appear in the JSON, written as digits, exactly as given or rounded to "
-    "fewer decimals. Do not calculate any new number: no differences, shares of the cohort, or unit "
-    "conversions such as kN. Never write a number as a word, and do not use words for quantities or "
-    "multiples (such as one, two, half, twice, double). Write ARF0 as ARF0 and do not expand it. Name "
-    "sources without years. Do not call ARF0 a chance, probability or odds, do not attach a time period to "
-    "it, and do not predict when a fracture could happen (no 'within N years', 'next year', 'lifetime'); "
-    "the follow-up is a record of what happened. Do not diagnose or name a disease, and do not give advice, "
-    "treatment, medication, exercise or prescriptions or suggest seeing a doctor. Write about 'this femur' "
-    "and 'this woman'; never address the reader as 'you'. No markdown, lists or headings, at most 850 "
-    "characters. "
+    "fewer decimals, each for its own quantity: percents only for the ARF0 values, newtons only for MSF and "
+    "the fall forces, 'times' only for the factors of risk, and counts of women only for arf0_higher_than, "
+    "msf_lower_than, cohort_fractured and cohort_n. Do not calculate any new number: no differences, shares "
+    "of the cohort, or unit conversions such as kN. Never write a number as a word, and do not use words for "
+    "quantities or multiples (such as one, two, half, twice, double). Write ARF0 as ARF0 and do not expand "
+    "it. Do not call ARF0 a chance, probability, odds or likelihood, do not attach a time period to it, and "
+    "do not predict when or whether a fracture will happen (no will, within, later, soon, eventually, "
+    "lifetime); the follow-up is a record of what happened. Do not diagnose or name a disease, and do not "
+    "give advice, treatment, medication, exercise, screening, referrals or prevention (no should, need, "
+    "help, avoid, prevent, doctor, medical). Write about 'this femur' and 'this woman'; never address the "
+    "reader as 'you'. No markdown, lists or headings. "
     'Answer with JSON: {"text": "..."}.'
 )
 
@@ -166,6 +197,7 @@ class RiskFacts(BaseModel):
     fall_force_high_newtons: int
     factor_of_risk_low: float = Field(description="fall_force_low_newtons / MSF, 2 decimals.")
     factor_of_risk_high: float = Field(description="fall_force_high_newtons / MSF, 2 decimals.")
+    cohort_msf_max_newtons: int = Field(description="The strongest MSF in the cohort.")
     fractured_within_followup: bool
     days_ct_to_fracture: Optional[int]
     fe: Optional[FeInput]
@@ -245,6 +277,7 @@ def build_facts(data: Mapping[str, Any], case_id: str, fe: Optional[FeInput] = N
         fall_force_high_newtons=round(high),
         factor_of_risk_low=round(low / my_msf, 2),
         factor_of_risk_high=round(high / my_msf, 2),
+        cohort_msf_max_newtons=round(max(msf)),
         fractured_within_followup=bool(me["fractured_within_followup"]),
         days_ct_to_fracture=None if days is None else round(float(days)),
         fe=None if fe is None else FeInput(peak_stress_mpa=round(fe.peak_stress_mpa, 2),
@@ -257,6 +290,11 @@ def facts_json(facts: RiskFacts) -> str:
     return json.dumps(facts.model_dump(), sort_keys=True, separators=(",", ":"))
 
 
+def model_input(facts: RiskFacts) -> str:
+    """What a model reads: the facts without fe, our own FE numbers, which the text may not repeat."""
+    return json.dumps(facts.model_dump(exclude={"fe"}), sort_keys=True, separators=(",", ":"))
+
+
 # ----------------------------------------------------------------------------- checker
 def _fact_numbers(value: Any) -> list[float]:
     if isinstance(value, bool) or value is None or isinstance(value, str):
@@ -266,17 +304,50 @@ def _fact_numbers(value: Any) -> list[float]:
     return [abs(float(value))]
 
 
+def _rounded(*values: Optional[float]) -> set[float]:
+    return {round(float(v), d) for v in values if v is not None for d in (0, 1, 2)}
+
+
 def allowed_numbers(facts: RiskFacts) -> set[float]:
-    """Each numeric fact's magnitude, and that magnitude rounded to 0, 1 and 2 decimals."""
-    return {round(n, d) for n in _fact_numbers(facts.model_dump()) for d in (0, 1, 2)}
+    """Each numeric fact's magnitude, and that magnitude rounded to 0, 1 and 2 decimals. fe is not included."""
+    return _rounded(*_fact_numbers(facts.model_dump(exclude={"fe"})))
 
 
-def _time_number_ok(value: float, unit: str, facts: RiskFacts) -> bool:
-    """A number with a time unit is only the woman's age in years or the recorded days to her fracture."""
-    unit = unit.lower()
-    if unit in ("year", "yr"):
-        return math.isclose(value, facts.age)
-    if unit == "day":
+def _kind_pools(facts: RiskFacts) -> dict[str, set[float]]:
+    """The facts each kind of number may be (see _KINDS)."""
+    f = facts
+    return {
+        "percent": _rounded(f.arf0_percent, f.cohort_median_arf0_percent, f.fractured_arf0_min_percent,
+                            f.fractured_arf0_max_percent),
+        "force in kN": set(),
+        "force in newtons": _rounded(f.msf_newtons, f.fall_force_low_newtons, f.fall_force_high_newtons,
+                                     f.cohort_msf_max_newtons),
+        "stress": set(),
+        "multiple of the strength": _rounded(f.factor_of_risk_low, f.factor_of_risk_high),
+        "count of women": _rounded(f.arf0_higher_than, f.msf_lower_than, f.cohort_fractured, f.cohort_n),
+    }
+
+
+def _kind(scan: str, match: re.Match) -> Optional[str]:
+    for kind, after in _KINDS:
+        if after.match(scan, match.end()):
+            return kind
+    if _COUNT_BEFORE.search(scan, max(0, match.start() - 40), match.start()):  # "higher than 56"
+        return "count of women"
+    return None
+
+
+def _is_one_of(value: float, pool: set[float]) -> bool:
+    return any(math.isclose(value, a, rel_tol=1e-12, abs_tol=1e-9) for a in pool)
+
+
+def _time_number_ok(value: float, unit: re.Match, scan: str, start: int, facts: RiskFacts) -> bool:
+    """A number with a time unit is only the woman's age, written as an age, or the recorded days to her fracture."""
+    name = unit.group(1).lower()
+    if name in ("year", "yr", "y"):
+        as_age = _YEARS_OLD_AFTER.match(scan, unit.end()) or _AGED_BEFORE.search(scan, 0, start)
+        return bool(as_age) and math.isclose(value, facts.age)
+    if name in ("day", "d"):
         return facts.days_ct_to_fracture is not None and math.isclose(value, facts.days_ct_to_fracture)
     return False
 
@@ -306,14 +377,24 @@ def check(text: str, facts: RiskFacts) -> Optional[str]:
     if len(text) > MAX_CHARS:
         return f"over {MAX_CHARS} characters"
     scan = _NAMED_TERMS.sub(lambda m: re.sub(r"\d", "", m.group(0)), text)
-    allowed = allowed_numbers(facts)
+    allowed, pools = allowed_numbers(facts), _kind_pools(facts)
     for match in NUMBER_RE.finditer(scan):
         value = _number_value(match.group(0))
         unit = _TIME_UNIT_AFTER.match(scan, match.end())
-        if unit and not _time_number_ok(value, unit.group(1), facts):
-            return f"time prediction: {match.group(0) + unit.group(0)!r}"
-        if not any(math.isclose(value, a, rel_tol=1e-12, abs_tol=1e-9) for a in allowed):
+        if unit:
+            if not _time_number_ok(value, unit, scan, match.start(), facts):
+                return f"time prediction: {match.group(0) + unit.group(0)!r}"
+            continue
+        if not _is_one_of(value, allowed):
             return f"number not in input: {match.group(0)}"
+        kind = _kind(scan, match)
+        if kind is not None and not _is_one_of(value, pools[kind]):
+            return f"not a {kind} in the input: {match.group(0)}"
+    for match in _ARF0_VALUE.finditer(scan):
+        if _OTHER_ARF0_BEFORE.search(scan, max(0, match.start() - 30), match.start()):
+            continue
+        if not _is_one_of(_number_value(match.group(1)), _rounded(facts.arf0_percent)):
+            return f"not this femur's ARF0: {match.group(1)}%"
     wrong = _wrong_direction(scan, facts)
     if wrong:
         return f"wrong direction: {wrong!r}"
@@ -341,28 +422,20 @@ def _dec(value: float, decimals: int = 1) -> str:
 def template_text(facts: RiskFacts) -> str:
     """Deterministic wording of the facts. Every number it prints is a fact, or one rounded to fewer decimals."""
     f = facts
-    parts = [
-        f"In the HFValid study of {f.cohort_n} women, the authors' finite-element model gave this femur, from a "
-        f"{f.age}-year-old woman, a published fracture risk (ARF0) of {_dec(f.arf0_percent)}%: higher than "
-        f"{f.arf0_higher_than} of the {f.cohort_n} women, against a study median of "
-        f"{_dec(f.cohort_median_arf0_percent)}%.",
-    ]
-    if f.fractured_arf0_min_percent is not None and f.fractured_arf0_max_percent is not None:
-        who = "woman who" if f.cohort_fractured == 1 else "women who"
-        parts.append(f"The {f.cohort_fractured} {who} had a hip fracture during the follow-up had ARF0 values "
-                     f"from {_dec(f.fractured_arf0_min_percent)}% to {_dec(f.fractured_arf0_max_percent)}%.")
-    if f.factor_of_risk_low > 1:
-        verdict = "exceed it"
+    if f.fall_force_low_newtons > f.cohort_msf_max_newtons:
+        compare = "Such a fall would exceed the MSF of every femur in the study"
+    elif f.factor_of_risk_low > 1:
+        compare = "Such a fall would exceed its strength"
     elif f.factor_of_risk_high < 1:
-        verdict = "stay below it"
+        compare = "Such a fall would stay below its strength"
     else:
-        verdict = "about reach it"
-    parts += [
-        f"The same model puts its sideways-fall strength (MSF) at {f.msf_newtons:,} N; {f.msf_lower_than} of "
-        f"the {f.cohort_n} women had a stronger femur.",
-        f"A sideways fall onto the hip pushes on it with {f.fall_force_low_newtons:,} to "
-        f"{f.fall_force_high_newtons:,} N depending on body size, which is {_dec(f.factor_of_risk_low, 2)} to "
-        f"{_dec(f.factor_of_risk_high, 2)} times that strength, so such a fall would {verdict}.",
+        compare = "Such a fall would about reach its strength"
+    parts = [
+        f"A sideways fall would load this femur {_dec(f.factor_of_risk_low, 2)} to {_dec(f.factor_of_risk_high, 2)} "
+        f"times its strength (MSF, {f.msf_newtons:,} N) in the study authors' model.",
+        f"{compare}; {f.msf_lower_than} of the {f.cohort_n} women had a stronger femur.",
+        f"Its published fracture risk (ARF0) is {_dec(f.arf0_percent)}%, higher than {f.arf0_higher_than} of the "
+        f"{f.cohort_n} women.",
     ]
     if not f.fractured_within_followup:
         parts.append("No hip fracture was recorded for this woman during the study's follow-up.")
@@ -370,10 +443,6 @@ def template_text(facts: RiskFacts) -> str:
         parts.append(f"The study recorded a hip fracture {f.days_ct_to_fracture:,} days after this CT scan.")
     else:
         parts.append("The study recorded a hip fracture during the follow-up.")
-    if f.fe is not None:
-        parts.append(f"The {_dec(f.fe.stress_index_percent, 0)}% fracture risk index above is a different, simpler "
-                     f"measure from our own model: a peak stress of {_dec(f.fe.peak_stress_mpa, 2)} MPa under a "
-                     f"standing load of {_dec(f.fe.load_newtons, 0)} N against an assumed bone strength, not a fall.")
     return " ".join(parts)
 
 
@@ -383,11 +452,17 @@ def _with_note(text: str) -> str:
 
 # ----------------------------------------------------------------------------- chain
 _cooldown_until: dict[tuple[str, str], float] = {}
+# AI answers by (case_id, facts, chain order). The facts of a case only change with the data file or fe, so a reload
+# reuses the answer instead of spending the provider quota POST /api/explain also needs. A template answer is not kept,
+# so a later request can still get an AI one. Oldest first out past _ANSWERS_MAX, since fe comes from the client.
+_answers: dict[tuple[str, str, tuple[str, ...]], RiskResponse] = {}
+_ANSWERS_MAX = 256
 
 
 def reset_cooldowns() -> None:
-    """Forget failures (tests, or after fixing a key)."""
+    """Forget failures and kept answers (tests, or after fixing a key)."""
     _cooldown_until.clear()
+    _answers.clear()
 
 
 async def _attempt(provider, user: str, facts: RiskFacts) -> tuple[Optional[str], Optional[str], bool]:
@@ -421,6 +496,9 @@ async def analyse(request: RiskRequest, env: Optional[Mapping[str, str]] = None,
     order = chain_order(e)
     dataset = load_dataset() if data is None else data
     facts = build_facts(dataset, request.case_id, request.fe)
+    kept = (request.case_id, facts_json(facts), order)
+    if kept in _answers:
+        return _answers[kept]
     source = RiskSource(**{k: dataset["source"][k] for k in ("citation", "doi", "license")})
 
     def done(text: str, provider: str, model: Optional[str], fallbacks: list[Fallback]) -> RiskResponse:
@@ -441,9 +519,13 @@ async def analyse(request: RiskRequest, env: Optional[Mapping[str, str]] = None,
             fallbacks.append(Fallback(provider=name, reason=f"{models[0].key_name} not set"))
             continue
         for provider in models:
-            text, reason, try_next = await _attempt(provider, facts_json(facts), facts)
+            text, reason, try_next = await _attempt(provider, model_input(facts), facts)
             if text is not None:
-                return done(text, name, provider.model, fallbacks)
+                answer = done(text, name, provider.model, fallbacks)
+                _answers[kept] = answer
+                while len(_answers) > _ANSWERS_MAX:
+                    _answers.pop(next(iter(_answers)))
+                return answer
             log.warning("risk: %s %s fell through: %s", name, provider.model, reason)
             fallbacks.append(Fallback(provider=name, reason=f"{provider.model}: {reason}"))
             if not try_next:

@@ -30,10 +30,9 @@ from tests.test_explain import GROQ_HOST, KEYS, LITE, PRIMARY, Mock, gemini_repl
 
 DATA = json.loads(rk.DATA_PATH.read_text(encoding="utf-8"))
 FE = {"peak_stress_mpa": 15.83, "load_newtons": 800, "stress_index_percent": 10.553333}
-GOOD = ("The HFValid authors' finite-element model gave this femur an ARF0 of 47.1%, higher than 56 of the 101 "
-        "women and above the study median of 44.3%. Its sideways-fall strength (MSF) is 1,339 N, and 75 women had "
-        "a stronger femur. A sideways fall would load it 2.17 to 3.18 times its estimated strength, so a fall like "
-        "that could break it. No hip fracture was recorded for this 78-year-old woman during the follow-up.")
+GOOD = ("A sideways fall would load this femur 2.17 to 3.18 times its strength in the study authors' model, as it "
+        "would every femur in the study, and 75 of the 101 women had a stronger femur. Its ARF0 of 47.1% is higher "
+        "than 56 of the 101 women. No hip fracture was recorded for this 78-year-old woman during the follow-up.")
 
 
 def run(fields, env, mock=None):
@@ -63,7 +62,8 @@ class FactsTests(unittest.TestCase):
             "cohort_median_arf0_percent": 44.3, "cohort_fractured": 4,
             "fractured_arf0_min_percent": 53.7, "fractured_arf0_max_percent": 73.2,
             "msf_newtons": 1339, "msf_lower_than": 75, "fall_force_low_newtons": 2900, "fall_force_high_newtons": 4260,
-            "factor_of_risk_low": 2.17, "factor_of_risk_high": 3.18,  # 2900 / 1339 and 4260 / 1339
+            "factor_of_risk_low": 2.17, "factor_of_risk_high": 3.18,  # 2900 / 1338.86 and 4260 / 1338.86
+            "cohort_msf_max_newtons": 2879,
             "fractured_within_followup": False, "days_ct_to_fracture": None,
             "fe": {"peak_stress_mpa": 15.83, "load_newtons": 800.0, "stress_index_percent": 10.55}})
 
@@ -73,6 +73,14 @@ class FactsTests(unittest.TestCase):
         self.assertEqual((facts.arf0_higher_than, facts.msf_lower_than), (76, 63))
         self.assertEqual((facts.factor_of_risk_low, facts.factor_of_risk_high), (1.96, 2.88))
         self.assertEqual((facts.fractured_within_followup, facts.days_ct_to_fracture, facts.fe), (True, 1529, None))
+
+    def test_ranks_and_factors_use_the_published_precision(self):
+        # Pat006's ARF0 ties another subject's at 0.1 % but not in the CSV; Pat013's factor is 4260 / 987.44.
+        self.assertEqual(build_facts(DATA, "Pat006").arf0_higher_than, 18)
+        self.assertEqual(build_facts(DATA, "Pat027").msf_lower_than, 80)
+        self.assertEqual(build_facts(DATA, "Pat013").factor_of_risk_high, 4.31)
+        self.assertEqual(build_facts(DATA, "Pat032").factor_of_risk_high, 14.89)
+        self.assertEqual(build_facts(DATA, "Pat050").factor_of_risk_low, 1.75)
 
     def test_unknown_case(self):
         with self.assertRaises(rk.UnknownCase):
@@ -98,8 +106,10 @@ class CheckerTests(unittest.TestCase):
     def test_good_text_and_roundings_pass(self):
         for text in [GOOD, "An ARF0 of 47%, against a median of 44.3%.", "It would load it 2.2 to 3.2 times.",
                      "Fracture risk is higher than most: this bone is likely to break in a fall.",
-                     "The 11% stress index above is a simpler measure from 15.8 MPa under 800 N.",
-                     "Absolute Risk of Fracture at time 0 (ARF0) is 47.1%.", "Women who fractured had 53.7% to 73.2%."]:
+                     "Absolute Risk of Fracture at time 0 (ARF0) is 47.1%.", "Women who fractured had 53.7% to 73.2%.",
+                     "The study median ARF0 of 44.3% is lower.", "The 4 women who fractured had an ARF0 of 53.7% to 73.2%.",
+                     "A fall of 2,900 to 4,260 N exceeds the strongest MSF in the study, 2,879 N.",
+                     "It would load it 2.17 to 3.18\u00d7 its strength."]:
             with self.subTest(text=text):
                 self.assertIsNone(check(text, self.facts))
 
@@ -109,6 +119,32 @@ class CheckerTests(unittest.TestCase):
             with self.subTest(text=text):
                 self.assertEqual(check(text, self.facts), f"number not in input: {token}")
 
+    def test_fe_numbers_are_not_allowed(self):
+        # fe is echoed in the facts but is our own solve, not published data, and never sent to a model.
+        for text, token in [("The 11% stress index above is a simpler measure.", "11"),
+                            ("A peak stress of 15.83 MPa.", "15.83"), ("A stress index of 10.55%.", "10.55")]:
+            with self.subTest(text=text):
+                self.assertEqual(check(text, self.facts), f"number not in input: {token}")
+
+    def test_numbers_used_as_the_wrong_quantity_fail(self):
+        # Each number is a real fact, but not the quantity the words around it say.
+        for text, reason in [("This femur has a 78% risk of breaking.", "not a percent in the input: 78"),  # the age
+                             ("This femur has a 56% fracture risk.", "not a percent in the input: 56"),  # a rank
+                             ("Its fracture risk is 3.18%.", "not a percent in the input: 3.18"),  # a factor
+                             ("Its ARF0 is higher than 78 of the 101 women in the study.",
+                              "not a count of women in the input: 78"),
+                             ("Its ARF0 is higher than 47 women.", "not a count of women in the input: 47"),
+                             ("A fall load of 3.18 N.", "not a force in newtons in the input: 3.18"),
+                             ("Its MSF is 1,339 kN.", "not a force in kN in the input: 1,339"),
+                             ("A fall would load it 47.1 times its strength.",
+                              "not a multiple of the strength in the input: 47.1"),
+                             ("Its ARF0 is 44.3%.", "not this femur's ARF0: 44.3%"),  # the cohort median
+                             ("This femur has an ARF0 of 73.2%.", "not this femur's ARF0: 73.2%")]:
+            with self.subTest(text=text):
+                self.assertEqual(check(text, self.facts), reason)
+        # With the dashboard's fe the 11% index is a fact in the request, yet still not a number the text may use.
+        self.assertEqual(check("Its ARF0 is 11%.", self.facts), "number not in input: 11")
+
     def test_time_predictions_fail(self):
         for text, reason in [("It may break within 2 years.", "time prediction: '2 years'"),
                              ("A 5-year risk of 47.1%.", "time prediction: '5-year'"),
@@ -117,12 +153,20 @@ class CheckerTests(unittest.TestCase):
                              ("Over the next few decades.", "time prediction: 'next few decades'"),
                              ("An ARF0 of 47.1% a year.", "time prediction: 'a year'"),
                              ("Her lifetime risk is 47.1%.", "time prediction: 'lifetime'"),
-                             ("It may break soon.", "time prediction: 'soon'")]:
+                             ("It may break soon.", "time prediction: 'soon'"),
+                             ("Over a 4 y period it may break.", "time prediction: '4 y'"),
+                             ("ARF0 is the risk over 78 years.", "time prediction: '78 years'")]:
             with self.subTest(text=text):
                 self.assertEqual(check(text, self.facts), reason)
+        for text in ["It could break within months.", "It could break within weeks.", "It could break within the decade.",
+                     "It could break later in life.", "It could eventually break.", "It could break in the years ahead.",
+                     "Over the long term it could break.", "Its ARF0 is a yearly risk.", "It may break in her eighties."]:
+            with self.subTest(text=text):
+                self.assertRegex(check(text, self.facts) or "", r"^time prediction: ")
 
     def test_facts_with_a_time_unit_pass(self):
         self.assertIsNone(check("This 78-year-old woman, aged 78 years.", self.facts))
+        self.assertIsNone(check("A woman 78 years old, at the age of 78 years.", self.facts))
         self.assertIsNone(check("A hip fracture 1,529 days after the CT scan of this 75-year-old.", self.fractured))
         self.assertEqual(check("A hip fracture 1,529 years after the CT.", self.fractured),
                          "time prediction: '1,529 years'")
@@ -132,10 +176,28 @@ class CheckerTests(unittest.TestCase):
                           ("See a doctor about 47.1%.", "doctor"), ("This shows osteoporosis.", "osteopor"),
                           ("Diagnosed at 78.", "Diagnos"), ("Treatment could help.", "Treat"),
                           ("A prescription may help.", "prescri"), ("A 47.1% chance of breaking.", "chance"),
-                          ("A probability of 47.1%.", "probab"), ("It will break in a fall.", "will break"),
+                          ("A probability of 47.1%.", "probab"), ("It will break in a fall.", "will"),
                           ("We recommend care.", "recommend"), ("Calcium helps.", "Calcium")]:
             with self.subTest(text=text):
                 self.assertEqual(check(text, self.facts), f"blocked wording: {hit!r}")
+
+    def test_referrals_screening_drugs_and_prevention_fail(self):
+        for text in ["She needs to see a GP.", "She needs a bone density scan.", "A DXA scan is the next step.",
+                     "Hip protectors would help her.", "Physiotherapy could help.",
+                     "Bisphosphonates or denosumab would strengthen it.", "Talk to a healthcare provider.",
+                     "Ask a nurse about it.", "Go to the emergency room.", "Strength training can help.",
+                     "Fall prevention is important for her.", "She needs to seek medical attention.",
+                     "She has brittle bone disease.", "This is a fragility fracture case of low bone mass."]:
+            with self.subTest(text=text):
+                self.assertRegex(check(text, self.facts) or "", r"^blocked wording: ")
+
+    def test_likelihood_and_certainty_fail(self):
+        for text in ["This femur has a 47.1% likelihood of breaking.", "It is 47.1% likely to break.",
+                     "This femur is going to break.", "This femur is bound to break.",
+                     "This femur is expected to break.", "This femur is sure to break.",
+                     "This femur will almost surely fracture."]:
+            with self.subTest(text=text):
+                self.assertRegex(check(text, self.facts) or "", r"^blocked wording: ")
 
     def test_rank_direction(self):
         # Pat001: 56 women had a lower ARF0 (arf0_higher_than); 75 women had a stronger femur (msf_lower_than).
@@ -177,8 +239,25 @@ class ChainTests(RiskTestCase):
         body = json.loads(mock.requests[0].content)
         self.assertEqual(body["systemInstruction"], {"parts": [{"text": rk.SYSTEM_PROMPT}]})
         sent = json.loads(body["contents"][0]["parts"][0]["text"])
-        self.assertEqual(sent, result.facts.model_dump())
-        self.assertNotIn("Pat001", mock.requests[0].content.decode())
+        self.assertEqual(sent, result.facts.model_dump(exclude={"fe"}))
+        self.assertEqual(result.facts.fe.model_dump(), {"peak_stress_mpa": 15.83, "load_newtons": 800.0,
+                                                        "stress_index_percent": 10.55})
+        for absent in ("Pat001", "15.83", "10.55"):
+            self.assertNotIn(absent, mock.requests[0].content.decode())
+
+    def test_an_ai_answer_is_kept_and_a_template_is_not(self):
+        offline = Mock()
+        first = run({"case_id": "Pat001", "fe": FE}, {}, offline)
+        self.assertEqual(first.provider, "template")
+        mock = Mock(gemini=gemini_reply(GOOD), groq=groq_reply(GOOD))
+        answers = [run({"case_id": "Pat001", "fe": FE}, KEYS, mock) for _ in range(3)]
+        self.assertEqual(mock.calls, [PRIMARY])  # the template answer did not stop the upgrade; repeats are kept
+        self.assertEqual({(a.provider, a.text) for a in answers}, {("gemini", f"{GOOD} {rk.NOTE}")})
+        run({"case_id": "Pat001"}, KEYS, mock)
+        self.assertEqual(mock.calls, [PRIMARY] * 2)  # other facts (no fe) ask again
+        rk.reset_cooldowns()
+        run({"case_id": "Pat001", "fe": FE}, KEYS, mock)
+        self.assertEqual(mock.calls, [PRIMARY] * 3)
 
     def test_rejected_gemini_text_falls_through_to_groq(self):
         for text, reason in [("An ARF0 of 52%.", "number not in input: 52"),
@@ -232,19 +311,29 @@ class ChainTests(RiskTestCase):
 class TemplateTests(unittest.TestCase):
     def test_template_words_the_facts(self):
         text = template_text(build_facts(DATA, "Pat001", FeInput(**FE)))
-        for part in ["78-year-old", "(ARF0) of 47.1%", "higher than 56 of the 101 women", "median of 44.3%",
-                     "53.7% to 73.2%", "(MSF) at 1,339 N", "2,900 to 4,260 N", "2.17 to 3.18 times that strength",
-                     "would exceed it", "No hip fracture was recorded", "The 11% fracture risk index above",
-                     "15.83 MPa", "standing load of 800 N"]:
-            self.assertIn(part, text)
+        self.assertEqual(text, "A sideways fall would load this femur 2.17 to 3.18 times its strength (MSF, 1,339 N) "
+                               "in the study authors' model. Such a fall would exceed the MSF of every femur in the "
+                               "study; 75 of the 101 women had a stronger femur. Its published fracture risk (ARF0) is "
+                               "47.1%, higher than 56 of the 101 women. No hip fracture was recorded for this woman "
+                               "during the study's follow-up.")
         self.assertIn("hip fracture 1,529 days after this CT scan", template_text(build_facts(DATA, "Pat004")))
+
+    def test_template_says_every_femur_only_when_it_is_true(self):
+        # The cohort's strongest MSF is 2,879 N, below the 2,900 N fall force, so every factor of risk is above 1.
+        data = json.loads(json.dumps(DATA))
+        data["fall_force"]["low_newtons"] = 2800
+        text = template_text(build_facts(data, "Pat001"))
+        self.assertNotIn("every femur", text)
+        self.assertIn("Such a fall would exceed its strength;", text)
 
     def test_template_passes_for_every_subject(self):
         fe = FeInput(**FE)
         for case_id in DATA["subjects"]:
             for f in (None, fe):
                 facts = build_facts(DATA, case_id, f)
-                self.assertIsNone(check(template_text(facts), facts), case_id)
+                text = template_text(facts)
+                self.assertIsNone(check(text, facts), case_id)
+                self.assertLessEqual(len(text), 420, case_id)
 
     def test_template_passes_the_checker_for_varied_data(self):
         rng = random.Random(11)
@@ -287,7 +376,7 @@ class RouteTests(RiskTestCase):
             "age", "arf0_percent", "arf0_higher_than", "cohort_n", "cohort_median_arf0_percent", "cohort_fractured",
             "fractured_arf0_min_percent", "fractured_arf0_max_percent", "msf_newtons", "msf_lower_than",
             "fall_force_low_newtons", "fall_force_high_newtons", "factor_of_risk_low", "factor_of_risk_high",
-            "fractured_within_followup", "days_ct_to_fracture", "fe"})
+            "cohort_msf_max_newtons", "fractured_within_followup", "days_ct_to_fracture", "fe"})
         self.assertEqual(set(body["source"]), {"citation", "doi", "license"})
         self.assertEqual((body["provider"], body["model"]), ("template", None))
         self.assertEqual(self.client({}).post("/api/risk-analysis", json={"case_id": "Pat002"}).json()["facts"]["fe"],

@@ -170,6 +170,7 @@ export type RiskFacts = {
   fall_force_high_newtons: number;
   factor_of_risk_low: number;
   factor_of_risk_high: number;
+  cohort_msf_max_newtons: number; // the strongest MSF in the study
   fractured_within_followup: boolean;
   days_ct_to_fracture: number | null;
   fe: RiskFeNumbers | null;
@@ -199,7 +200,7 @@ const RISK_TIMEOUT_MS = EXPLAIN_TIMEOUT_MS;
 
 const RISK_NUMBERS = [
   "age", "arf0_percent", "arf0_higher_than", "cohort_n", "cohort_fractured", "msf_newtons", "msf_lower_than",
-  "fall_force_low_newtons", "fall_force_high_newtons", "factor_of_risk_low", "factor_of_risk_high",
+  "fall_force_low_newtons", "fall_force_high_newtons", "factor_of_risk_low", "factor_of_risk_high", "cohort_msf_max_newtons",
 ] as const;
 const RISK_NULLABLE_NUMBERS = ["fractured_arf0_min_percent", "fractured_arf0_max_percent"] as const;
 const isFiniteNumber = (value: unknown) => typeof value === "number" && Number.isFinite(value);
