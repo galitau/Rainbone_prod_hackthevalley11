@@ -101,7 +101,7 @@ function AllNumbers({ run, history }: { run: RunState; history: HistoryState }) 
     if (result.mesh_faces !== undefined) rows.push(["Mesh surface triangles", formatNumber(result.mesh_faces, 0)]);
   }
   if (run.status === "ready") rows.push(["Round trip", `${formatNumber(run.ms / 1000, 2)} s`]);
-  if (result?.reused) rows.push(["Result", "reused: same file solved earlier"]);
+  if (result?.reused) rows.push(["Solve", "reused earlier"]);
   rows.push(["Input file", run.input.name, true], ["API", API_HOST, true]);
   rows.push([
     "Saved runs",
