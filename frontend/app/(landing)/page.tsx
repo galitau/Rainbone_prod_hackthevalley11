@@ -50,8 +50,8 @@ export default function Landing() {
         <div aria-hidden className="rb-vignette pointer-events-none absolute inset-0" />
         <div aria-hidden className="spectrum-line rb-draw-x absolute inset-x-0 top-0 h-[2px]" />
 
-        <header className="relative z-20 mx-auto flex h-14 max-w-[1440px] items-center justify-between px-4 lg:h-16 lg:px-12">
-          <Link href="/" aria-label="Rainbone home" className={`rounded-lg ${FOCUS_DARK}`}><RainboneLogo tone="dark" /></Link>
+        <header className="relative z-20 mx-auto flex h-16 max-w-[1440px] items-center justify-between px-4 lg:h-20 lg:px-12">
+          <Link href="/" aria-label="Rainbone home" className={`rounded-lg ${FOCUS_DARK}`}><RainboneLogo tone="dark" size="xl" /></Link>
           <div className="flex items-center gap-3">
             <span className="hidden rounded-full border border-viewport-line px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.12em] text-nav-muted lg:inline-flex">Research prototype · not a medical device</span>
             <Link href="/enter" className={`inline-flex h-9 items-center rounded-lg border border-nav-line px-4 text-[13px] font-medium text-nav-ink transition hover:bg-white/5 ${FOCUS_DARK}`}>Enter</Link>
@@ -59,7 +59,7 @@ export default function Landing() {
         </header>
 
         {/* No positioned ancestors here: on desktop the hero frame is absolute to the section. */}
-        <div className="mx-auto max-w-[1440px] px-4 pb-10 pt-6 lg:flex lg:h-[calc(100%-64px)] lg:flex-col lg:[justify-content:safe_center] lg:px-12 lg:pb-14 lg:pt-0">
+        <div className="rb-hero-column mx-auto max-w-[1440px] px-4 pb-10 pt-6 lg:flex lg:h-[calc(100%-80px)] lg:flex-col lg:px-12 lg:pb-0 lg:pt-0">
           <div className="lg:max-w-[min(760px,calc(52vw-40px))]">
             <p className="rb-rise relative z-10 font-mono text-[11px] uppercase tracking-[0.14em] text-spectrum-cyan lg:text-[12px]">CT scan → finite elements → stress</p>
             <h1 id="hero-title" className="relative z-10 mt-4 font-serif text-[36px] font-semibold leading-[1.02] tracking-[-0.02em] text-white lg:mt-5 lg:text-[clamp(44px,min(5.2vw,9vh),84px)] lg:leading-[0.95] lg:tracking-[-0.025em]">
