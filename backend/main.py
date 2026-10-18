@@ -7,6 +7,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
+from routes_explain import router as explain_router
 from services.fea_solver import FEASolverError, simulate_fea
 
 app = FastAPI(
@@ -22,6 +23,7 @@ app.add_middleware(
     allow_methods=["POST", "GET"],
     allow_headers=["*"],
 )
+app.include_router(explain_router)
 
 
 class SimulationResponse(BaseModel):

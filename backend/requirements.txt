@@ -10,3 +10,5 @@ scipy
 pydantic
 python-multipart
 httpx2
+httpx
+python-dotenv

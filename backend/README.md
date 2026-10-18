@@ -157,3 +157,123 @@ attribution in `scripts/bone_fea/README.md`), with every femur voxel set to
 the modulus is uniform. Its response: 13.98 MPa, 22.35 GPa, 408.43 cm³,
 index 9.32. `tests/test_simulate.py` builds the same volume and checks it
 answers in under 20 s.
+
+## Plain-language explanation
+
+`POST /api/explain` turns the numbers `POST /api/simulate` already computed
+into a short explanation for a reader without an engineering background (a
+bone carries load like a bridge; a thinner or weaker bone carries it through
+less material). Language models only word those numbers; they never compute
+one, and a checker rejects any text that uses a number which was not supplied.
+
+### Request
+
+The `/api/simulate` response, posted as it is (JSON):
+
+| Field | Required | Sent to a model as |
+|---|---|---|
+| `max_von_mises_stress_mpa` | yes | `max_von_mises_stress_mpa` |
+| `average_youngs_modulus_gpa` | yes | `average_youngs_modulus_gpa` |
+| `bone_volume_cm3` | yes | `bone_volume_cm3` |
+| `fracture_risk_index_percent` | yes (0 to 100) | `illustrative_index_percent` |
+| `load_newtons` | no (default 800, as in `/api/simulate`) | `load_newtons` |
+| `mesh_vertices`, `mesh_faces`, `source_filename` | no | never sent |
+
+Numbers are rounded to 2 decimals before a model sees them. The index is
+renamed so a model words it as an illustrative index, not as a fracture risk.
+Strings or booleans in a number field, negative or out-of-range values,
+NaN and infinity are refused with 422; unknown fields are ignored and never
+sent.
+
+### Response
+
+```json
+{"text": "...", "provider": "gemini", "model": "gemini-3.8-flash", "fallbacks": []}
+```
+
+`provider` is `gemini`, `groq` or `template`; `model` is null for the
+template. `fallbacks` lists, in order, every model that did not answer and why
+(`GEMINI_API_KEY not set`, `gemini-3.8-flash: HTTP 503`,
+`gemini-3.8-flash: timed out after 10 s`,
+`openai/gpt-oss-120b: rejected: number not in input: 60`, ...). Every `text`
+ends with the same fixed sentence, added by code: "Illustrative engineering
+simulation with assumed material properties, not a medical assessment."
+
+### Provider chain
+
+1. Gemini (`GEMINI_MODEL`, default `gemini-3.8-flash`): REST
+   `generateContent` with a JSON response schema and thinking level LOW,
+   timeout 10 s. When that model answers with an HTTP error (429, 503, ...) or
+   is cooling down, `gemini-3.5-flash-lite` is tried before leaving Gemini. A
+   timeout, a connection error or a rejected text goes straight to Groq.
+2. Groq (`GROQ_MODEL`, default `openai/gpt-oss-120b`) through its
+   OpenAI-compatible chat completions endpoint with a strict JSON schema,
+   timeout 8 s.
+3. Template: deterministic sentences built from the same numbers. No
+   network, and it passes the checker for every valid request.
+
+A provider without a key is skipped. A model whose call failed (HTTP error,
+timeout, connection error) is skipped for 60 s, so later requests do not wait
+for the same failure. A rejected text does not start that pause. The pause is
+kept in process memory. Responses are not cached.
+
+Live check on 2026-10-17 (our keys, the test request below):
+`gemini-3.8-flash` answered in 2.5 s, 3.3 s, 7.9 s and 18.2 s, timed out
+once at 10 s and returned HTTP 503 twice; `gemini-3.5-flash-lite` answered
+5 times in 0.8 to 1.4 s; Groq answered once in 1.1 s. Every answer passed
+the checker. For a live demo,
+`GEMINI_MODEL=gemini-3.5-flash-lite` in `backend/.env` avoids the slow model.
+
+### Checker
+
+A model's text is rejected when it:
+
+- is empty, cut off at the token limit, or longer than 700 characters;
+- contains a number that is not one of the rounded inputs, or one of them
+  rounded to 1 or 0 decimals. Numbers are digit tokens that do not follow a
+  letter, so `cm3` is not a number but `15mm` is; `10,000` reads as one
+  number; signs are ignored;
+- spells out a quantity (`one`, `two`, `half`, `twice`, ...);
+- uses clinical or outcome wording (`diagnos`, `predict`, `recommend`,
+  `should`, `surg`, `treat`, `therap`, `risk`, `cancer`, `fractur`, ...).
+
+The word lists come from the team's earlier AI interface contract. The
+checker proves that no number was invented. It cannot prove that a supplied
+number is attached to the right quantity.
+
+### Configuration
+
+Copy `backend/.env.example` to `backend/.env` and fill in the keys. `.env`
+files are gitignored. Process environment variables override the file.
+
+| Variable | Default | Use |
+|---|---|---|
+| `AI_CHAIN` | `gemini,groq,template` | Order; `template` is appended when missing. Unknown names give HTTP 500 with the reason. |
+| `AI_OFFLINE` | `0` | `1` answers with the template only and makes no network calls |
+| `GEMINI_API_KEY`, `GEMINI_MODEL` | `gemini-3.8-flash` | Gemini Developer API |
+| `GROQ_API_KEY`, `GROQ_MODEL` | `openai/gpt-oss-120b` | Groq |
+
+Keys are sent only in request headers and are never logged or returned.
+
+### Example
+
+Test values in the `/api/simulate` response shape (not a solver output),
+with `AI_OFFLINE=1`:
+
+```json
+{"max_von_mises_stress_mpa": 41.98, "average_youngs_modulus_gpa": 17.25, "bone_volume_cm3": 408.09,
+ "fracture_risk_index_percent": 27.99, "load_newtons": 800.0}
+```
+
+```json
+{"text": "A bone carries load the way a bridge does: the weight travels through its material, and a thinner or weaker bone carries the same weight through less material, so that material is squeezed harder. In this computer model, 408 cm³ of bone carried a load of 800 newtons. Near its most heavily loaded spots, the stress inside it (how hard the material is squeezed or pulled) reached 42 MPa. The bone material was given an average stiffness (Young's modulus) of 17.2 GPa. The index of 28% is illustrative only: it compares that stress with an assumed bone strength and is not a medical measurement. Illustrative engineering simulation with assumed material properties, not a medical assessment.",
+ "provider": "template", "model": null, "fallbacks": []}
+```
+
+### Tests
+
+No network: provider calls go to `httpx.MockTransport`. From `backend/`:
+
+```bash
+python -m unittest discover -s tests -v
+```
