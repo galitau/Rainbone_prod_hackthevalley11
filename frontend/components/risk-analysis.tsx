@@ -1,7 +1,7 @@
 import { ArrowDownToLine, Gauge, Info, Shield, Sparkles } from "lucide-react";
 import type { RiskAnalysis, RiskAnalysisState, RiskFacts } from "@/lib/api";
 import { formatNumber } from "@/lib/format";
-import { ASSUMED_STRENGTH_MPA, FEMUR_AUTHORS, FEMUR_INDEX_PERCENT, FEMUR_MODEL } from "@/lib/model";
+import { ASSUMED_STRENGTH_MPA, FEMUR_AUTHORS, FEMUR_FALL_RISK, FEMUR_INDEX_PERCENT, FEMUR_MODEL } from "@/lib/model";
 
 const PROVIDER_LABELS: Record<string, string> = { gemini: "Gemini", groq: "Groq" };
 // van den Kroonenberg et al. 1995: peak trochanter impact force of a sideways fall, 5th to 95th percentile woman.
@@ -42,15 +42,23 @@ export function FractureRiskAnalysis({ state }: { state: RiskAnalysisState }) {
   if (state.status === "idle" || state.status === "unavailable") return null;
   const analysis = state.status === "ready" ? state.analysis : null;
   const f = analysis?.facts;
+  // The header is the fall comparison: the API's facts once they arrive, the same published table until then.
+  const fall = f
+    ? { low: f.factor_of_risk_low, high: f.factor_of_risk_high, women: f.cohort_n }
+    : { low: FEMUR_FALL_RISK.factorOfRiskLow, high: FEMUR_FALL_RISK.factorOfRiskHigh, women: FEMUR_FALL_RISK.cohortN };
   return (
     <section aria-labelledby="risk-analysis-title" className="overflow-hidden rounded-2xl border border-line bg-surface shadow-card" aria-live="polite" aria-busy={state.status === "loading"}>
       <div className="flex items-start justify-between gap-3 border-b border-line px-5 py-4">
         <div>
-          <h2 id="risk-analysis-title" className="text-[15px] font-semibold text-ink">AI fracture risk analysis</h2>
-          <p className="mt-0.5 text-[12px] text-muted">{FEMUR_MODEL.dataset} {FEMUR_MODEL.caseId}{f ? ` · age ${f.age} at CT · ${outcome(f)}` : " · published sideways-fall data"}</p>
+          <p className="text-[11px] font-medium uppercase tracking-[0.06em] text-muted">AI fracture risk analysis</p>
+          <h2 id="risk-analysis-title" className="mt-1 text-[17px] font-semibold leading-snug text-ink">Sideways fall: {range(fall.low, fall.high, 1)}× this femur&apos;s strength</h2>
+          <p className="mt-0.5 text-[12px] text-muted">Published {FEMUR_MODEL.dataset} model · {FEMUR_MODEL.caseId}{f ? ` · age ${f.age} at CT · ${outcome(f)}` : ""}</p>
         </div>
         <Sparkles size={17} className="mt-0.5 shrink-0 text-link" aria-hidden />
       </div>
+      <p className="border-b border-line bg-link/[0.05] px-5 py-2.5 text-[12.5px] leading-5 text-body">
+        <span className="font-semibold text-ink">For a care team:</span> where this resident&apos;s bone sits among {fall.women} older women, before a fall happens. Research data, not a diagnosis or medical advice.
+      </p>
 
       {state.status === "loading" && <p className="px-5 py-4 text-[13px] leading-6 text-muted">Analysing this femur&apos;s published fracture risk…</p>}
       {state.status === "error" && <p className="px-5 py-4 text-[13px] leading-6 text-caution">{state.message}</p>}
@@ -60,23 +68,24 @@ export function FractureRiskAnalysis({ state }: { state: RiskAnalysisState }) {
           <p className="flex gap-2 border-b border-line px-5 py-3 text-[12px] leading-5 text-body">
             <Info size={14} className="mt-0.5 shrink-0 text-muted" aria-hidden />
             <span>
-              Two different measures. The {Math.round(FEMUR_INDEX_PERCENT)}% above is our own stress index: peak stress under {formatNumber(FEMUR_MODEL.loadNewtons, 0)}&nbsp;N
-              on the femoral head against an assumed {ASSUMED_STRENGTH_MPA}&nbsp;MPa strength, not a fall and not a likelihood of breaking. Below are the HFValid
-              authors&apos; fall-based results from their finite-element model.
+              Two different measures. The fracture risk above and the numbers below are the {FEMUR_MODEL.dataset} authors&apos; fall-based results from their
+              finite-element model. The {formatNumber(FEMUR_INDEX_PERCENT, 1)}% standing-load stress ratio above is our own simpler check: peak stress under{" "}
+              {formatNumber(FEMUR_MODEL.loadNewtons, 0)}&nbsp;N on the femoral head against an assumed {ASSUMED_STRENGTH_MPA}&nbsp;MPa strength, not a fall and not a
+              likelihood of breaking.
             </span>
           </p>
 
           <dl className="divide-y divide-line">
             <Fact
               icon={<Gauge size={15} />}
-              label="Published fracture risk · ARF0"
+              label="Absolute risk of fracture at time&nbsp;0 (ARF0)"
               value={formatNumber(f.arf0_percent, 1)}
               unit="%"
               note={`Higher than ${f.arf0_higher_than} of the ${f.cohort_n} women in the study${f.fractured_arf0_min_percent !== null && f.fractured_arf0_max_percent !== null ? `; the ${f.cohort_fractured} who fractured during follow-up had ${range(f.fractured_arf0_min_percent, f.fractured_arf0_max_percent, 1)}%` : ""}`}
             />
             <Fact
               icon={<Shield size={15} />}
-              label="Sideways-fall strength · MSF"
+              label="Minimum sidefall strength (MSF)"
               value={formatNumber(f.msf_newtons, 0)}
               unit="N"
               note={`The sideways-fall load that would break it in the authors' model; weaker than ${f.msf_lower_than} of the ${f.cohort_n}`}

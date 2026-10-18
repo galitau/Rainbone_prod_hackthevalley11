@@ -114,6 +114,19 @@ class CheckerTests(unittest.TestCase):
             with self.subTest(text=text):
                 self.assertIsNone(check(text, self.facts))
 
+    def test_names_spelled_out_as_the_prompt_asks_pass(self):
+        # The prompt asks for "MSF (minimum sidefall strength)" and "ARF0 (absolute risk of fracture at time 0)" on
+        # first use: the 0 of "time 0" is a name, not a number, and the ARF0 value is still checked through it.
+        for text in ["Its MSF (minimum sidefall strength) is 1,339 N; 75 of the 101 women had a stronger femur.",
+                     "Its ARF0 (absolute risk of fracture at time 0) is 47.1%, higher than 56 of the 101 women.",
+                     "The study median ARF0 (absolute risk of fracture at time 0) of 44.3% is lower."]:
+            with self.subTest(text=text):
+                self.assertIsNone(check(text, self.facts))
+        self.assertEqual(check("Its ARF0 (absolute risk of fracture at time 0) is 44.3%.", self.facts),
+                         "not this femur's ARF0: 44.3%")
+        self.assertIn("'MSF (minimum sidefall strength)'", rk.SYSTEM_PROMPT)
+        self.assertIn("'ARF0 (absolute risk of fracture at time 0)'", rk.SYSTEM_PROMPT)
+
     def test_invented_numbers_fail(self):
         for text, token in [("An ARF0 of 52%.", "52"), ("A fall of 4.26 kN.", "4.26"), ("Of the other 100 women.", "100"),
                             ("Subject Pat001.", "001"), ("Weighs 55 kg.", "55"), ("Since 1995.", "1995")]:
@@ -341,11 +354,11 @@ class ChainTests(RiskTestCase):
 class TemplateTests(unittest.TestCase):
     def test_template_words_the_facts(self):
         text = template_text(build_facts(DATA, "Pat001", FeInput(**FE)))
-        self.assertEqual(text, "A sideways fall would load this femur 2.17 to 3.18 times its strength (MSF, 1,339 N) "
-                               "in the study authors' model. Such a fall would exceed the MSF of every femur in the "
-                               "study; 75 of the 101 women had a stronger femur. Its published fracture risk (ARF0) is "
-                               "47.1%, higher than 56 of the 101 women. No hip fracture was recorded for this woman "
-                               "during the study's follow-up.")
+        self.assertEqual(text, "A sideways fall would load this femur 2.17 to 3.18 times its minimum sidefall strength "
+                               "(MSF, 1,339 N) in the study authors' model. Such a fall would exceed the MSF of every "
+                               "femur in the study; 75 of the 101 women had a stronger femur. Its published absolute "
+                               "risk of fracture at time 0 (ARF0) is 47.1%, higher than 56 of the 101 women. No hip "
+                               "fracture was recorded for this woman during the study's follow-up.")
         self.assertIn("hip fracture 1,529 days after this CT scan", template_text(build_facts(DATA, "Pat004")))
 
     def test_template_says_every_femur_only_when_it_is_true(self):
