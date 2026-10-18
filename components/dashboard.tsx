@@ -21,11 +21,12 @@ import { RainboneLogo } from "@/components/brand";
 import { ClinicalMetrics } from "@/components/clinical-metrics";
 import { StressChart } from "@/components/stress-chart";
 import { BoneViewer } from "@/components/BoneViewer";
+import { LesionProgression } from "@/components/imaging-library";
 import type { ClinicalMetrics as Metrics } from "@/lib/mock-data";
 import { mockMetrics } from "@/lib/mock-data";
 const PhysicsSimulations = dynamic(() => import("@/components/physics-simulations").then(module => module.PhysicsSimulations));
 
-export function Dashboard({ metrics = mockMetrics, simulationStatus = "ready", view = "overview" }: { metrics?: Metrics; simulationStatus?: "loading" | "ready" | "error"; view?: "overview" | "physics" }) {
+export function Dashboard({ metrics = mockMetrics, simulationStatus = "ready", view = "overview" }: { metrics?: Metrics; simulationStatus?: "loading" | "ready" | "error"; view?: "overview" | "physics" | "progression" }) {
   return (
     <main className="min-h-screen bg-canvas text-ink">
       <div className="flex min-h-screen">
@@ -37,6 +38,7 @@ export function Dashboard({ metrics = mockMetrics, simulationStatus = "ready", v
             <NavItem active={view === "overview"} href="/" icon={<LayoutDashboard size={17} />} label="Patient overview" />
             <NavItem active={view === "physics"} href="/physics-simulations" icon={<Activity size={17} />} label="Physics simulations" />
             <NavItem icon={<FolderOpen size={17} />} label="Imaging library" />
+            <NavItem active={view === "progression"} href="/lesion-progression" icon={<ScanLine size={17} />} label="Lesion progression" />
           </nav>
           <nav aria-label="Account" className="mt-8 space-y-1 px-3">
             <p className="px-3 pb-2 text-[11px] font-medium uppercase tracking-[0.08em] text-nav-muted">Workspace</p>
@@ -60,7 +62,7 @@ export function Dashboard({ metrics = mockMetrics, simulationStatus = "ready", v
                 <ChevronRight size={14} className="hidden shrink-0 sm:block" aria-hidden />
                 <span className="hidden sm:inline">RB-24081</span>
                 <ChevronRight size={14} className="hidden shrink-0 sm:block" aria-hidden />
-                <span className="truncate font-medium text-ink" aria-current="page">{view === "physics" ? "Physics simulations" : "Patient overview"}</span>
+                <span className="truncate font-medium text-ink" aria-current="page">{view === "physics" ? "Physics simulations" : view === "progression" ? "Lesion progression" : "Patient overview"}</span>
               </nav>
               <div className="flex items-center gap-2">
                 <IconButton label="Help"><CircleHelp size={18} /></IconButton>
@@ -75,10 +77,11 @@ export function Dashboard({ metrics = mockMetrics, simulationStatus = "ready", v
             <nav aria-label="Mobile workspace navigation" className="flex gap-1 overflow-x-auto border-t border-line px-4 py-2 scrollbar-hide lg:hidden">
               <MobileNavItem active={view === "overview"} href="/" label="Patient overview" />
               <MobileNavItem active={view === "physics"} href="/physics-simulations" label="Physics simulations" />
+              <MobileNavItem active={view === "progression"} href="/lesion-progression" label="Lesion progression" />
             </nav>
           </header>
 
-          {view === "physics" ? <PhysicsSimulations /> : <div className="mx-auto max-w-[1440px] p-5 md:p-8">
+          {view === "physics" ? <PhysicsSimulations /> : view === "progression" ? <LesionProgression /> : <div className="mx-auto max-w-[1440px] p-5 md:p-8">
             <PatientHeader />
             <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
               <div className="min-w-0 space-y-6">

@@ -2,7 +2,7 @@ import { mockStressSeries } from "@/lib/mock-data";
 
 const TICKS = [140, 100, 60, 20];
 
-export function StressChart() {
+export function StressChart({ activeMonth }: { activeMonth?: number }) {
   const max = Math.max(...mockStressSeries.map((point) => point.value));
   const points = mockStressSeries.map((point, index) => `${(index / (mockStressSeries.length - 1)) * 100},${100 - (point.value / max) * 78 - 8}`).join(" ");
   const last = mockStressSeries[mockStressSeries.length - 1];
@@ -23,6 +23,7 @@ export function StressChart() {
           <defs><linearGradient id="chart-fill" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stopColor="rgb(37 70 184)" stopOpacity=".14" /><stop offset="100%" stopColor="rgb(37 70 184)" stopOpacity="0" /></linearGradient></defs>
           <polyline fill="url(#chart-fill)" points={`0,100 ${points} 100,100`} stroke="none" />
           <polyline fill="none" points={points} stroke="rgb(37 70 184)" strokeWidth="2" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+          {activeMonth !== undefined && <line x1={(activeMonth / 12) * 100} x2={(activeMonth / 12) * 100} y1="0" y2="100" stroke="#9a5a00" strokeDasharray="4 4" vectorEffect="non-scaling-stroke" />}
         </svg>
       </div>
       <div className="ml-8 mt-2 flex justify-between font-mono text-[10px] text-muted"><span>JAN 26</span><span>APR 26</span><span>JUL 26</span><span>OCT 26</span></div>
