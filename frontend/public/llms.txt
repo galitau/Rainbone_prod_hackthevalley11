@@ -1,0 +1,39 @@
+# Rainbone
+
+> Rainbone is a Hack the Valley 11 research prototype for helping care teams understand bone vulnerability before a fall becomes an emergency. It combines CT-derived bone visualization, mechanical simulation and source-linked explanations. It is not a medical device and is not validated for clinical diagnosis or treatment decisions.
+
+## Intended users and evidence boundaries
+
+Rainbone is for the care team in nursing homes and senior living: nurses, CNAs, wellness directors, doctors and admin staff. Built for PointClickCare's Catch It Early challenge; there is no PointClickCare integration.
+
+It is a research prototype: no clinical deployment, patient benefit or fracture-prevention result is claimed.
+
+The dashboard reference is HFValid Pat001. The study authors' published ARF0 estimate of 47.1% is not Rainbone's validated personal prediction. The separate standing-load stress ratio is approximately 10.55%, rounded to 11%; it is stress divided by assumed strength, not a fracture probability. The dataset contains 101 women and four recorded follow-up fractures, which do not establish Rainbone's clinical predictive performance.
+
+The displayed femur is an offline finite-element result. The live sample engine uses synthetic data. The press is precomputed virtual compression playback; lesion progression is an illustrative timeline. Uploaded scans produce separate solve results and do not replace the reference participant's published measures.
+
+## AI and infrastructure
+
+Ask Rainbone uses a five-stage LangGraph workflow for AI agents: triage, evidence, writer, critic and audit. The Gemini API can select read-only evidence tools through native function calling; recognized questions use rules routing. The writer selects approved source statements, which code checks before rendering the answer. Numerical and citation checks do not establish clinical validity. The interface identifies Gemini, Groq or rules output and distinguishes live generation from saved or cached answers. The displayed trace is returned after completion, not streamed reasoning.
+
+Vultr Compute hosts the simulation API. Private Vultr Object Storage supplies research meshes and hash-verified AI evidence, with a labelled bundled backup. Tiger Cloud preserves simulation runs and AI provenance when available; logging is best effort, and confirmed records can be read back by identity. These are research executions, not patient trends.
+
+## Public pages
+
+- [Home](https://rainbone.health/): Project introduction and research purpose.
+- [Patient overview](https://rainbone.health/dashboard): Reference femur, stress visualization, metric definitions and Ask Rainbone.
+- [Physics simulations](https://rainbone.health/physics-simulations): Precomputed virtual press experiment.
+- [Physics report](https://rainbone.health/physics-simulations/report): Experiment methods, assumptions and results.
+- [Imaging library](https://rainbone.health/bones): Segmented pelvic research cases.
+- [Lesion progression](https://rainbone.health/lesion-progression): Illustrative timeline; not a validated clinical forecast.
+- [Secure datasets](https://rainbone.health/datasets): Dataset attribution, storage information and research execution records.
+- [Preferences](https://rainbone.health/preferences): Theme, text, motion and sample-run controls.
+- [Privacy](https://rainbone.health/privacy): Public-demo data practices.
+- [Enter](https://rainbone.health/enter): Demo entry page.
+
+## Project references
+
+- [Devpost project](https://devpost.com/software/rainbowbone)
+- [Source repository](https://github.com/galitau/Rainbone_prod_hackthevalley11)
+- [Architecture and project README](https://github.com/galitau/Rainbone_prod_hackthevalley11/blob/main/README.md)
+- [Recorded walkthrough](https://youtu.be/BoSh5c1QNrQ): A recording may show an earlier deployment; use current page labels for live behavior.

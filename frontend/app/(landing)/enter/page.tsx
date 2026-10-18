@@ -1,13 +1,10 @@
-import type { Metadata } from "next";
+import { pageMetadata } from "@/lib/seo";
 import Link from "next/link";
 import manifest from "@/public/models/hfvalid-femur/manifest.json";
 import { RainboneLogo } from "@/components/brand";
 import { AccessPass } from "@/components/landing/access-pass";
 
-export const metadata: Metadata = {
-  title: "Enter · Rainbone",
-  description: "Guest access to the Rainbone lab. No account, no email, no password.",
-};
+export const metadata = pageMetadata("/enter");
 
 const FOCUS_DARK = "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-white";
 

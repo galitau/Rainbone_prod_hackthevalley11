@@ -1,11 +1,8 @@
-import type { Metadata } from "next";
+import { pageMetadata } from "@/lib/seo";
 import Link from "next/link";
 import { RainboneLogo } from "@/components/brand";
 
-export const metadata: Metadata = {
-  title: "Privacy · Rainbone",
-  description: "What Rainbone stores when you use the demo, sign in with Google, or run a simulation.",
-};
+export const metadata = pageMetadata("/privacy");
 
 const FOCUS_DARK = "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-white";
 

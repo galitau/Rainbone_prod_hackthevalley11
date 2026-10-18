@@ -3,6 +3,7 @@ import { IBM_Plex_Mono, Inter, Source_Serif_4 } from "next/font/google";
 import "./globals.css";
 import { PreferencesSync } from "@/lib/preferences";
 import { PREFERENCES_SCRIPT } from "@/lib/preferences-script";
+import { pageMetadata, SITE_URL } from "@/lib/seo";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 const sourceSerif = Source_Serif_4({
@@ -16,25 +17,9 @@ const plexMono = IBM_Plex_Mono({
   variable: "--font-ibm-plex-mono",
 });
 
-const description =
-  "For senior-living care teams: a prototype of a fall-fracture check from a hip CT, shown on one published HFValid femur with the study authors' fall-risk results. Research prototype built at Hack the Valley 11, not a medical device.";
-
 export const metadata: Metadata = {
-  metadataBase: new URL("https://rainbone.health"),
-  title: "Rainbone | Fall-fracture check prototype for care teams",
-  description,
-  openGraph: {
-    type: "website",
-    url: "https://rainbone.health",
-    siteName: "Rainbone",
-    title: "Rainbone: a hip CT fall-fracture check, prototyped on a published femur",
-    description,
-  },
-  twitter: {
-    card: "summary_large_image",
-    title: "Rainbone: a hip CT fall-fracture check, prototyped on a published femur",
-    description,
-  },
+  ...pageMetadata("/"),
+  metadataBase: new URL(SITE_URL),
 };
 
 export default function RootLayout({
@@ -42,7 +27,7 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     // The inline script adds the saved preference classes to <html> before the first paint, hence suppressHydrationWarning.
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en-CA" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: PREFERENCES_SCRIPT }} />
       </head>

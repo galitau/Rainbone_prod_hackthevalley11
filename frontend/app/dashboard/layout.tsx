@@ -1,6 +1,6 @@
-import type { Metadata } from "next";
+import { pageMetadata } from "@/lib/seo";
 
-export const metadata: Metadata = { title: "Patient overview | Rainbone" };
+export const metadata = pageMetadata("/dashboard");
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   return children;

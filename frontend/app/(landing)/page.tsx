@@ -1,4 +1,3 @@
-import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import { Activity, Box, Cloud, MessageSquareText } from "lucide-react";
@@ -9,13 +8,13 @@ import { EnterShortcut } from "@/components/landing/enter-shortcut";
 import { ScanHero } from "@/components/landing/scan-hero";
 import { REPLAY_SLOT_ID, STRESS_PROFILE_P95, SWEEP_UNDERLINE_ID, rampColor } from "@/components/landing/stress-profile";
 import { ASSUMED_STRENGTH_MPA } from "@/lib/model";
+import { pageMetadata } from "@/lib/seo";
+import { LANDING_STRUCTURED_DATA, SITE_FAQS } from "@/lib/site-content";
 
-export const metadata: Metadata = {
-  title: "Rainbone | Watch a real femur carry 800 newtons",
-  description: "Patient-specific bone stress from CT: a real femur solved with finite elements and painted with its stress.",
-};
+export const metadata = pageMetadata("/");
 
-// Every number on this page comes from the two model manifests the dashboard loads (and lib/model for the index).
+// Mechanics figures come from the dashboard's model manifests and lib/model.
+// The FAQ separately identifies the published HFValid ARF0 estimate.
 const m = manifest.metrics;
 const fmt = (value: number) => value.toLocaleString("en-US");
 const FACTS = {
@@ -44,6 +43,8 @@ const H2 = "mt-3 font-serif text-[30px] font-semibold leading-tight tracking-[-0
 export default function Landing() {
   return (
     <main className="bg-canvas text-ink">
+      <script id="rainbone-structured-data" type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(LANDING_STRUCTURED_DATA).replace(/</g, "\\u003c") }} />
       <EnterShortcut />
       <section aria-labelledby="hero-title" className="relative overflow-hidden bg-viewport text-white lg:flex lg:min-h-[clamp(680px,100svh,1000px)] lg:flex-col">
         <div aria-hidden className="rb-glow pointer-events-none absolute inset-0" />
@@ -238,6 +239,26 @@ export default function Landing() {
           <p className="mt-8 rounded-xl bg-sunken p-5 text-[13px] leading-relaxed text-muted">
             <span className="font-medium text-body">Limits:</span> homogeneous, uncalibrated material; illustrative loads, not a full musculoskeletal model; no mesh-convergence study or clinical validation. The femur on this page was solved offline; the lab&apos;s live engine check solves a sample scan on the server. Nothing is solved in your browser.
           </p>
+        </div>
+      </section>
+
+      <section id="faq" aria-labelledby="faq-title" className="scroll-mt-6 border-t border-line bg-surface">
+        <div className="mx-auto max-w-[1200px] px-4 py-16 lg:px-12 lg:py-24">
+          <p className={KICKER}>Questions and answers</p>
+          <h2 id="faq-title" className={H2}>Understand what the research can tell you.</h2>
+          <div className="mt-10 grid gap-x-12 gap-y-8 lg:grid-cols-2">
+            {SITE_FAQS.map(({ question, answer }) => (
+              <article key={question} className="min-w-0 border-t border-line pt-5">
+                <h3 className="font-serif text-[21px] font-semibold leading-snug text-ink">{question}</h3>
+                <p className="mt-3 text-[15px] leading-relaxed text-body">{answer}</p>
+              </article>
+            ))}
+          </div>
+          <div className="mt-10 flex flex-wrap gap-x-6 gap-y-3 text-[14px]">
+            <Link href="/datasets" className="rounded font-medium text-link underline underline-offset-4">Explore sources and provenance</Link>
+            <a href="https://youtu.be/BoSh5c1QNrQ" target="_blank" rel="noreferrer" className="rounded font-medium text-link underline underline-offset-4">Watch the demo</a>
+            <Link href="/privacy" className="rounded font-medium text-link underline underline-offset-4">Read the privacy notice</Link>
+          </div>
         </div>
       </section>
 

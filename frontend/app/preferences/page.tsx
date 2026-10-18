@@ -1,10 +1,7 @@
-import type { Metadata } from "next";
+import { pageMetadata } from "@/lib/seo";
 import { Dashboard } from "@/components/dashboard";
 
-export const metadata: Metadata = {
-  title: "Preferences | Rainbone",
-  description: "Choose a light, dark, high-contrast or system theme, adjust text and motion, and save your preferences in this browser.",
-};
+export const metadata = pageMetadata("/preferences");
 
 export default function PreferencesPage() {
   return <Dashboard view="preferences" />;

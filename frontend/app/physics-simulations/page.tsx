@@ -1,7 +1,7 @@
-import type { Metadata } from "next";
+import { pageMetadata } from "@/lib/seo";
 import { Dashboard } from "@/components/dashboard";
 
-export const metadata: Metadata = { title: "Physics simulations | Rainbone" };
+export const metadata = pageMetadata("/physics-simulations");
 
 export default function PhysicsPage() {
   return <Dashboard view="physics" />;
