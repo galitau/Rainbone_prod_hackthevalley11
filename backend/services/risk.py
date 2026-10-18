@@ -1,9 +1,12 @@
 """AI fracture risk analysis of one HFValid femur (POST /api/risk-analysis).
 
 The numbers come from the HFValid collection (Aldieri, La Mattina, Szyszko,
-Baruffaldi, Viceconti 2025, University of Bologna, CC BY 4.0), read from
-frontend/public/models/hfvalid-risk.json: each subject's ARF0 and MSF as computed by the
-dataset authors' finite-element model, and the recorded follow-up.
+Baruffaldi, Viceconti 2025, University of Bologna, CC BY 4.0; de-identified public research
+data, not patient records): each subject's ARF0 and MSF as computed by the dataset authors'
+finite-element model, and the recorded follow-up. The table is read from Vultr Object Storage
+(clinical/hfvalid/hfvalid-risk.json) and checked against its pinned sha256 by
+services.clinical_store, with frontend/public/models/hfvalid-risk.json as the bundled backup
+copy; the response's `grounding` says which was used and why.
 Sideways-fall forces are van den Kroonenberg et al. 1995 (PubMed 8618384).
 
 build_facts() computes every number a model may use: the subject's place among
@@ -17,25 +20,32 @@ time, calls ARF0 a chance or likelihood, diagnoses or advises. A rejected or
 failed provider falls through to the next, and finally to a deterministic
 template built only from the facts. An answer is kept per case, facts and
 chain (a Gemini answer for 1 h, a Groq or template answer for 60 s), so a
-reload does not spend another model call.
+reload does not spend another model call. Each answer the chain produces is
+logged once in Tiger Cloud (services.ai_log); a kept answer is not logged again
+and keeps the `logged` id of its row.
 
 The chain order, providers, timeouts and fallback reasons are the ones
 POST /api/explain uses (AI_CHAIN, AI_OFFLINE, GEMINI_*, GROQ_*).
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import math
 import os
 import re
 import statistics
+import time
 from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Mapping, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from services import ai_log
+from services.ai_log import Logged
+from services.clinical_store import CATALOGUE, ClinicalDataUnavailable, Grounding, get_clinical_json
 from services.explain import (_NUMBER_WORDS, _TENS, _UNITS, _WORD_VALUES, NUMBER_RE, Fallback, _number_value,
                               build_providers, chain_order)
 from services.llm_providers import AnswerCache, answer_ttl, attempt, chain_signature
@@ -46,7 +56,7 @@ if TYPE_CHECKING:  # pragma: no cover
 
 log = logging.getLogger("rainbowbone.risk")
 
-DATA_PATH = Path(__file__).resolve().parents[2] / "frontend" / "public" / "models" / "hfvalid-risk.json"
+DATA_PATH = CATALOGUE["hfvalid-risk"].local  # frontend/public/models/hfvalid-risk.json, the bundled backup copy
 MAX_CHARS = 600  # the prompt asks for 420; the template's longest text stays below this
 NOTE = "Published research data, not a diagnosis or medical advice."
 
@@ -164,7 +174,7 @@ SYSTEM_PROMPT = (
 
 
 class RiskDataUnavailable(RuntimeError):
-    """frontend/public/models/hfvalid-risk.json is missing or unreadable."""
+    """The HFValid table could not be read from the bucket nor from the bundled copy, or is malformed."""
 
 
 class UnknownCase(KeyError):
@@ -225,14 +235,14 @@ class RiskResponse(BaseModel):
     model: Optional[str]
     fallbacks: list[Fallback]
     source: RiskSource
+    grounding: Optional[Grounding] = Field(default=None, description="Where the HFValid table was read from.")
+    logged: Optional[Logged] = Field(default=None, description="The Tiger Cloud row of this answer; null when "
+                                                               "DATABASE_URL is unset or the write failed.")
 
 
 # ----------------------------------------------------------------------------- data
-@lru_cache(maxsize=4)
-def _load(path: Path, mtime_ns: int) -> dict:
-    """The file at `path`, checked for the fields build_facts() reads (cached per modification time)."""
-    with path.open(encoding="utf-8") as handle:
-        data = json.load(handle)
+def validate_dataset(data: Any) -> dict:
+    """`data`, checked for the fields build_facts() reads. Raises ValueError, KeyError or TypeError."""
     subjects = data["subjects"]
     if not isinstance(subjects, dict) or not subjects:
         raise ValueError("no subjects")
@@ -250,12 +260,30 @@ def _load(path: Path, mtime_ns: int) -> dict:
     return data
 
 
+@lru_cache(maxsize=4)
+def _load(path: Path, mtime_ns: int) -> dict:
+    """The file at `path`, validated (cached per modification time)."""
+    with path.open(encoding="utf-8") as handle:
+        return validate_dataset(json.load(handle))
+
+
 def load_dataset(path: Optional[Path] = None) -> dict:
     """The parsed dataset, re-read when the file changes. Raises RiskDataUnavailable."""
     p = path or DATA_PATH
     try:
         return _load(p, p.stat().st_mtime_ns)
     except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
+        raise RiskDataUnavailable(f"fracture risk data is not available ({type(exc).__name__})") from None
+
+
+def load_grounded_dataset(env: Mapping[str, str]) -> tuple[dict, Grounding]:
+    """The table from the bucket (or the bundled copy) and where it came from. Raises RiskDataUnavailable."""
+    try:
+        data, grounding = get_clinical_json("hfvalid-risk", env)
+        return validate_dataset(data), grounding
+    except ClinicalDataUnavailable:
+        raise RiskDataUnavailable("fracture risk data is not available") from None
+    except (ValueError, KeyError, TypeError, AttributeError) as exc:
         raise RiskDataUnavailable(f"fracture risk data is not available ({type(exc).__name__})") from None
 
 
@@ -494,16 +522,30 @@ async def analyse(request: RiskRequest, env: Optional[Mapping[str, str]] = None,
                   data: Optional[Mapping[str, Any]] = None,
                   transport: Optional["httpx.AsyncBaseTransport"] = None,
                   providers: Optional[Mapping[str, list]] = None) -> RiskResponse:
-    """Facts for `request.case_id`, worded by the first provider whose text passes check()."""
+    """Facts for `request.case_id`, worded by the first provider whose text passes check().
+
+    The table comes from the bucket or the bundled copy (`grounding`), unless the caller passes `data`."""
+    started = time.perf_counter()
     e = os.environ if env is None else env
     order = chain_order(e)
-    dataset = load_dataset() if data is None else data
+    if data is None:
+        dataset, grounding = await asyncio.to_thread(load_grounded_dataset, e)
+    else:
+        dataset, grounding = data, None
     facts = build_facts(dataset, request.case_id, request.fe)
     source = RiskSource(**{k: dataset["source"][k] for k in ("citation", "doi", "license")})
     tiers = dict(providers) if providers is not None else build_providers(e, transport)
-    return await _answers.get_or_compute((request.case_id, facts_json(facts), chain_signature(order, tiers)),
-                                         lambda: _run_chain(request.case_id, order, facts, source, tiers),
-                                         lambda answer: answer_ttl(answer.provider))
+
+    async def produce() -> RiskResponse:
+        answer = await _run_chain(request.case_id, order, facts, source, tiers)
+        logged = await ai_log.log_answer(e, "risk-analysis", request.case_id, answer, facts_json(facts), started,
+                                         grounding)
+        return answer.model_copy(update={"grounding": grounding, "logged": logged})
+
+    answer = await _answers.get_or_compute((request.case_id, facts_json(facts), chain_signature(order, tiers)),
+                                           produce, lambda answer: answer_ttl(answer.provider))
+    # A kept answer says where this request's facts were read from (the same bytes, or it would not be kept).
+    return answer if answer.grounding == grounding else answer.model_copy(update={"grounding": grounding})
 
 
 async def _run_chain(case_id: str, order: tuple[str, ...], facts: RiskFacts, source: RiskSource,

@@ -313,6 +313,44 @@ bucket's CORS rule must list the same origin (`--cors-origin http://localhost:30
 `--cors-origin` replaces the bucket's whole rule, so list every origin that loads the meshes in one run,
 for example `--cors-origin http://localhost:3000 --cors-origin https://rainbone.health --cors-origin https://www.rainbone.health`.
 
+## Research data for the AI endpoints (`clinical/`)
+
+`publish_clinical.py` uploads the research data the backend's AI endpoints
+read, as private objects:
+
+| Object | From | Read by |
+|---|---|---|
+| `clinical/hfvalid/hfvalid-risk.json` | `frontend/public/models/hfvalid-risk.json` | `POST /api/risk-analysis` |
+| `clinical/hfvalid/pat001-femur-manifest.json` | `frontend/public/models/hfvalid-femur/manifest.json` | `POST /api/explain` with `case_id` Pat001 |
+| `clinical/index.json` | built by the script | both: key, sha256, bytes, licence (CC BY 4.0), citation and DOI of each file |
+
+It is de-identified public research data from the HFValid collection
+(Aldieri, La Mattina, Szyszko, Baruffaldi, Viceconti 2025, University of
+Bologna, DOI [10.6092/unibo/amsacta/8431](https://doi.org/10.6092/unibo/amsacta/8431),
+CC BY 4.0), not patient records; the index says so for every file.
+
+Each file must match the sha256 pinned next to it (`<file>.sha256`), which is
+what the backend trusts: the script refuses a file that does not, and the
+backend ignores a bucket object that does not (see `backend/README.md`, "Where
+the AI facts come from"). After changing a data file on purpose, update its
+pin in the same commit (`shasum -a 256 hfvalid-risk.json > hfvalid-risk.json.sha256`
+from its folder), then publish.
+
+The output is deterministic (the index holds no timestamps), objects whose
+sha256 metadata already matches are skipped, and every object is read back and
+its sha256 checked. It reads the same four `VULTR_S3_*` variables, never prints
+them, the endpoint or the bucket name, and imports
+`backend/services/clinical_store.py`, so run it with the backend's Python
+environment (`backend/requirements.txt`), from the repository root:
+
+```bash
+python scripts/vultr_pipeline/publish_clinical.py --dry-run   # the plan and sha256s; no credentials needed
+( set -a; . /path/outside/repo/vultr-objstore.env; set +a
+  python scripts/vultr_pipeline/publish_clinical.py )
+```
+
+Its tests are `backend/tests/test_clinical_store.py` (moto).
+
 ## Tests
 
 No network, no bucket and no TotalSegmentator needed: Zenodo is a mocked

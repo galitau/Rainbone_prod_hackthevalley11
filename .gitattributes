@@ -7,3 +7,7 @@
 *.nii binary
 *.nii.gz binary
 *.stl binary
+# The AI endpoints' data files, whose sha256 is pinned next to them (<file>.sha256): keep them byte-exact too.
+frontend/public/models/hfvalid-risk.json -text
+frontend/public/models/hfvalid-femur/manifest.json -text
+*.sha256 -text
