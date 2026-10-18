@@ -29,7 +29,7 @@ export function aiAnswerLabel({ provider, model, served, saved_at }: AiAnswerSou
     if (served === "cached") return model ? `Gemini · ${model} · reused from an earlier request` : "Gemini · reused from an earlier request";
     return model ? `Gemini · ${model}` : "Gemini";
   }
-  if (provider === "groq") return `Backup model · Groq${model ? ` ${model}` : ""}`;
+  if (provider === "groq") return "Backup Frontier-AI Model";
   if (provider === "template") return "Offline summary (no AI)";
   return model ? `${provider} · ${model}` : provider;
 }
