@@ -5,6 +5,7 @@ import {
   Activity,
   ChevronRight,
   Database,
+  FileText,
   FileUp,
   FolderOpen,
   LayoutDashboard,
@@ -97,6 +98,7 @@ export function Dashboard(props: DashboardProps) {
           </nav>
           <nav aria-label="Account" className="mt-8 space-y-1 px-3">
             <p className="px-3 pb-2 text-[11px] font-medium uppercase tracking-[0.08em] text-nav-muted">Workspace</p>
+            <NavItem active={false} href="/research-paper" icon={<FileText size={17} />} label="Research paper" />
             <NavItem active={view === "datasets"} href="/datasets" icon={<ShieldCheck size={17} />} label="Secure datasets" />
             <NavItem active={view === "preferences"} href="/preferences" icon={<Settings2 size={17} />} label="Preferences" />
           </nav>
@@ -136,6 +138,7 @@ export function Dashboard(props: DashboardProps) {
               <MobileNavItem active={view === "physics"} href="/physics-simulations" label="Physics simulations" />
               <MobileNavItem active={view === "imaging"} href="/bones" label="Imaging library" />
               <MobileNavItem active={view === "progression"} href="/lesion-progression" label="Lesion progression" onIntent={warmProgression} />
+              <MobileNavItem active={false} href="/research-paper" label="Research paper" />
               <MobileNavItem active={view === "datasets"} href="/datasets" label="Secure datasets" />
               <MobileNavItem active={view === "preferences"} href="/preferences" label="Preferences" />
             </nav>
