@@ -141,8 +141,9 @@ else: straight from the private bucket, through links the API signs.
 
 This is a fixed evidence-to-explanation workflow: retrieval, deterministic calculation,
 generation, validation and provenance. It does not use autonomous clinical agents.
-Ask Rainbone adds a bounded tool-using workflow: native Gemini function calls choose up to
-four read-only evidence tools; a constrained writer selects approved statement IDs from their
+Ask Rainbone adds a bounded tool-using workflow: known data and navigation intents use
+explicit rules; other questions use native Gemini function calls to choose up to four
+read-only evidence tools; a constrained writer selects approved statement IDs from their
 outputs; a code critic checks that selection. The server renders exact source statements,
 citations and navigation links. Unavailable native routing is explicitly labeled rules triage. The two
 existing explanation cards still use checked model prose. A broader typed review brief
@@ -214,13 +215,19 @@ to the six workspace routes. Each request is independent: prior chat turns and u
 scans are not sent. The visible conversation lives only in page memory.
 
 The server verifies the published risk table and the femur manifest through `clinical_store`.
-Native Gemini function calls select at most four read-only evidence calls from
+Known chips, follow-ups and clear data/navigation intents route deterministically to the
+matching evidence; other questions use native Gemini function calls. Both routes select
+at most four read-only evidence calls from
 `get_patient_facts`, `compare_with_cohort`, `get_fea_result`, `get_page_guide` and
 `get_dataset_info`. Strict argument allowlists prevent arbitrary case, file, URL or SQL access.
 If native function calling fails, rules choose tools and the trace says so. A separate writer
 receives only the selected tool outputs plus a fixed unsupported-request statement. Gemini,
 its saved selection, Groq or a deterministic fallback selects one to three statement IDs.
-A code critic permits one bounded rewrite before falling through the provider chain. The
+The writer receives an explicit allowed-ID list and a valid example for those outputs.
+For recognized intents, the code critic also requires the primary fact or page instruction;
+an irrelevant statement or refusal cannot silently pass. It permits one bounded rewrite
+before falling through the provider chain and reports fixed rejection categories without
+quoting model output or the question. The
 server rejects unknown IDs, sources, routes and answers over 120 words, then renders exact
 statements. The UI discloses that models select checked statements; a provider label does
 not imply unrestricted generated prose. Unsupported requests get a bounded site-help response.
