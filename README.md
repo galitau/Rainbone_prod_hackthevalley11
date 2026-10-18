@@ -37,6 +37,20 @@ See [The AI layer](#the-ai-layer) and
 | **Tiger Data** | TimescaleDB stores completed simulation runs (hypertable plus an hourly continuous aggregate) and the provenance of each new AI generation, including the evidence tools Ask Rainbone's agent pipeline ran; a cached or saved answer adds no row | History chart, Secure datasets → Recent AI answers, `/api/ai-log` |
 | **GoDaddy Registry** | The `.health` domain | <https://rainbone.health> |
 
+**AI agents at a glance.** Ask Rainbone answers through five stages orchestrated with LangGraph
+([details](#ask-rainbone-the-agent-pipeline-orchestrated-with-langgraph)):
+
+```mermaid
+flowchart LR
+  q(["Question"]) --> triage["Triage<br/>rules or Gemini<br/>function calling"]
+  triage --> evidence["Evidence<br/>read-only tools"]
+  evidence --> writer["Writer<br/>picks checked statements"]
+  writer --> critic{"Critic<br/>code checks"}
+  critic -->|"one rewrite"| writer
+  critic -->|"accepted"| audit["Audit<br/>logged in Tiger Cloud"]
+  audit --> answer(["Cited answer"])
+```
+
 ## Try it in 60 seconds
 
 1. Open <https://rainbone.health> and press **Enter the lab**. The demo seat (Dr. Rowan, care team) needs no account.
