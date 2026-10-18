@@ -14,7 +14,7 @@ router = APIRouter(tags=["history"])
 
 
 class StressPoint(BaseModel):
-    """One run, in the shape of lib/mock-data.ts mockStressSeries."""
+    """One run, in the shape of frontend/lib/mock-data.ts mockStressSeries."""
 
     label: str = Field(description="Run time in UTC.")
     value: float = Field(description="max_von_mises_stress_mpa returned by that run.")

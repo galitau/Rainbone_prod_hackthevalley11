@@ -15,12 +15,12 @@ properties and loads are assumptions, and no output is a clinical measurement.
 flowchart TB
   user(["Browser"])
 
-  subgraph VERCEL["Front end · Vercel · rainbone.health · being deployed"]
+  subgraph VERCEL["Front end · Vercel · rainbone.health"]
     next["Next.js 15 App Router<br/>/ and /physics-simulations<br/>/bones in PR #3"]
-    static["public/ static files<br/>models/hfvalid-femur<br/>models/femur-press<br/>sample_bone.nii.gz"]
+    static["frontend/public/ static files<br/>models/hfvalid-femur<br/>models/femur-press<br/>sample_bone.nii.gz"]
   end
 
-  subgraph VULTR["Back end · Vultr Compute · api.rainbone.health · being deployed"]
+  subgraph VULTR["Back end · Vultr Compute · api.rainbone.health"]
     caddy["Caddy<br/>HTTPS reverse proxy"]
     api["FastAPI on uvicorn<br/>POST /api/simulate<br/>POST /api/explain<br/>GET /api/history<br/>GET /health<br/>GET /api/bones, PR #3"]
     fea["SfePy finite-element solve<br/>services/fea_solver.py"]
@@ -59,20 +59,20 @@ flowchart TB
 
 Dashed lines and boxes marked PR #3 are in open pull request
 [#3](https://github.com/galitau/Rainbone_prod_hackthevalley11/pull/3), not yet on
-`main`. Hosting is being set up: the front end on Vercel at `https://rainbone.health`
-and the API on a Vultr Compute instance at `https://api.rainbone.health`, with Caddy
-in front of uvicorn. Until then, run both locally (below).
+`main`. The app is live: the front end (built from `frontend/`) on Vercel at
+<https://rainbone.health>, and the API on a Vultr Compute instance at
+<https://api.rainbone.health>, with Caddy in front of uvicorn. To run both locally, see below.
 
 ### What happens when a page loads
 
 The dashboard (`/`):
 
-1. Next.js serves the page and the static files in `public/`.
-2. The 3D viewer (`components/BoneViewer.tsx`, vtk.js) fetches
+1. Next.js serves the page and the static files in `frontend/public/`.
+2. The 3D viewer (`frontend/components/BoneViewer.tsx`, vtk.js) fetches
    `models/hfvalid-femur/manifest.json` and `fea-surface.vtp`: the HFValid femur with
    the stress and displacement fields that `scripts/bone_fea` solved offline. Nothing
    is solved in the browser. The cut-away view fetches `bone-fea.vtu` once and slices
-   its tetrahedra in the browser (`lib/vtu-cut.ts`) to show the stress inside the bone.
+   its tetrahedra in the browser (`frontend/lib/vtu-cut.ts`) to show the stress inside the bone.
 3. The page fetches `sample_bone.nii.gz` (a synthetic test volume, not anatomy) and
    posts it to `POST /api/simulate`.
 4. The API keeps voxels at or above 150 HU, maps HU to stiffness, meshes the bone into
@@ -101,24 +101,31 @@ bucket without seeing any credentials.
 
 | Path | What it holds |
 |---|---|
-| `app/` | Next.js App Router pages: `/` and `/physics-simulations` |
-| `components/` | Dashboard, `BoneViewer.tsx` (femur stress map and cut-away), `physics-simulations.tsx` and `press-viewer.tsx` (press replay) |
-| `lib/` | Colour ramp, tetrahedral slicing, press model types, demo data |
-| `public/models/` | Precomputed femur FEA (`hfvalid-femur`) and press steps (`femur-press`) |
+| `package.json` (root) | Shortcuts only: `npm run setup`, `npm run dev`, `npm run build` and `npm start` run the same scripts inside `frontend/` |
+| `frontend/app/` | Next.js App Router pages: `/` and `/physics-simulations` |
+| `frontend/components/` | Dashboard, `BoneViewer.tsx` (femur stress map and cut-away), `physics-simulations.tsx` and `press-viewer.tsx` (press replay) |
+| `frontend/lib/` | Colour ramp, tetrahedral slicing, press model types, demo data |
+| `frontend/public/models/` | Precomputed femur FEA (`hfvalid-femur`) and press steps (`femur-press`) |
 | `backend/` | FastAPI app: `/api/simulate`, `/api/explain`, `/api/history`, `/health`. Details in [`backend/README.md`](backend/README.md) |
-| `scripts/bone_fea/` | Offline pipeline that builds `public/models/` from HFValid with 3D Slicer, TetGen and SfePy. Details in [`scripts/bone_fea/README.md`](scripts/bone_fea/README.md) |
+| `scripts/bone_fea/` | Offline pipeline that builds `frontend/public/models/` from HFValid with 3D Slicer, TetGen and SfePy. Details in [`scripts/bone_fea/README.md`](scripts/bone_fea/README.md) |
 
 ## Run locally
 
-Front end (Node.js and npm):
+Front end (Node.js and npm). The app lives in `frontend/`. The same commands work in PowerShell:
 
 ```bash
+cd frontend
 npm ci
 npm run dev
 ```
 
-Open <http://localhost:3000>. The API's CORS setting allows only that origin, so use
-`localhost`, not `127.0.0.1`, or the browser blocks the API calls.
+From the repository root, `npm run setup` (once) and then `npm run dev` do the same thing.
+After pulling the commit that moved the app into `frontend/`, run `npm ci` inside `frontend/`
+once. The old `node_modules/` and `.next/` at the root can be deleted.
+
+Open <http://localhost:3000>. By default the API allows `http://localhost:3000`,
+`https://rainbone.health` and `https://www.rainbone.health` (set `CORS_ALLOW_ORIGINS` to
+change the list), so use `localhost`, not `127.0.0.1`, or the browser blocks the API calls.
 
 Back end, in a second terminal from the repository root (tested with Python 3.12).
 macOS and Linux:
@@ -152,6 +159,17 @@ To turn those on, copy `backend/.env.example` to `backend/.env`
 with `python -m services.history migrate` from `backend/`. Never commit `.env` files.
 [`backend/README.md`](backend/README.md) covers every variable, the tests and the
 optional FSL bone segmentation.
+
+## Deploy
+
+- **Front end:** Vercel builds the Next.js app in `frontend/`. With the Vercel CLI, run
+  `vercel deploy --prod` from inside `frontend/`. A Git-linked Vercel project needs its
+  Root Directory set to `frontend`. `NEXT_PUBLIC_API_BASE_URL` points the browser at the
+  API and is fixed at build time.
+- **Back end:** any Linux host with Python 3.12. Clone the whole repository (the API imports
+  the solver from `scripts/bone_fea/`), install `backend/requirements.txt`, and run
+  `uvicorn main:app` from `backend/` behind an HTTPS proxy. Production runs on Vultr Compute
+  with Caddy.
 
 ## Data and credits
 

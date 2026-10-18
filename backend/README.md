@@ -11,7 +11,7 @@ uvicorn main:app --reload
 The API exposes `GET /health`, `POST /api/simulate`, `POST /api/explain` and
 `GET /api/history`. The simulation endpoint
 accepts a multipart form upload named `file` containing a `.nii` or `.nii.gz`
-NIfTI volume. The dashboard posts `public/sample_bone.nii.gz` to
+NIfTI volume. The dashboard posts `frontend/public/sample_bone.nii.gz` to
 `http://127.0.0.1:8000/api/simulate`, uvicorn's default port.
 
 Browsers may call the API from `http://localhost:3000`, `https://rainbone.health`
@@ -158,7 +158,7 @@ each:
 
 | Volume | Bone voxels kept | Same mask as numpy/scipy | FSL | numpy/scipy |
 |---|---|---|---|---|
-| `public/sample_bone.nii.gz` | 3,048 | yes | 0.04–0.08 s | under 0.01 s |
+| `frontend/public/sample_bone.nii.gz` | 3,048 | yes | 0.04–0.08 s | under 0.01 s |
 | Femur-shaped volume (see Example response), 256 × 331 × 220 | 413,475 | yes | 1.14–1.20 s | 0.29–0.31 s |
 | Public pelvic CT (CTPelvic1K), 512 × 512 × 350, int32 | 1,905,792 | yes | 6.66–7.17 s | 2.09–2.19 s |
 
@@ -194,7 +194,7 @@ Without `FSLDIR` those tests are skipped with the reason.
 
 ## Bundled sample
 
-`public/sample_bone.nii.gz` is a synthetic 32 × 32 × 32 float32 volume with
+`frontend/public/sample_bone.nii.gz` is a synthetic 32 × 32 × 32 float32 volume with
 1 mm voxels: an ellipsoid with semi-axes of 10, 6 and 12 mm (3,048 voxels) at
 750 HU in −1000 HU. It is not anatomy.
 
@@ -210,7 +210,7 @@ to 1 (`scl_inter` stays 0). Both values mean no scaling.
 ## Example response
 
 From a real run of
-`curl -F "file=@public/sample_bone.nii.gz" http://127.0.0.1:8000/api/simulate`
+`curl -F "file=@frontend/public/sample_bone.nii.gz" http://127.0.0.1:8000/api/simulate`
 (port changed for the run):
 
 ```json
@@ -234,12 +234,12 @@ Measured request times (curl `time_total`) on one development laptop:
 
 | Input | Bone voxels | Coarsening | FE voxels | Time |
 |---|---|---|---|---|
-| `public/sample_bone.nii.gz` | 3,048 | none, 1 mm | 3,048 | 1.81 s first request (includes importing SfePy), 1.30 s after |
+| `frontend/public/sample_bone.nii.gz` | 3,048 | none, 1 mm | 3,048 | 1.81 s first request (includes importing SfePy), 1.30 s after |
 | Solid 40 mm cube (test case) | 64,000 | 2 × 2 × 2, 2 mm | 8,000 | 5.56 s, 5.81 s |
 | Femur-shaped volume, 256 × 331 × 220 voxels of 0.703 × 0.703 × 2 mm¹ | 413,475 | 6 × 6 × 2, 4.22 × 4.22 × 4 mm | 7,553 | 2.42 s, 2.39 s |
 
 ¹ The HFValid Pat001 right-femur labelmap already in this repository
-(`public/models/hfvalid-femur/bone.seg.nrrd`; source and CC BY 4.0
+(`frontend/public/models/hfvalid-femur/bone.seg.nrrd`; source and CC BY 4.0
 attribution in `scripts/bone_fea/README.md`), with every femur voxel set to
 700 HU and the rest to −1000 HU. These are not the scan's real HU values, so
 the modulus is uniform. Its response: 12.61 MPa, 22.35 GPa, 408.83 cm³,
@@ -425,7 +425,7 @@ in its own transaction. Every file is idempotent, so re-running is safe.
 ### `GET /api/history?limit=N`
 
 `N` is 1–500 (default 10). Response to `?limit=1` from a local TimescaleDB
-container after four uploads with curl (`public/sample_bone.nii.gz` three
+container after four uploads with curl (`frontend/public/sample_bone.nii.gz` three
 times, the femur-shaped volume once), with FSL making the bone mask:
 
 ```json
@@ -470,7 +470,7 @@ times, the femur-shaped volume once), with FSL making the bone mask:
 }
 ```
 
-- `series` has the shape of `mockStressSeries` in `lib/mock-data.ts`: one
+- `series` has the shape of `mockStressSeries` in `frontend/lib/mock-data.ts`: one
   point per run, `value` = `max_von_mises_stress_mpa`, `label` = run time in
   UTC.
 - `runs` are the same runs with every stored column; `hourly` holds the latest
