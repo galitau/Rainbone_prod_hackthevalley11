@@ -119,5 +119,5 @@ def export_print_mesh(directory):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--model-dir', type=Path, default=Path(__file__).resolve().parents[2] / 'public/models/hfvalid-femur')
+    parser.add_argument('--model-dir', type=Path, default=Path(__file__).resolve().parents[2] / 'frontend/public/models/hfvalid-femur')
     export_print_mesh(parser.parse_args().model_dir)

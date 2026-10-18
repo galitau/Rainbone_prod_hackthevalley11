@@ -93,7 +93,7 @@ def main(output, mesh_path):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--output', type=Path, default=Path(__file__).resolve().parents[2] / 'public/models/hfvalid-femur')
+    parser.add_argument('--output', type=Path, default=Path(__file__).resolve().parents[2] / 'frontend/public/models/hfvalid-femur')
     parser.add_argument('--mesh', type=Path, required=True, help='TetGen .1.node file with adjacent .1.ele')
     args = parser.parse_args()
     main(args.output, args.mesh)

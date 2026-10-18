@@ -1,6 +1,6 @@
 # Complete femur with computed FEA
 
-The dashboard viewer loads the static model in `public/models/hfvalid-femur`.
+The dashboard viewer loads the static model in `frontend/public/models/hfvalid-femur`.
 Only the visualization and its offline asset pipeline are changed. Existing
 API endpoints, dashboard metrics, study heading, and history remain demo data.
 
@@ -30,12 +30,13 @@ the executable paths with your installations:
 ```powershell
 python scripts/bone_fea/fetch_case.py --output C:/data/hfvalid
 $env:RAINBOWBONE_INPUT = 'C:/data/hfvalid'
-$env:RAINBOWBONE_OUTPUT = (Resolve-Path 'public/models/hfvalid-femur').Path
+$env:RAINBOWBONE_OUTPUT = (Resolve-Path 'frontend/public/models/hfvalid-femur').Path
 & 'C:/tools/Slicer/Slicer.exe' --no-splash --no-main-window --python-script scripts/bone_fea/import_femur_in_slicer.py
 & 'C:/tools/Slicer/Slicer.exe' --no-splash --no-main-window --python-script scripts/bone_fea/prepare_femur_in_slicer.py
-& 'C:/tools/tetgen.exe' '-pYq1.4a80z' public/models/hfvalid-femur/bone-surface.poly
+& 'C:/tools/tetgen.exe' '-pYq1.4a80z' frontend/public/models/hfvalid-femur/bone-surface.poly
 python scripts/bone_fea/test_solve.py
-python scripts/bone_fea/build_model.py --mesh public/models/hfvalid-femur/bone-surface.1.node
+python scripts/bone_fea/build_model.py --mesh frontend/public/models/hfvalid-femur/bone-surface.1.node
+cd frontend
 npm run build
 ```
 
@@ -153,7 +154,7 @@ force-balance checks (relative tolerance 1e-6). The first assumed strain limit
 sets the stroke schedule; it is not a clinical fracture-load estimate.
 Each run allows up to 200 damage iterations per step and refuses to write a
 completed manifest if convergence fails. An optional `--checkpoint` path outside
-`public/` preserves progress; it is valid only for the exact same mesh and scripts.
+`frontend/public/` preserves progress; it is valid only for the exact same mesh and scripts.
 
 For the failure preview, elements with damage at least 0.95 are removed only
 from the rendered surface. Newly exposed tetrahedral faces come from that

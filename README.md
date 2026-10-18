@@ -17,7 +17,7 @@ flowchart TB
 
   subgraph VERCEL["Front end · Vercel · rainbone.health · being deployed"]
     next["Next.js 15 App Router<br/>/ and /physics-simulations<br/>/bones in PR #3"]
-    static["public/ static files<br/>models/hfvalid-femur<br/>models/femur-press<br/>sample_bone.nii.gz"]
+    static["frontend/public/ static files<br/>models/hfvalid-femur<br/>models/femur-press<br/>sample_bone.nii.gz"]
   end
 
   subgraph VULTR["Back end · Vultr Compute · api.rainbone.health · being deployed"]
@@ -67,12 +67,12 @@ in front of uvicorn. Until then, run both locally (below).
 
 The dashboard (`/`):
 
-1. Next.js serves the page and the static files in `public/`.
-2. The 3D viewer (`components/BoneViewer.tsx`, vtk.js) fetches
+1. Next.js serves the page and the static files in `frontend/public/`.
+2. The 3D viewer (`frontend/components/BoneViewer.tsx`, vtk.js) fetches
    `models/hfvalid-femur/manifest.json` and `fea-surface.vtp`: the HFValid femur with
    the stress and displacement fields that `scripts/bone_fea` solved offline. Nothing
    is solved in the browser. The cut-away view fetches `bone-fea.vtu` once and slices
-   its tetrahedra in the browser (`lib/vtu-cut.ts`) to show the stress inside the bone.
+   its tetrahedra in the browser (`frontend/lib/vtu-cut.ts`) to show the stress inside the bone.
 3. The page fetches `sample_bone.nii.gz` (a synthetic test volume, not anatomy) and
    posts it to `POST /api/simulate`.
 4. The API keeps voxels at or above 150 HU, maps HU to stiffness, meshes the bone into
@@ -101,18 +101,19 @@ bucket without seeing any credentials.
 
 | Path | What it holds |
 |---|---|
-| `app/` | Next.js App Router pages: `/` and `/physics-simulations` |
-| `components/` | Dashboard, `BoneViewer.tsx` (femur stress map and cut-away), `physics-simulations.tsx` and `press-viewer.tsx` (press replay) |
-| `lib/` | Colour ramp, tetrahedral slicing, press model types, demo data |
-| `public/models/` | Precomputed femur FEA (`hfvalid-femur`) and press steps (`femur-press`) |
+| `frontend/app/` | Next.js App Router pages: `/` and `/physics-simulations` |
+| `frontend/components/` | Dashboard, `BoneViewer.tsx` (femur stress map and cut-away), `physics-simulations.tsx` and `press-viewer.tsx` (press replay) |
+| `frontend/lib/` | Colour ramp, tetrahedral slicing, press model types, demo data |
+| `frontend/public/models/` | Precomputed femur FEA (`hfvalid-femur`) and press steps (`femur-press`) |
 | `backend/` | FastAPI app: `/api/simulate`, `/api/explain`, `/api/history`, `/health`. Details in [`backend/README.md`](backend/README.md) |
-| `scripts/bone_fea/` | Offline pipeline that builds `public/models/` from HFValid with 3D Slicer, TetGen and SfePy. Details in [`scripts/bone_fea/README.md`](scripts/bone_fea/README.md) |
+| `scripts/bone_fea/` | Offline pipeline that builds `frontend/public/models/` from HFValid with 3D Slicer, TetGen and SfePy. Details in [`scripts/bone_fea/README.md`](scripts/bone_fea/README.md) |
 
 ## Run locally
 
-Front end (Node.js and npm):
+Front end (Node.js and npm), from the repository root. The same commands work in PowerShell:
 
 ```bash
+cd frontend
 npm ci
 npm run dev
 ```
