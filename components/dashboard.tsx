@@ -134,7 +134,7 @@ function Overview({ run, explanation, history, onRunSample, onUpload }: Overview
       <div className="grid gap-5 lg:min-h-0 lg:flex-1 lg:grid-cols-[minmax(0,1fr)_360px] lg:grid-rows-[minmax(0,1fr)] xl:grid-cols-[minmax(0,1fr)_400px]">
         {/* The viewer keeps its dark stage. The wrapper only sizes it: from lg up the canvas flexes to fill the
             column (its own minimum height is lifted) so the whole viewer, legend included, ends above the footer. */}
-        <div className="theme-stage flex min-w-0 flex-col lg:min-h-0 [&>section]:flex [&>section]:min-h-0 [&>section]:flex-1 [&>section]:flex-col max-sm:[&>section>div.relative]:min-h-[48vh] lg:[&>section>div.relative]:min-h-0">
+        <div className="theme-stage flex min-w-0 flex-col lg:min-h-0 [&>section]:flex [&>section]:min-h-0 [&>section]:flex-1 [&>section]:flex-col max-sm:[&>section>div.relative]:min-h-[42vh] lg:[&>section>div.relative]:min-h-0">
           <BoneViewer />
         </div>
         {/* relative: keeps the visually hidden file input inside the scrolling panel, so the page itself never scrolls */}
