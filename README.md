@@ -5,6 +5,7 @@
 - **Live site:** <https://rainbone.health>
 - **Devpost:** <https://devpost.com/software/rainbowbone>
 - **Demo video:** <https://youtu.be/SCrmSu9aVzs>
+- **Docs:** [Architecture](ARCHITECTURE.md) · [Business process flow](BUSINESS_PROCESS_FLOW.md)
 
 **A stress test for bones, explained by AI.**
 
