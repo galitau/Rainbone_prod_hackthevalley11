@@ -310,7 +310,7 @@ def export_reconstruction(models, output):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    models = Path(__file__).resolve().parents[2] / 'public/models'
+    models = Path(__file__).resolve().parents[2] / 'frontend/public/models'
     parser.add_argument('--models', type=Path, default=models)
     parser.add_argument('--output', type=Path, default=models / 'femur-reconstruction')
     args = parser.parse_args()

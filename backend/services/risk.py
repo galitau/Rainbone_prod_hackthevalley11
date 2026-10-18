@@ -2,7 +2,7 @@
 
 The numbers come from the HFValid collection (Aldieri, La Mattina, Szyszko,
 Baruffaldi, Viceconti 2025, University of Bologna, CC BY 4.0), read from
-public/models/hfvalid-risk.json: each subject's ARF0 and MSF as computed by the
+frontend/public/models/hfvalid-risk.json: each subject's ARF0 and MSF as computed by the
 dataset authors' finite-element model, and the recorded follow-up.
 Sideways-fall forces are van den Kroonenberg et al. 1995 (PubMed 8618384).
 
@@ -46,7 +46,7 @@ if TYPE_CHECKING:  # pragma: no cover
 
 log = logging.getLogger("rainbowbone.risk")
 
-DATA_PATH = Path(__file__).resolve().parents[2] / "public" / "models" / "hfvalid-risk.json"
+DATA_PATH = Path(__file__).resolve().parents[2] / "frontend" / "public" / "models" / "hfvalid-risk.json"
 MAX_CHARS = 600  # the prompt asks for 420; the template's longest text stays below this
 NOTE = "Published research data, not a diagnosis or medical advice."
 
@@ -156,7 +156,7 @@ SYSTEM_PROMPT = (
 
 
 class RiskDataUnavailable(RuntimeError):
-    """public/models/hfvalid-risk.json is missing or unreadable."""
+    """frontend/public/models/hfvalid-risk.json is missing or unreadable."""
 
 
 class UnknownCase(KeyError):

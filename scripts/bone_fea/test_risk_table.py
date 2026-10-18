@@ -12,7 +12,7 @@ from tempfile import TemporaryDirectory
 
 from build_risk_table import build_table, load_subjects, render
 
-TABLE = Path(__file__).resolve().parents[2] / 'public' / 'models' / 'hfvalid-risk.json'
+TABLE = Path(__file__).resolve().parents[2] / 'frontend' / 'public' / 'models' / 'hfvalid-risk.json'
 SUBJECT_KEYS = {'age', 'height_cm', 'weight_kg', 'side', 'arf0_percent', 'msf_newtons',
                 'fractured_within_followup', 'days_ct_to_fracture'}
 HEADER = ('PatientID;Sex;Year of birth;Age;Height;Weight;Side;FractureStatus;Days between fracure and CT;'

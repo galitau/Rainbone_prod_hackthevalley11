@@ -7,7 +7,7 @@ nothing here recomputes them.
 
 Run from the repository root:
 
-    python scripts/bone_fea/build_risk_table.py --csv HFValid_Metadata.csv --output public/models/hfvalid-risk.json
+    python scripts/bone_fea/build_risk_table.py --csv HFValid_Metadata.csv --output frontend/public/models/hfvalid-risk.json
 
 Keeps age, height, weight, modelled side, fracture follow-up, ARF0 and MSF for
 each subject and drops every scanner and calibration column. ARF0 and MSF keep

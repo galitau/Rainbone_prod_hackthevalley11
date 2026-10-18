@@ -1,7 +1,7 @@
 """POST /api/risk-analysis: facts, checker, provider fall-through, template, request validation.
 
 No network: provider calls go to the httpx.MockTransport helpers of test_explain. Tests pass an
-explicit env mapping and read the committed public/models/hfvalid-risk.json (the HFValid table).
+explicit env mapping and read the committed frontend/public/models/hfvalid-risk.json (the HFValid table).
 Run from backend/:  python -m unittest discover -s tests -v
 """
 from __future__ import annotations
