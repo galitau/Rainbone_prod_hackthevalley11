@@ -52,7 +52,7 @@ export function StressChart(props: StressChartProps) {
             {ticks.map((tick, index) => <div key={index} className="absolute inset-x-0 flex -translate-y-1/2 items-center gap-2" style={{ top: `${tick.top}%` }}><span className="w-8 text-right font-mono text-[10px] text-muted">{tick.label}</span><span className="h-px flex-1 bg-line" /></div>)}
           </div>
           <svg className="absolute inset-y-0 left-10 h-full w-[calc(100%-2.5rem)] overflow-visible" viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label={`Peak von Mises stress in MPa by returned run order, oldest to newest; maximum ${max.toFixed(1)} MPa. Exact recent values are in the table below.`}>
-            <polyline fill="none" points={points} stroke="rgb(37 70 184)" strokeWidth="2" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+            <polyline fill="none" points={points} stroke="rgb(var(--link))" strokeWidth="2" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
           </svg>
         </div>
         <div className="ml-10 mt-2 flex justify-between gap-2 text-[10px] text-muted"><span>Oldest returned</span><span>Run order · equal spacing</span><span>Newest returned</span></div>

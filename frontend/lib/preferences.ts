@@ -6,29 +6,25 @@
 // changes made in another tab.
 
 import { useEffect, useSyncExternalStore } from "react";
-import { LARGE_TEXT_CLASS, PREFERENCES_KEY, REDUCE_MOTION_CLASS } from "@/lib/preferences-script";
+import { LARGE_TEXT_CLASS, PREFERENCES_KEY, REDUCE_MOTION_CLASS, normalizePreferences } from "@/lib/preferences-script";
 
 export type Preferences = {
+  theme: "light" | "dark" | "high-contrast" | "system";
   textSize: "standard" | "large";
   reduceMotion: "system" | "always";
   // app/page.tsx sends the sample volume to the API when the overview opens.
   autoRunSample: boolean;
 };
 
-export const DEFAULT_PREFERENCES: Preferences = { textSize: "standard", reduceMotion: "system", autoRunSample: true };
+export const DEFAULT_PREFERENCES: Preferences = normalizePreferences(null);
 
 function parse(raw: string | null): Preferences {
-  if (!raw) return DEFAULT_PREFERENCES;
-  try {
-    const saved = JSON.parse(raw) as Partial<Record<keyof Preferences, unknown>> | null;
-    return {
-      textSize: saved?.textSize === "large" ? "large" : "standard",
-      reduceMotion: saved?.reduceMotion === "always" ? "always" : "system",
-      autoRunSample: saved?.autoRunSample !== false,
-    };
-  } catch {
-    return DEFAULT_PREFERENCES;
-  }
+  try { return normalizePreferences(raw ? JSON.parse(raw) : null); }
+  catch { return DEFAULT_PREFERENCES; }
+}
+
+function media(query: string): MediaQueryList | null {
+  try { return window.matchMedia(query); } catch { return null; }
 }
 
 // Every storage access can throw (blocked site data, some private windows); then the defaults apply.
@@ -55,6 +51,10 @@ function subscribe(listener: () => void) {
 }
 
 export function applyPreferences(preferences: Preferences) {
+  const theme = preferences.theme === "system"
+    ? (media("(prefers-color-scheme: dark)")?.matches ? "dark" : "light")
+    : preferences.theme;
+  document.documentElement.setAttribute("data-theme", theme);
   const classes = document.documentElement.classList;
   classes.toggle(LARGE_TEXT_CLASS, preferences.textSize === "large");
   classes.toggle(REDUCE_MOTION_CLASS, preferences.reduceMotion === "always");
@@ -68,9 +68,10 @@ function use(next: Preferences) {
 
 // Applies the preferences at once; returns false when the browser would not store them (they then last until reload).
 export function savePreferences(next: Preferences): boolean {
-  use(next);
+  const normalized = normalizePreferences(next);
+  use(normalized);
   try {
-    window.localStorage.setItem(PREFERENCES_KEY, JSON.stringify(next));
+    window.localStorage.setItem(PREFERENCES_KEY, JSON.stringify(normalized));
     return true;
   } catch {
     return false;
@@ -112,8 +113,36 @@ export function PreferencesSync() {
     const onStorage = (event: StorageEvent) => {
       if (event.key === PREFERENCES_KEY || event.key === null) use(parse(readStored()));
     };
+    const dark = media("(prefers-color-scheme: dark)");
+    const onTheme = () => {
+      if (readPreferences().theme === "system") applyPreferences(readPreferences());
+    };
+    dark?.addEventListener("change", onTheme);
     window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
+    return () => {
+      dark?.removeEventListener("change", onTheme);
+      window.removeEventListener("storage", onStorage);
+    };
   }, []);
   return null;
+}
+
+// JS animations need the same effective preference as the CSS media query.
+export function useReducedMotion(): boolean {
+  return useSyncExternalStore(subscribeMotion, readReducedMotion, () => false);
+}
+
+function readReducedMotion(): boolean {
+  return readPreferences().reduceMotion === "always"
+    || !!media("(prefers-reduced-motion: reduce)")?.matches;
+}
+
+function subscribeMotion(listener: () => void) {
+  const unsubscribe = subscribe(listener);
+  const reduced = media("(prefers-reduced-motion: reduce)");
+  reduced?.addEventListener("change", listener);
+  return () => {
+    unsubscribe();
+    reduced?.removeEventListener("change", listener);
+  };
 }

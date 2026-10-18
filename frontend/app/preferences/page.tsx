@@ -3,7 +3,7 @@ import { Dashboard } from "@/components/dashboard";
 
 export const metadata: Metadata = {
   title: "Preferences | Rainbone",
-  description: "Text size, motion and the overview's live engine check, saved in this browser.",
+  description: "Choose a light, dark, high-contrast or system theme, adjust text and motion, and save your preferences in this browser.",
 };
 
 export default function PreferencesPage() {

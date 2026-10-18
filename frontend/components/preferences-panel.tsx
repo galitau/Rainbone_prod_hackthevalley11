@@ -1,176 +1,107 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Activity, HardDrive, Move, RotateCcw, Type } from "lucide-react";
-import {
-  DEFAULT_PREFERENCES,
-  canStorePreferences,
-  resetPreferences,
-  savePreferences,
-  usePreferences,
-  type Preferences,
-} from "@/lib/preferences";
+import { Activity, Check, Contrast, HardDrive, Monitor, Moon, Move, RotateCcw, Sun, Type } from "lucide-react";
+import { DEFAULT_PREFERENCES, canStorePreferences, resetPreferences, savePreferences, usePreferences, type Preferences } from "@/lib/preferences";
 
-const TEXT_SIZES = [
-  { value: "standard", label: "Standard" },
-  { value: "large", label: "Large" },
+const THEMES = [
+  { value: "light", label: "Light", description: "Warm whites and navy accents.", icon: Sun },
+  { value: "dark", label: "Dark", description: "Deep navy with softer light text.", icon: Moon },
+  { value: "high-contrast", label: "High contrast", description: "Strong borders and darker text.", icon: Contrast },
+  { value: "system", label: "System", description: "Follow your device’s light or dark appearance.", icon: Monitor },
 ] as const;
-
-const MOTION = [
-  { value: "system", label: "System" },
-  { value: "always", label: "Always" },
-] as const;
+const TEXT_SIZES = [{ value: "standard", label: "Standard" }, { value: "large", label: "Large" }] as const;
+const MOTION = [{ value: "system", label: "System" }, { value: "always", label: "Always reduce" }] as const;
 
 export function PreferencesPanel() {
   const preferences = usePreferences();
-  // null until the page has checked; false when the browser blocks storage (settings then last until reload).
   const [stored, setStored] = useState<boolean | null>(null);
-  const systemReducesMotion = useSystemReducedMotion();
-
+  const [announcement, setAnnouncement] = useState("");
   useEffect(() => setStored(canStorePreferences()), []);
 
-  const change = (patch: Partial<Preferences>) => setStored(savePreferences({ ...preferences, ...patch }));
-  const isDefault = (Object.keys(DEFAULT_PREFERENCES) as (keyof Preferences)[]).every((key) => preferences[key] === DEFAULT_PREFERENCES[key]);
+  function change(patch: Partial<Preferences>, message: string) {
+    setStored(savePreferences({ ...preferences, ...patch }));
+    setAnnouncement(message);
+  }
+  const isDefault = (Object.keys(DEFAULT_PREFERENCES) as (keyof Preferences)[]).every(key => preferences[key] === DEFAULT_PREFERENCES[key]);
 
   return (
-    <div className="mx-auto max-w-[1440px] p-5 md:p-8">
-      <div className="min-w-0">
-        <h1 className="font-serif text-[28px] font-semibold leading-tight tracking-[-0.01em] text-ink">Preferences</h1>
-        <p className="mt-2 max-w-[68ch] text-[13px] leading-6 text-body">How Rainbone looks and behaves in this browser. Changes apply at once, on every page.</p>
-      </div>
+    <div id="preferences-content" tabIndex={-1} className="preferences-page mx-auto max-w-[1440px] p-5 md:p-8">
+      <header className="max-w-[68ch]">
+        <p className="text-xs font-medium uppercase tracking-widest text-muted">Make yourself comfortable</p>
+        <h1 className="mt-2 font-serif text-3xl font-semibold leading-tight text-ink">Preferences</h1>
+        <p className="mt-3 text-sm leading-relaxed text-body">Choose an appearance that works for you. Changes apply immediately and stay in this browser.</p>
+      </header>
 
-      <div className="mt-6 grid max-w-[880px] gap-6">
-        <section aria-labelledby="display-title" className="overflow-hidden rounded-2xl border border-line bg-surface shadow-card">
-          <div className="border-b border-line px-5 py-4">
-            <h2 id="display-title" className="text-[15px] font-semibold text-ink">Display</h2>
-            <p className="mt-0.5 text-[12px] text-muted">Reading comfort</p>
-          </div>
+      <div className="mt-7 grid max-w-[960px] gap-6">
+        <section aria-labelledby="appearance-title" className="rounded-2xl border border-line bg-surface p-5 shadow-card sm:p-6">
+          <h2 id="appearance-title" className="text-lg font-semibold text-ink">Appearance</h2>
+          <p id="theme-description" className="mt-1 text-sm leading-relaxed text-body">Choose a color theme. Imaging colors and their scientific meaning stay the same.</p>
+          <fieldset aria-describedby="theme-description" className="mt-5 min-w-0">
+            <legend className="sr-only">Color theme</legend>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {THEMES.map(({ value, label, description, icon: Icon }) => {
+                const checked = preferences.theme === value;
+                return <label key={value} className={`theme-option relative flex min-w-0 cursor-pointer flex-col rounded-xl border-2 p-3 transition-colors ${checked ? "border-link bg-sunken" : "border-[rgb(var(--control))] bg-surface hover:bg-sunken"}`}>
+                  <div data-theme-preview={value} className="theme-preview mb-3 flex h-20 overflow-hidden rounded-md border" aria-hidden="true">
+                    <div className="theme-preview-nav w-6 shrink-0" />
+                    <div className="flex flex-1 flex-col gap-2 p-3"><div className="theme-preview-title h-1.5 w-3/5 rounded" /><div className="theme-preview-card flex-1 rounded border p-2"><div className="theme-preview-line h-1 w-4/5 rounded" /><div className="theme-preview-line mt-2 h-1 w-3/5 rounded" /></div></div>
+                  </div>
+                  <span className="flex items-center gap-2 text-sm font-semibold text-ink">
+                    <input type="radio" name="color-theme" value={value} checked={checked} onChange={() => change({ theme: value }, `${label} theme selected.`)} aria-labelledby={`theme-${value}-label`} aria-describedby={`theme-${value}-description`} className="h-5 w-5 shrink-0 accent-[rgb(var(--link))]" />
+                    <Icon size={16} aria-hidden="true" /><span id={`theme-${value}-label`}>{label}</span>
+                    {checked && <Check size={16} className="ml-auto text-link" aria-hidden="true" />}
+                  </span>
+                  <span id={`theme-${value}-description`} className="mt-2 text-xs leading-relaxed text-body">{description}</span>
+                </label>;
+              })}
+            </div>
+          </fieldset>
+        </section>
+
+        <section aria-labelledby="display-title" className="rounded-2xl border border-line bg-surface shadow-card">
+          <div className="border-b border-line px-5 py-4 sm:px-6"><h2 id="display-title" className="text-lg font-semibold text-ink">Reading &amp; motion</h2><p className="mt-1 text-sm text-body">Adjust text and automatic movement.</p></div>
           <div className="divide-y divide-line">
-            <Setting
-              icon={<Type size={15} />}
-              title="Text size"
-              description="Large makes all text, and the spacing around it, 12.5% bigger."
-              control={<Segmented name="text-size" label="Text size" options={TEXT_SIZES} value={preferences.textSize} onChange={(textSize) => change({ textSize })} />}
-            />
-            <Setting
-              icon={<Move size={15} />}
-              title="Reduce motion"
-              description={
-                <>
-                  Always turns off animations and transitions everywhere. System follows this device&apos;s setting
-                  {systemReducesMotion !== null && <>, which currently {systemReducesMotion ? "reduces motion" : "allows motion"}</>}.
-                </>
-              }
-              control={<Segmented name="reduce-motion" label="Reduce motion" options={MOTION} value={preferences.reduceMotion} onChange={(reduceMotion) => change({ reduceMotion })} />}
-            />
+            <Setting id="text-size" icon={<Type size={17} />} title="Text size" description="Large increases interface text and spacing. You can also use your browser’s zoom controls."
+              control={<Segmented name="text-size" label="Text size" options={TEXT_SIZES} value={preferences.textSize} onChange={textSize => change({ textSize }, `${textSize === "large" ? "Large" : "Standard"} text selected.`)} />} />
+            <Setting id="reduce-motion" icon={<Move size={17} />} title="Reduce motion" description="System follows your device. Always reduce limits interface animations and automatic scan motion. You can still rotate models and play simulations."
+              control={<Segmented name="reduce-motion" label="Reduce motion" options={MOTION} value={preferences.reduceMotion} onChange={reduceMotion => change({ reduceMotion }, reduceMotion === "always" ? "Reduced motion enabled." : "Motion follows your device.")} />} />
           </div>
         </section>
 
-        <section aria-labelledby="overview-title" className="overflow-hidden rounded-2xl border border-line bg-surface shadow-card">
-          <div className="border-b border-line px-5 py-4">
-            <h2 id="overview-title" className="text-[15px] font-semibold text-ink">Patient overview</h2>
-            <p className="mt-0.5 text-[12px] text-muted">Live engine check</p>
-          </div>
-          <Setting
-            icon={<Activity size={15} />}
-            title="Run the live engine check when the overview opens"
-            description={
-              <>
-                Sends <span className="font-mono text-[11.5px] text-ink">sample_bone.nii.gz</span>, a small synthetic test volume, to the RainbowBone API on each visit and shows what comes back. When off, the overview waits until you press &ldquo;Run the sample&rdquo;.
-              </>
-            }
-            control={<Switch label="Run the live engine check when the overview opens" checked={preferences.autoRunSample} onChange={(autoRunSample) => change({ autoRunSample })} />}
-          />
+        <section aria-labelledby="overview-title" className="rounded-2xl border border-line bg-surface shadow-card">
+          <div className="border-b border-line px-5 py-4 sm:px-6"><h2 id="overview-title" className="text-lg font-semibold text-ink">Patient overview</h2><p className="mt-1 text-sm text-body">Choose when the demo engine runs.</p></div>
+          <Setting id="auto-run" icon={<Activity size={17} />} title="Run the sample automatically" description="Run the small synthetic test when the patient overview opens. Turn this off to start it yourself with “Run the sample”."
+            control={<button type="button" role="switch" aria-checked={preferences.autoRunSample} aria-labelledby="auto-run-title" aria-describedby="auto-run-description" onClick={() => change({ autoRunSample: !preferences.autoRunSample }, `Automatic sample run ${preferences.autoRunSample ? "off" : "on"}.`)} className="inline-flex min-h-11 items-center gap-3 rounded-lg border border-[rgb(var(--control))] px-3 py-2 text-sm font-medium text-ink">
+              <span aria-hidden="true" className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border border-[rgb(var(--control))] ${preferences.autoRunSample ? "bg-primary" : "bg-sunken"}`}><span className={`absolute left-0.5 h-4 w-4 rounded-full transition-transform ${preferences.autoRunSample ? "translate-x-5 bg-white" : "translate-x-0 bg-muted"}`} /></span>
+              <span className="w-6">{preferences.autoRunSample ? "On" : "Off"}</span>
+            </button>} />
         </section>
 
-        <div className="flex flex-col justify-between gap-4 rounded-2xl border border-line bg-sunken/60 px-5 py-4 sm:flex-row sm:items-center">
-          <p className="flex gap-2 text-[12.5px] leading-5 text-body" role="status">
-            <HardDrive size={15} className="mt-0.5 shrink-0 text-muted" aria-hidden />
-            {stored === false ? (
-              <span><strong className="font-medium text-caution">Not saved.</strong> This browser blocks site storage, so these settings last until you reload or close the page.</span>
-            ) : (
-              <span><strong className="font-medium text-ink">Saved on this device.</strong> Stored in this browser only: no account and nothing sent to a server.</span>
-            )}
-          </p>
-          <button
-            type="button"
-            onClick={() => {
-              if (!isDefault) setStored(resetPreferences());
-            }}
-            // aria-disabled rather than disabled: the button keeps keyboard focus after a reset.
-            aria-disabled={isDefault}
-            className="inline-flex w-fit shrink-0 items-center gap-1.5 rounded-lg border border-line bg-surface px-3 py-2 text-[13px] font-medium text-ink shadow-card transition hover:border-line-strong hover:bg-sunken aria-disabled:cursor-default aria-disabled:opacity-50 aria-disabled:hover:border-line aria-disabled:hover:bg-surface"
-          >
-            <RotateCcw size={14} aria-hidden /> Reset to defaults
-          </button>
-        </div>
+        <footer className="space-y-4">
+          <div className="flex flex-col justify-between gap-4 rounded-xl border border-line bg-sunken px-5 py-4 sm:flex-row sm:items-center">
+            <div role="status" aria-live="polite" aria-atomic="true" className="flex min-w-0 gap-2 text-sm leading-relaxed text-body">
+              <HardDrive size={18} className="mt-1 shrink-0 text-muted" aria-hidden="true" />
+              <p>{announcement && <span className="font-medium text-ink">{announcement} </span>}{stored === null ? "Checking browser storage…" : stored ? "Saved on this device only. These preferences are not sent to a server." : "Not saved: this browser blocks storage. Your changes work until this page reloads."}</p>
+            </div>
+            <button type="button" aria-disabled={isDefault} onClick={() => { if (!isDefault) { setStored(resetPreferences()); setAnnouncement("Default preferences restored."); } }} className="inline-flex min-h-11 w-fit shrink-0 items-center gap-2 rounded-lg border border-[rgb(var(--control))] bg-surface px-4 py-2 text-sm font-medium text-ink hover:bg-canvas aria-disabled:cursor-default aria-disabled:opacity-60"><RotateCcw size={16} aria-hidden="true" />Reset to defaults</button>
+          </div>
+          <p className="text-xs leading-relaxed text-muted">Keyboard: Tab moves between settings; arrow keys change a theme or text option; Space toggles the sample run. Your browser’s zoom and device accessibility settings remain available.</p>
+        </footer>
       </div>
     </div>
   );
 }
 
-function Setting({ icon, title, description, control }: { icon: React.ReactNode; title: string; description: React.ReactNode; control: React.ReactNode }) {
-  return (
-    <div className="flex flex-col justify-between gap-4 px-5 py-4 md:flex-row md:items-center">
-      <div className="min-w-0 max-w-[52ch]">
-        <p className="flex items-center gap-2 text-[13.5px] font-medium text-ink"><span className="text-muted" aria-hidden>{icon}</span>{title}</p>
-        <p className="mt-1 text-[12.5px] leading-5 text-body">{description}</p>
-      </div>
-      <div className="shrink-0">{control}</div>
-    </div>
-  );
+function Setting({ id, icon, title, description, control }: { id: string; icon: React.ReactNode; title: string; description: string; control: React.ReactNode }) {
+  return <div className="flex flex-col justify-between gap-4 px-5 py-5 sm:px-6 lg:flex-row lg:items-center">
+    <div className="min-w-0 max-w-[50ch]"><h3 id={`${id}-title`} className="flex items-center gap-2 text-sm font-semibold text-ink"><span aria-hidden="true" className="text-muted">{icon}</span>{title}</h3><p id={`${id}-description`} className="mt-2 text-sm leading-relaxed text-body">{description}</p></div>
+    <div className="shrink-0">{control}</div>
+  </div>;
 }
 
 function Segmented<T extends string>({ name, label, options, value, onChange }: { name: string; label: string; options: readonly { value: T; label: string }[]; value: T; onChange: (value: T) => void }) {
-  return (
-    <fieldset>
-      <legend className="sr-only">{label}</legend>
-      <div className="inline-flex rounded-lg border border-line bg-sunken p-1">
-        {options.map((option) => {
-          const checked = option.value === value;
-          return (
-            <label
-              key={option.value}
-              className={`cursor-pointer whitespace-nowrap rounded-md px-3 py-1.5 text-[13px] font-medium transition has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-focus ${checked ? "bg-surface text-ink shadow-card" : "text-muted hover:text-ink"}`}
-            >
-              <input type="radio" name={name} value={option.value} checked={checked} onChange={() => onChange(option.value)} className="sr-only" />
-              {option.label}
-            </label>
-          );
-        })}
-      </div>
-    </fieldset>
-  );
-}
-
-function Switch({ label, checked, onChange }: { label: string; checked: boolean; onChange: (checked: boolean) => void }) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      aria-label={label}
-      onClick={() => onChange(!checked)}
-      className="inline-flex items-center gap-3 rounded-lg px-1 py-1 text-[13px] font-medium text-ink"
-    >
-      <span className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition ${checked ? "bg-primary" : "bg-line-strong"}`} aria-hidden>
-        <span className={`absolute left-0.5 h-5 w-5 rounded-full bg-white shadow-card transition-transform ${checked ? "translate-x-5" : "translate-x-0"}`} />
-      </span>
-      <span className="w-6 text-left">{checked ? "On" : "Off"}</span>
-    </button>
-  );
-}
-
-// The operating system's reduced-motion setting, or null before the page has read it.
-function useSystemReducedMotion(): boolean | null {
-  const [reduces, setReduces] = useState<boolean | null>(null);
-  useEffect(() => {
-    if (typeof window.matchMedia !== "function") return;
-    const query = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const update = () => setReduces(query.matches);
-    update();
-    query.addEventListener?.("change", update);
-    return () => query.removeEventListener?.("change", update);
-  }, []);
-  return reduces;
+  return <fieldset aria-describedby={`${name}-description`} className="min-w-0"><legend className="sr-only">{label}</legend><div className="flex flex-wrap gap-2">
+    {options.map(option => <label key={option.value} className={`theme-option inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium ${option.value === value ? "border-link bg-sunken text-ink" : "border-[rgb(var(--control))] bg-surface text-body"}`}><input type="radio" name={name} value={option.value} checked={option.value === value} onChange={() => onChange(option.value)} className="h-4 w-4 accent-[rgb(var(--link))]" />{option.label}</label>)}
+  </div></fieldset>;
 }
