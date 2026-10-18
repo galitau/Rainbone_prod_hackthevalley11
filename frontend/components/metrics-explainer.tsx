@@ -17,7 +17,8 @@ type Kind = "published" | "computed" | "derived" | "assumed";
 const KINDS: Record<Kind, { label: string; chip: string }> = {
   published: { label: "Published data", chip: "border-success/25 bg-success/[0.07] text-success" },
   computed: { label: "Computed by Rainbone", chip: "border-link/25 bg-link/[0.07] text-link" },
-  derived: { label: "Derived", chip: "border-spectrum-violet/25 bg-spectrum-violet/[0.07] text-spectrum-violet" },
+  // Neutral tokens: every theme redefines them (the spectrum colours stay the same in dark mode and fail contrast there).
+  derived: { label: "Derived", chip: "border-line-strong bg-sunken text-body" },
   assumed: { label: "Assumed", chip: "border-caution/30 bg-caution/[0.08] text-caution" },
 };
 
@@ -38,7 +39,11 @@ const fracturedRange = `${formatNumber(r.fracturedArf0Min, 1)}–${percent(r.fra
 const factorRange = `${formatNumber(r.factorOfRiskLow, 1)}–${formatNumber(r.factorOfRiskHigh, 1)}×`;
 const newtons = (value: number) => `${formatNumber(value, 0)} N`;
 
-const link = "font-medium text-link hover:underline";
+// The [Bhattacharya2019] the dataset README cites for ARF0: Bhattacharya, Altai, Qasim, Viceconti, "A multiscale model
+// to predict current absolute risk of femoral fracture in a postmenopausal population", Biomech Model Mechanobiol 2019.
+const ARF0_METHOD_URL = "https://doi.org/10.1007/s10237-018-1081-0";
+
+const link = "font-medium text-link underline underline-offset-2 hover:decoration-2";
 const dataset = (
   <>
     <a href={r.doiUrl} target="_blank" rel="noreferrer" className={link}>{FEMUR_AUTHORS}</a>, {m.dataset} collection
@@ -55,13 +60,24 @@ const FRACTURE_ENTRIES: Entry[] = [
     value: percent(r.arf0Percent),
     kinds: ["published"],
     what: <>The absolute risk of fracture at time&nbsp;0 (ARF0) that the study authors&apos; finite-element model, coupled with a model of falling, gives this femur. The large {Math.round(r.arf0Percent)}&nbsp;% is the same value rounded.</>,
-    read: <>It is the study authors&apos; model estimate for this femur, for comparing it with the other femurs in the study. It is not a personal probability and not a prediction of whether she will fracture.</>,
-    source: <>The {m.dataset} table: {dataset}. Rainbone shows it as published. The dataset README: &ldquo;{r.arf0Definition}&rdquo;</>,
+    read: (
+      <>
+        It is a model output, not this woman&apos;s real chance of fracturing. The method it comes from defines it as the model&apos;s probability of a
+        fracture within a year, but in this study {r.cohortFractured} of the {r.cohortN} women fractured during follow-up while the median ARF0 was{" "}
+        {percent(r.cohortArf0Median)}. Rainbone therefore shows it only to compare this femur with the others in the study.
+      </>
+    ),
+    source: (
+      <>
+        The {m.dataset} table: {dataset}. Rainbone shows it as published. The dataset README: &ldquo;{r.arf0Definition}&rdquo; Method:{" "}
+        <a href={ARF0_METHOD_URL} target="_blank" rel="noreferrer" className={link}>Bhattacharya et al. 2019</a>.
+      </>
+    ),
   },
   {
     title: "Study range and median",
     value: `${percent(r.cohortArf0Min)} to ${percent(r.cohortArf0Max)} · median ${percent(r.cohortArf0Median)}`,
-    kinds: ["published"],
+    kinds: ["published", "derived"],
     what: <>The lowest, highest and middle ARF0 among the {r.cohortN} women in the study. On the card&apos;s bar they are the two ends and the thin line; the dark marker is this femur.</>,
     read: <>This femur&apos;s {percent(r.arf0Percent)} sits {r.arf0Percent > r.cohortArf0Median ? "above" : r.arf0Percent < r.cohortArf0Median ? "below" : "at"} the study median.</>,
     source: <>The same published table; Rainbone sorts the {r.cohortN} values and takes the median.</>,
@@ -69,7 +85,7 @@ const FRACTURE_ENTRIES: Entry[] = [
   {
     title: `Higher than ${r.arf0HigherThan} of the ${r.cohortN} women`,
     value: `${r.arf0HigherThan} of ${r.cohortN}`,
-    kinds: ["published"],
+    kinds: ["published", "derived"],
     what: <>How many women in the study have a lower ARF0 than this femur.</>,
     read: <>A rank within this one study of {r.cohortN} women, not against the general population.</>,
     source: <>Counted by Rainbone from the published table; nothing is modelled.</>,
@@ -85,7 +101,7 @@ const FRACTURE_ENTRIES: Entry[] = [
         {subject ? ` ${m.caseId} is recorded as ${subject.fractured_within_followup ? "fractured" : "not fractured"} during follow-up.` : ""}
       </>
     ),
-    read: <>{r.cohortFractured} of {r.cohortN} women fractured while the median ARF0 was {percent(r.cohortArf0Median)}, which is why ARF0 is read as a model estimate for comparing femurs and not as the chance that this woman fractures.</>,
+    read: <>{r.cohortFractured} of {r.cohortN} women fractured while the median ARF0 was {percent(r.cohortArf0Median)}, which is why Rainbone shows ARF0 only to compare femurs and not as the chance that this woman fractures.</>,
     source: <>The study&apos;s follow-up records: {dataset}.</>,
   },
   {
@@ -95,7 +111,7 @@ const FRACTURE_ENTRIES: Entry[] = [
     what: (
       <>
         The peak impact force on the side of the hip in a sideways fall, {newtons(fallLow)} for a small woman to {newtons(fallHigh)} for a large one, divided by
-        this femur&apos;s minimum sidefall strength (MSF) of {newtons(r.msfNewtons)}: the lowest force{fallDirections ? `, over ${fallDirections} simulated fall directions,` : ""} that
+        this femur&apos;s minimum sidefall strength (MSF) of {newtons(r.msfNewtons)}: the lowest force{fallDirections ? `, over ${fallDirections} simulated sideways-fall load orientations,` : ""} that
         the study authors&apos; model says would cause a fracture.
       </>
     ),
@@ -115,7 +131,7 @@ const SIMULATION_ENTRIES: Entry[] = [
     title: "Standing-load stress ratio",
     value: `${formatNumber(FEMUR_INDEX_PERCENT, 1)} %`,
     kinds: ["computed", "assumed"],
-    what: <>The peak stress from Rainbone&apos;s standing-load simulation, {formatNumber(m.shownStressMpa, 1)}&nbsp;MPa, divided by an assumed bone strength of {ASSUMED_STRENGTH_MPA}&nbsp;MPa.</>,
+    what: <>The peak nodal-averaged stress from Rainbone&apos;s standing-load simulation, {formatNumber(m.shownStressMpa, 1)}&nbsp;MPa, divided by an assumed bone strength of {ASSUMED_STRENGTH_MPA}&nbsp;MPa.</>,
     read: <>100&nbsp;% would mean the peak stress reaches the assumed strength. It is not a fracture probability and it does not model a fall.</>,
     source: <>Rainbone&apos;s own calculation; the {ASSUMED_STRENGTH_MPA}&nbsp;MPa strength is an assumption, the same one the Rainbone API divides by.</>,
   },
@@ -125,12 +141,13 @@ const SIMULATION_ENTRIES: Entry[] = [
     kinds: ["computed"],
     what: (
       <>
-        The highest stress in Rainbone&apos;s {m.solver} finite-element solve of this femur: {newtons(m.loadNewtons)} pressing down on the femoral head, the lowest {m.supportDepthMm}&nbsp;mm
+        The highest nodal-averaged stress on the bone&apos;s surface in Rainbone&apos;s {m.solver} finite-element solve of this femur: {newtons(m.loadNewtons)}, an
+        illustrative load, pressing down on the femoral head, the lowest {m.supportDepthMm}&nbsp;mm
         at the knee end held fixed. Element stresses are averaged at each mesh node, and this is the top of the 3D colour scale; the single highest element before
         averaging is {formatNumber(m.elementStressMpa, 1)}&nbsp;MPa.
       </>
     ),
-    read: <>Shows where standing load concentrates in this bone&apos;s shape. The material is assumed and uncalibrated, so read the size as approximate.</>,
+    read: <>Shows where standing load concentrates in this bone&apos;s shape. The material is one uniform, uncalibrated stiffness and the supports and load are illustrative, so read the size as approximate.</>,
     source: <>Rainbone&apos;s {m.solver} solve on a {formatNumber(m.elements, 0)}-element mesh of the dataset authors&apos; CT segmentation.</>,
   },
   {
@@ -138,7 +155,13 @@ const SIMULATION_ENTRIES: Entry[] = [
     value: `${formatNumber(m.youngsModulusGpa, 1)} GPa`,
     kinds: ["assumed"],
     what: <>The stiffness the simulation gives the bone: one uniform value for the whole femur, with a Poisson&apos;s ratio of {m.poissonRatio}.</>,
-    read: <>Assumed and uncalibrated, not measured from this CT, which is why the stress numbers are approximate. It plays no part in the published ARF0 or MSF.</>,
+    read: (
+      <>
+        Assumed and uncalibrated, not measured from this CT. Because the whole bone gets one value and the load is a set force, this number changes how
+        far the bone moves but not the stresses. The stresses are approximate because real bone&apos;s stiffness varies through the femur and this model
+        ignores that. It plays no part in the published ARF0 or MSF.
+      </>
+    ),
     source: <>A setting of Rainbone&apos;s simulation.</>,
   },
   {
@@ -154,7 +177,7 @@ const SIMULATION_ENTRIES: Entry[] = [
 const LEGEND: { kind: Kind; text: React.ReactNode }[] = [
   { kind: "published", text: <>ARF0, MSF and who fractured, from the {m.dataset} study ({FEMUR_INSTITUTION || FEMUR_AUTHORS}, {r.license})</> },
   { kind: "computed", text: <>Peak stress, the stress ratio and bone volume, from our {m.solver} standing-load solve</> },
-  { kind: "derived", text: <>The sideways-fall load: published fall forces ÷ this femur&apos;s published MSF</> },
+  { kind: "derived", text: <>Worked out by Rainbone from published numbers: the study median, this femur&apos;s rank, and the sideways-fall load (published fall forces ÷ this femur&apos;s published MSF)</> },
   { kind: "assumed", text: <>The material: Young&apos;s modulus {formatNumber(m.youngsModulusGpa, 1)}&nbsp;GPa and strength {ASSUMED_STRENGTH_MPA}&nbsp;MPa</> },
 ];
 
@@ -194,6 +217,7 @@ function EntryList({ title, entries }: { title: string; entries: Entry[] }) {
 export function MetricsExplainer() {
   const dialog = useRef<HTMLDialogElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
+  const body = useRef<HTMLDivElement>(null);
   const pressedOnBackdrop = useRef(false);
   const id = useId();
   const titleId = `${id}-title`;
@@ -212,15 +236,29 @@ export function MetricsExplainer() {
     box.style.setProperty("--visible-h", `${visible.height}px`);
   };
 
+  // The page behind stays put while the dialog is open. Focus starts on the scrollable text, so arrow keys, Page Down
+  // and Space scroll it straight away.
   const open = () => {
     fitToVisibleArea();
     dialog.current?.showModal();
+    document.documentElement.style.overflow = "hidden";
+    body.current?.focus({ preventScroll: true });
+  };
+
+  const onClosed = () => {
+    document.documentElement.style.overflow = "";
+    trigger.current?.focus();
   };
 
   // Phone toolbars, rotation and pinch-zoom move the visible area while the dialog is open.
   useEffect(() => {
+    const box = dialog.current;
+    // Leaving the page with the dialog open must not leave the next page unable to scroll.
+    const unlock = () => {
+      if (box?.open) document.documentElement.style.overflow = "";
+    };
     const visible = window.visualViewport;
-    if (!visible) return;
+    if (!visible) return unlock;
     const refit = () => {
       if (dialog.current?.open) fitToVisibleArea();
     };
@@ -229,6 +267,7 @@ export function MetricsExplainer() {
     return () => {
       visible.removeEventListener("resize", refit);
       visible.removeEventListener("scroll", refit);
+      unlock();
     };
   }, []);
 
@@ -255,7 +294,7 @@ export function MetricsExplainer() {
         type="button"
         aria-haspopup="dialog"
         onClick={open}
-        className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-link/30 bg-link/[0.05] px-3 py-1.5 text-[12.5px] font-medium text-link transition hover:border-link/50 hover:bg-link/[0.1] lg:[[data-collapsed=true]_&]:hidden"
+        className="mt-3 inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-link/30 bg-link/[0.05] px-3 py-1.5 text-[12.5px] font-medium text-link transition hover:border-link/50 hover:bg-link/[0.1] lg:[[data-collapsed=true]_&]:hidden"
       >
         <Info size={14} aria-hidden /> What do these numbers mean?
       </button>
@@ -264,7 +303,7 @@ export function MetricsExplainer() {
         ref={dialog}
         aria-labelledby={titleId}
         aria-describedby={answerId}
-        onClose={() => trigger.current?.focus()}
+        onClose={onClosed}
         onKeyDown={keepTabInside}
         // A click on the backdrop lands on the <dialog> itself; clicks on its content land on the inner frame. Both ends
         // of the click must be on the backdrop, so a text selection released outside does not close it.
@@ -283,11 +322,19 @@ export function MetricsExplainer() {
             </button>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-5 pt-4 sm:px-6">
-            <div className="rounded-xl border border-line bg-sunken/60 px-4 py-3.5">
+          <div
+            ref={body}
+            tabIndex={0}
+            role="region"
+            aria-label="Explanations"
+            className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-5 pt-4 focus-visible:[outline-offset:-2px] sm:px-6"
+          >
+            <div className="rounded-xl border border-line bg-sunken/40 px-4 py-3.5">
               <p id={answerId} className="text-[13.5px] leading-[1.35rem] text-ink">
-                <span className="font-semibold">Is this real?</span> Partly: the fracture-risk numbers come from published research data on this real CT scan,
-                while the stress numbers are Rainbone&apos;s own simulation with assumed material properties.
+                <span className="font-semibold">Is this real?</span> Partly: the fracture-risk numbers are the study authors&apos; published results for this
+                real CT scan (plus a median, a rank and a fall-load ratio Rainbone works out from published numbers), while the stress numbers are Rainbone&apos;s own simulation
+                with an assumed material and an illustrative load and supports. That simulation is not clinically validated and does not reproduce the study
+                authors&apos; analysis.
               </p>
               <ul className="mt-2.5 grid gap-1.5 sm:grid-cols-2 sm:gap-x-4">
                 {LEGEND.map(item => (
@@ -300,7 +347,7 @@ export function MetricsExplainer() {
             <EntryList title={`Standing-load simulation · ${m.solver}`} entries={SIMULATION_ENTRIES} />
 
             <p className="mt-5 text-[12px] leading-5 text-muted">
-              Which femur: {m.dataset} {m.caseId}, a {m.anatomy.toLowerCase()} from {dataset}. The 3D bone is the dataset authors&apos; own CT segmentation. Research data, not a diagnosis.
+              Which femur: {m.dataset} {m.caseId}, a {m.anatomy.toLowerCase()} from {dataset}. The 3D bone is Rainbone&apos;s mesh of the dataset authors&apos; own CT segmentation, simplified for the solve. Research data, not a diagnosis.
             </p>
           </div>
 
