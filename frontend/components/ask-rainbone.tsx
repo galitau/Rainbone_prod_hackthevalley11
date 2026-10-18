@@ -124,7 +124,15 @@ export function AskRainbone() {
           {exchanges.map((exchange, index) => <div key={index} className="space-y-4">
             <p className="ml-8 break-words rounded-2xl rounded-br-sm bg-primary px-4 py-3 text-sm leading-6 text-white">{exchange.question}</p>
             {exchange.answer && <div className="space-y-3">
-              {exchange.answer.steps.length > 0 && <details open className="text-[11px] leading-5 text-muted"><summary className="cursor-pointer text-body">Steps used for this answer</summary><ul className="mt-1">{exchange.answer.steps.map((step, i) => <li key={i}>→ {step}</li>)}</ul></details>}
+              {(exchange.answer.trace?.length || exchange.answer.steps.length > 0) ? <details open className="rounded-lg border border-line bg-sunken/60 px-3 py-2 text-[11px] leading-5 text-muted">
+                <summary className="cursor-pointer font-medium text-body">Steps used for this answer</summary>
+                {exchange.answer.trace?.length ? <ol className="mt-2 space-y-2">{exchange.answer.trace.map((step, i) => <li key={i} className="border-l-2 border-link/40 pl-2">
+                  <div className="flex items-start justify-between gap-2"><span className="font-medium text-ink">{step.stage}</span><span className="shrink-0 font-mono text-[10px]">{Math.round(step.ms)} ms</span></div>
+                  {step.tool && <p className="break-all font-mono text-[10px] text-link">{step.tool}</p>}
+                  <p className="break-words">{step.summary}</p>
+                </li>)}</ol> : <ul className="mt-1">{exchange.answer.steps.map((step, i) => <li key={i}>→ {step}</li>)}</ul>}
+                {!!exchange.answer.tools_used?.length && <p className="mt-2 break-words border-t border-line pt-2">Evidence tools for this answer: {exchange.answer.tools_used.join(", ")}</p>}
+              </details> : null}
               <AnswerText answer={exchange.answer} />
               <div className="flex flex-wrap gap-2">{exchange.answer.sources.map(source => source.url ? <a key={source.id} href={source.url} {...(source.url.startsWith("https:") ? {target:"_blank",rel:"noreferrer noopener"} : {})} title={source.label} className="rounded-md border border-line bg-sunken px-2 py-1 text-[11px] text-link underline underline-offset-2">[{source.id}]</a> : <span key={source.id} className="rounded-md border border-line px-2 py-1 text-[11px] text-muted">[{source.id}]</span>)}</div>
               <footer className="space-y-1 border-t border-line pt-3 text-[11px] leading-5 text-muted"><p>{aiAnswerLabel(exchange.answer)}</p><p>{exchange.answer.provider === "template" ? "Summary uses checked source statements." : "AI selects from checked source statements."}</p><GroundingLine grounding={exchange.answer.grounding} logged={exchange.answer.logged} /></footer>

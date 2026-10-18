@@ -56,3 +56,15 @@ test('actual drawer handler wraps visible endpoints and preserves middle Tab nav
   document.activeElement=middle;press(false);assert.equal(prevented,false);
   document.activeElement=document.body;press(true);assert.equal(document.activeElement,last);assert.equal(prevented,true);
 });
+test('structured execution trace preserves actual rules/tools/timings and remains optional', () => {
+  const lib = load(), original = payload();
+  assert.equal(lib.parseAskAnswer(original).trace, undefined);
+  const trace = [{stage:'triage',tool:null,summary:'Rules selected the page guide',ms:0.2},{stage:'Evidence',tool:'get_page_guide',summary:'Read the cut-away controls',ms:1.1}];
+  const parsed = lib.parseAskAnswer({...original,trace,tools_used:['get_page_guide']});
+  assert.equal(parsed.trace[0].summary,'Rules selected the page guide');
+  assert.equal('tool' in parsed.trace[0],false, 'Pydantic null tool becomes absent');
+  assert.equal(parsed.trace[1].tool,'get_page_guide'); assert.equal(parsed.trace[1].ms,1.1);
+  assert.equal(parsed.tools_used[0],'get_page_guide');
+  for (const invalid of [[{...trace[0],ms:-1}],[{...trace[0],ms:Infinity}],[{...trace[0],summary:{}}],[{...trace[0],tool:{}}]]) assert.throws(() => lib.parseAskAnswer({...original,trace:invalid}));
+  assert.throws(() => lib.parseAskAnswer({...original,tools_used:[{}]}));
+});

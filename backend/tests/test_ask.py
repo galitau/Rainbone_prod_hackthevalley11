@@ -15,7 +15,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 import routes_ask
-from services import ai_log, ask, clinical_store, llm_providers
+from services import ai_log, ask, ask_triage, clinical_store, llm_providers
 from services.settings import runtime_env
 from tests.test_gemini_failover import KeyMock, TWO_KEYS, gemini_reply, groq_reply
 from tests.test_history import FAKE_URL, FakeConnector
@@ -39,6 +39,9 @@ class AskTests(unittest.TestCase):
         self.ground = mock.patch.object(ask, "build_evidence", return_value=self.evidence)
         self.ground.start()
         self.addCleanup(self.ground.stop)
+        triage = mock.patch.object(ask_triage, "triage", return_value=ask_triage.TriageResult([], None, "Rules triage: test fallback"))
+        triage.start()
+        self.addCleanup(triage.stop)
 
     def run_ask(self, question="What does the 47% mean?", provider=None, env=None):
         provider = provider or KeyMock()
@@ -134,6 +137,8 @@ class AskTests(unittest.TestCase):
         self.assertIsNotNone(result.logged)
         [(sql, row)] = [(sql, row) for sql, row in connector.conn.executed if sql.startswith("INSERT")]
         self.assertEqual(row["endpoint"], "ask")
+        self.assertEqual(row["tools_used"].obj, list(dict.fromkeys(result.tools_used)))
+        self.assertEqual(row["tools_used"].obj, ["get_dataset_info"])
         self.assertEqual(row["text_sha256"], ai_log.sha256_text(result.answer))
         self.assertNotIn("sensitive-marker", repr(row))
         self.assertNotIn(question, repr(row))
@@ -165,7 +170,7 @@ class AskTests(unittest.TestCase):
         self.assertEqual(result.served, "live")
         self.assertIn("47.1%", result.answer)
         self.assertFalse(any("Reused" in step for step in result.steps))
-        self.assertIn("Used deterministic site guidance", result.steps)
+        self.assertTrue(any("Rules writer selected" in step for step in result.steps))
 
     def test_invalid_cache_and_done_pending_entry_cannot_bypass_full_capacity(self):
         self.run_ask(env={"AI_OFFLINE": "1"})
@@ -223,7 +228,7 @@ class AskRouteTests(unittest.TestCase):
     def test_route_response_and_validation(self):
         body = self.client.post("/api/ask", json={"question": "How do I cut the bone open?", "page": "/dashboard"})
         self.assertEqual(body.status_code, 200)
-        self.assertEqual(set(body.json()), {"answer", "provider", "model", "served", "saved_at", "sources", "grounding", "logged", "steps"})
+        self.assertEqual(set(body.json()), {"answer", "provider", "model", "served", "saved_at", "sources", "grounding", "logged", "steps", "trace", "tools_used"})
         for fields in ({"question": " "}, {"question": "x" * 501}, {"question": "hi", "case_id": "Pat004"},
                        {"question": "hi", "page": "https://evil.test"}, {"question": "hi", "user_file": "secret"}):
             with self.subTest(fields=fields):

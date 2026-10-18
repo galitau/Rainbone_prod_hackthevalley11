@@ -1,6 +1,6 @@
 """AI audit log in TimescaleDB (Tiger Cloud): the ai_analyses hypertable (migrations/002_ai_analyses.sql).
 
-POST /api/risk-analysis and POST /api/explain call record_answer() once for every answer a model or the
+POST /api/risk-analysis, POST /api/explain and POST /api/ask call record_answer() once for every answer a model or the
 template produced: endpoint, case, provider and model, the fallbacks taken before it, the latency, where its
 facts were read from (the grounding store) and the sha256 of the facts and of the text. The text, the
 facts, keys and URLs are not stored. An answer risk-analysis kept and serves again is not logged again: it
@@ -41,7 +41,13 @@ COLUMNS = ("time", "id", "endpoint", "case_id", "provider", "model", "facts_sha2
 _WRITTEN = COLUMNS[1:]  # time is the database's now()
 INSERT_SQL = (f"INSERT INTO ai_analyses ({', '.join(_WRITTEN)}) "
               f"VALUES ({', '.join(f'%({name})s' for name in _WRITTEN)})")
-SELECT_SQL = f"SELECT {', '.join(COLUMNS)} FROM ai_analyses ORDER BY time DESC LIMIT %s"
+TOOL_NAMES = frozenset({"get_patient_facts", "compare_with_cohort", "get_fea_result", "get_page_guide", "get_dataset_info"})
+INSERT_TOOLS_SQL = (f"INSERT INTO ai_analyses ({', '.join(_WRITTEN)}, tools_used) "
+                    f"VALUES ({', '.join(f'%({name})s' for name in _WRITTEN)}, %(tools_used)s)")
+# Missing JSON object keys yield null, so reads also work before migration 003 is applied.
+SELECT_SQL = (f"SELECT {', '.join(COLUMNS)}, "
+              "COALESCE(to_jsonb(ai_analyses)->'tools_used', '[]'::jsonb) AS tools_used "
+              "FROM ai_analyses ORDER BY time DESC LIMIT %s")
 
 Connect = Callable[[str], Any]
 
@@ -115,12 +121,17 @@ def kept_for(ttl_s: float, logged: Optional["Logged"], env: Mapping[str, str]) -
 def record_answer(env: Mapping[str, str], *, endpoint: str, case_id: Optional[str], provider: str,
                   model: Optional[str], facts_json: str, text: str, latency_ms: float,
                   grounding_store: Optional[str], fallbacks: Iterable[Mapping[str, str]],
-                  connect: Optional[Connect] = None) -> Optional[Logged]:
+                  connect: Optional[Connect] = None, tools_used: Iterable[str] = ()) -> Optional[Logged]:
     """Write one ai_analyses row. Never raises: None when DATABASE_URL is unset, the write fails, or a write
     failed less than SKIP_AFTER_FAILURE_S ago."""
     url = database_url(env)
     if url is None or _skipping():
         return None
+    raw_names = list(tools_used)
+    if len(raw_names) > 4 or any(not isinstance(name, str) or name not in TOOL_NAMES for name in raw_names):
+        log.warning("AI answer not logged (invalid tool metadata)")
+        return None
+    names = list(dict.fromkeys(raw_names))
     row_id = uuid4()
     try:
         from psycopg.types.json import Jsonb
@@ -138,9 +149,11 @@ def record_answer(env: Mapping[str, str], *, endpoint: str, case_id: Optional[st
             "fallbacks": Jsonb([{"provider": f["provider"], "reason": stored_reason(f["reason"])}
                                 for f in fallbacks]),
         }
+        if names:
+            params["tools_used"] = Jsonb(names)
         with (connect or _connect)(url) as conn:
             conn.execute(SET_TIMEOUT_SQL)
-            conn.execute(INSERT_SQL, params)
+            conn.execute(INSERT_TOOLS_SQL if names else INSERT_SQL, params)
     except Exception as exc:  # noqa: BLE001 - a failed log must never fail the answer it describes
         _skip_for_a_while()
         log.warning("AI answer not logged (%s); the answer is unaffected, the log is skipped for %.0f s",
@@ -150,14 +163,14 @@ def record_answer(env: Mapping[str, str], *, endpoint: str, case_id: Optional[st
 
 
 async def log_answer(env: Mapping[str, str], endpoint: str, case_id: Optional[str], answer: Any, facts_json: str,
-                     started: float, grounding: Any) -> Optional[Logged]:
+                     started: float, grounding: Any, *, tools_used: Iterable[str] = ()) -> Optional[Logged]:
     """record_answer() for a RiskResponse or ExplainResponse, in a worker thread since psycopg blocks, waiting at
     most LOG_WAIT_S. `started` is the request's time.perf_counter(); `grounding` a clinical_store.Grounding or None."""
     write = asyncio.to_thread(
         record_answer, env, endpoint=endpoint, case_id=case_id, provider=answer.provider, model=answer.model,
         facts_json=facts_json, text=answer.text, latency_ms=(time.perf_counter() - started) * 1000.0,
         grounding_store=None if grounding is None else grounding.store,
-        fallbacks=[f.model_dump() for f in answer.fallbacks])
+        fallbacks=[f.model_dump() for f in answer.fallbacks], tools_used=tools_used)
     try:
         return await asyncio.wait_for(write, timeout=LOG_WAIT_S)
     except asyncio.TimeoutError:
@@ -191,5 +204,9 @@ def fetch_ai_log(env: Mapping[str, str], limit: int, *, connect: Optional[Connec
         fallbacks = row.get("fallbacks")
         if isinstance(fallbacks, str):  # jsonb normally arrives parsed; a text cast would not
             fallbacks = json.loads(fallbacks)
-        out.append({**{name: row.get(name) for name in COLUMNS}, "fallbacks": fallbacks or []})
+        names = row.get("tools_used") or []
+        if isinstance(names, str):
+            names = json.loads(names)
+        names = [name for name in names if isinstance(name, str) and name in TOOL_NAMES][:4] if isinstance(names, list) else []
+        out.append({**{name: row.get(name) for name in COLUMNS}, "fallbacks": fallbacks or [], "tools_used": names})
     return out

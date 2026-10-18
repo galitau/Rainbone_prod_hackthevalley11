@@ -50,14 +50,14 @@ flowchart TB
   subgraph VM["Back end · Vultr Compute · api.rainbone.health"]
     caddy["Caddy<br/>HTTPS reverse proxy"]
     api["FastAPI on uvicorn<br/>GET /health"]
-    sim["POST /api/simulate<br/>3 admitted uploads per process, one solve at a time<br/>sha256 cache and stable execution UUID"]
+    sim["POST /api/simulate<br/>8 bodies / 3 uncached solves admitted per process<br/>one solve at a time<br/>sha256 cache and stable execution UUID"]
     fea["SfePy finite-element solve<br/>HU to stiffness, 800 N"]
     hist["GET /api/history?run_id=...<br/>exact saved execution and input hash<br/>GET /api/ai-log"]
     bones["GET /api/bones<br/>15-minute pre-signed URLs"]
     prog["GET /api/progression/*"]
 
     subgraph AI["AI layer"]
-      eps["POST /api/risk-analysis<br/>POST /api/explain"]
+      eps["POST /api/risk-analysis<br/>POST /api/explain<br/>POST /api/ask"]
       ground["Grounding · clinical_store.py<br/>reads clinical/ from Vultr Object Storage<br/>sha256 pinned in the repo, bundled copy as fallback"]
       facts["Facts built in code<br/>no model computes a number"]
       cache["Answer cache · current-checker revalidation<br/>case + source hash + facts + checker version<br/>Gemini answer 1 h · Groq or template 60 s"]
@@ -133,8 +133,10 @@ else: straight from the private bucket, through links the API signs.
 
 This is a fixed evidence-to-explanation workflow: retrieval, deterministic calculation,
 generation, validation and provenance. It does not use autonomous clinical agents.
-Ask Rainbone implements typed source statements: a model selects approved statement IDs,
-and the server renders their exact numbers, source citations and navigation links. The two
+Ask Rainbone adds a bounded tool-using workflow: native Gemini function calls choose up to
+four read-only evidence tools; a constrained writer selects approved statement IDs from their
+outputs; a code critic checks that selection. The server renders exact source statements,
+citations and navigation links. Unavailable native routing is explicitly labeled rules triage. The two
 existing explanation cards still use checked model prose. A broader typed review brief
 remains a proposal; an agent framework or vector database is not needed for known-case lookup.
 
@@ -192,9 +194,14 @@ workspace page. Both existing AI cards offer a prefilled follow-up. `POST /api/a
 to the six workspace routes. Each request is independent: prior chat turns and uploaded
 scans are not sent. The visible conversation lives only in page memory.
 
-The server verifies the published risk table and the femur manifest through `clinical_store`,
-then builds a fixed catalogue of evidence statements and code-derived navigation instructions.
-Gemini, its saved selection, Groq or a deterministic fallback selects one to three IDs. The
+The server verifies the published risk table and the femur manifest through `clinical_store`.
+Native Gemini function calls select at most four read-only evidence calls from
+`get_patient_facts`, `compare_with_cohort`, `get_fea_result`, `get_page_guide` and
+`get_dataset_info`. Strict argument allowlists prevent arbitrary case, file, URL or SQL access.
+If native function calling fails, rules choose tools and the trace says so. A separate writer
+receives only the selected tool outputs plus a fixed unsupported-request statement. Gemini,
+its saved selection, Groq or a deterministic fallback selects one to three statement IDs.
+A code critic permits one bounded rewrite before falling through the provider chain. The
 server rejects unknown IDs, sources, routes and answers over 120 words, then renders exact
 statements. The UI discloses that models select checked statements; a provider label does
 not imply unrestricted generated prose. Unsupported requests get a bounded site-help response.
@@ -202,18 +209,21 @@ This limits model output to the catalogue; it does not guarantee the most releva
 for every question or constitute clinical validation.
 
 Responses include `answer`, provider/model, live/cached/saved status, sources, source grounding,
-confirmed Tiger log identity when available and steps that actually occurred. Memory cache
+confirmed Tiger log identity when available, `tools_used` and timed `trace` stages that actually
+occurred. These traces arrive with the completed response; they are not streamed progress. Memory cache
 keys and saved-answer identities include question/evidence hashes. The question is transient
 provider input, never stored as raw text in the audit or saved-answer file. That file stores
-approved IDs, while Tiger stores hashes and processing metadata. `/datasets` shows the eight
+approved IDs, while Tiger stores hashes, allowlisted tool names and processing metadata.
+Migration `003_ai_tools.sql` adds the tool names without arguments or tool output. `/datasets` shows the eight
 latest recorded AI answers through a GET-only card; missing audit storage is shown honestly.
 It refreshes each minute while visible and never invents verification or cache status absent
 from the database rows.
 
 Limits are process-local: eight questions per transport peer per minute, four active HTTP
 requests, four pending generations and 128 cached answers. Trusted reverse-proxy configuration
-affects client-IP fairness. The 25-second generation budget accounts for time already spent
-loading evidence; audit writes have their existing separate 2.5-second cap. `429` includes
+affects client-IP fairness. The 25-second generation deadline covers evidence reads and provider calls; native triage
+has at most six seconds within it. Four evidence-worker slots stay held until real work
+finishes after a timeout or disconnect. Audit writes have their existing separate 2.5-second cap. `429` includes
 `Retry-After`; missing verified evidence returns `503` before a provider call.
 
 ### AI flow: one risk-analysis request

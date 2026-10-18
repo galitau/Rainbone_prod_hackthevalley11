@@ -18,7 +18,7 @@ router = APIRouter(tags=["ai-log"])
 class AiAnalysis(BaseModel):
     time: datetime
     id: UUID
-    endpoint: str = Field(description="risk-analysis or explain.")
+    endpoint: str = Field(description="risk-analysis, explain or ask.")
     case_id: Optional[str]
     provider: str = Field(description="gemini, groq or template.")
     model: Optional[str]
@@ -28,6 +28,7 @@ class AiAnalysis(BaseModel):
     grounding_store: Optional[str] = Field(description="vultr-object-storage or local-backup; null when the "
                                                        "numbers came in the request.")
     fallbacks: list[Fallback]
+    tools_used: list[str] = Field(default_factory=list, description="Allowlisted read-only evidence tool names, without arguments.")
 
 
 class AiLogResponse(BaseModel):

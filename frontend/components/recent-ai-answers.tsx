@@ -14,6 +14,7 @@ type Analysis = {
   facts_sha256: string;
   latency_ms: number | null;
   grounding_store: string | null;
+  tools_used?: string[];
 };
 
 const ENDPOINTS: Record<string, string> = { explain: "Plain words", "risk-analysis": "Risk analysis", ask: "Ask Rainbone" };
@@ -25,6 +26,7 @@ function isAnalysis(value: unknown): value is Analysis {
   return ["id", "time", "endpoint", "provider", "facts_sha256"].every(key => typeof row[key] === "string")
     && Number.isFinite(Date.parse(row.time as string))
     && /^[0-9a-f]{64}$/.test(row.facts_sha256 as string)
+    && (row.tools_used === undefined || (Array.isArray(row.tools_used) && row.tools_used.every(tool => typeof tool === "string")))
     && (row.model === null || typeof row.model === "string")
     && (row.grounding_store === null || typeof row.grounding_store === "string")
     && (row.latency_ms === null || (typeof row.latency_ms === "number" && Number.isFinite(row.latency_ms) && row.latency_ms >= 0));
@@ -97,7 +99,7 @@ export function RecentAiAnswers() {
         <thead className="bg-sunken text-muted"><tr>{["Local time", "Feature", "Answer source", "Facts source", "Answer preparation", "Facts fingerprint"].map(label => <th key={label} scope="col" className="px-4 py-3 font-medium">{label}</th>)}</tr></thead>
         <tbody>{rows.map(row => <tr key={`${row.time}:${row.id}`} className="border-t border-line text-body">
           <td className="whitespace-nowrap px-4 py-3"><time dateTime={row.time}>{new Date(row.time).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" })}</time></td>
-          <td className="px-4 py-3">{ENDPOINTS[row.endpoint] ?? row.endpoint}</td>
+          <td className="px-4 py-3"><span>{ENDPOINTS[row.endpoint] ?? row.endpoint}</span>{!!row.tools_used?.length && <details className="mt-1 text-[11px] leading-5"><summary className="cursor-pointer text-link">Evidence tools ({row.tools_used.length})</summary><ul className="mt-1 space-y-1">{row.tools_used.map(tool => <li key={tool} className="break-words font-mono">{tool}</li>)}</ul></details>}</td>
           <td className="max-w-[260px] break-words px-4 py-3 text-ink">{aiAnswerLabel({ provider: row.provider, model: row.model })}</td>
           <td className="px-4 py-3">{row.grounding_store ? STORES[row.grounding_store] ?? row.grounding_store : "Not recorded"}</td>
           <td className="whitespace-nowrap px-4 py-3 font-mono tabular-nums">{row.latency_ms === null ? "Not recorded" : `${Math.round(row.latency_ms).toLocaleString()} ms`}</td>

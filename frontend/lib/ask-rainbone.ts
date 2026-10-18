@@ -7,8 +7,9 @@ export function openAskRainbone(question = "") {
   window.dispatchEvent(new CustomEvent(ASK_EVENT, { detail: question.slice(0, 500) }));
 }
 export type AskSource = { id: string; label: string; kind: string; url?: string };
+export type AskTrace = { stage: string; tool?: string; summary: string; ms: number };
 export type AskAnswer = AiAnswerSource & {
-  answer: string; sources: AskSource[]; steps: string[]; grounding: Grounding | null; logged: Logged | null;
+  answer: string; sources: AskSource[]; steps: string[]; trace?: AskTrace[]; tools_used?: string[]; grounding: Grounding | null; logged: Logged | null;
 };
 
 export function checkedAskUrl(value?: string): string | undefined {
@@ -30,6 +31,20 @@ export function parseAskAnswer(value: unknown): AskAnswer {
     if (typeof s.id !== "string" || typeof s.label !== "string" || typeof s.kind !== "string") throw new Error("Rainbone returned an invalid source.");
     return { id: s.id, label: s.label, kind: s.kind, url: checkedAskUrl(typeof s.url === "string" ? s.url : undefined) };
   });
+  let trace: AskTrace[] | undefined;
+  if (v.trace !== undefined) {
+    if (!Array.isArray(v.trace)) throw new Error("Rainbone returned invalid execution steps.");
+    trace = v.trace.map((event: unknown) => {
+      if (!event || typeof event !== "object") throw new Error("Rainbone returned invalid execution steps.");
+      const step = event as Record<string, unknown>;
+      if (typeof step.stage !== "string" || typeof step.summary !== "string" || typeof step.ms !== "number"
+        || !Number.isFinite(step.ms) || step.ms < 0 || !(step.tool == null || typeof step.tool === "string"))
+        throw new Error("Rainbone returned invalid execution steps.");
+      return { stage: step.stage, summary: step.summary, ms: step.ms, ...(step.tool == null ? {} : { tool: step.tool }) };
+    });
+  }
+  if (v.tools_used !== undefined && (!Array.isArray(v.tools_used) || !v.tools_used.every(tool => typeof tool === "string")))
+    throw new Error("Rainbone returned an invalid tool list.");
   const grounding = v.grounding as Record<string, unknown> | null;
   if (grounding && (typeof grounding !== "object" || !["vultr-object-storage", "local-backup"].includes(String(grounding.store))
     || grounding.verified !== true || typeof grounding.key !== "string" || typeof grounding.sha256 !== "string"
@@ -37,7 +52,7 @@ export function parseAskAnswer(value: unknown): AskAnswer {
   const logged = v.logged as Record<string, unknown> | null;
   if (logged && (typeof logged !== "object" || logged.store !== "tiger" || typeof logged.id !== "string"))
     throw new Error("Rainbone returned invalid save details.");
-  return { ...v, sources, grounding: grounding ?? null, logged: logged ?? null } as AskAnswer;
+  return { ...v, sources, ...(trace === undefined ? {} : { trace }), grounding: grounding ?? null, logged: logged ?? null } as AskAnswer;
 }
 
 export async function askRainbone(question: string, page: string, signal: AbortSignal): Promise<AskAnswer> {

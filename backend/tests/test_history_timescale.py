@@ -108,8 +108,8 @@ class TimescaleHistoryTests(unittest.TestCase):
             return self.client.post("/api/simulate", files={"file": ("test.nii.gz", b"stub", "application/gzip")})
 
     def test_migration_creates_hypertable_aggregate_and_policy_and_reruns_cleanly(self):
-        self.assertEqual(self.applied, ["001_simulation_runs.sql", "002_ai_analyses.sql"])
-        self.assertEqual(history.apply_migrations(self.url), ["001_simulation_runs.sql", "002_ai_analyses.sql"])
+        self.assertEqual(self.applied, ["001_simulation_runs.sql", "002_ai_analyses.sql", "003_ai_tools.sql"])
+        self.assertEqual(history.apply_migrations(self.url), ["001_simulation_runs.sql", "002_ai_analyses.sql", "003_ai_tools.sql"])
         self.assertEqual(self.query("SELECT hypertable_name FROM timescaledb_information.hypertables "
                                     "WHERE hypertable_name = 'simulation_runs'"), [("simulation_runs",)])
         self.assertEqual(self.query("SELECT view_name, hypertable_name, materialized_only "
@@ -133,6 +133,18 @@ class TimescaleHistoryTests(unittest.TestCase):
                          (logged.id, "explain", "Pat001", "local-backup", 1.5))
         self.assertEqual(row["fallbacks"], [{"provider": "gemini", "reason": "GEMINI_API_KEY not set"}])
         self.assertEqual(row["text_sha256"], hashlib.sha256(b"text").hexdigest())
+
+    def test_ask_tool_names_are_saved_and_read_back_without_arguments(self):
+        ai_log.reset_skip()
+        logged = ai_log.record_answer({history.DATABASE_URL_ENV: self.url}, endpoint="ask", case_id="Pat001",
+            provider="template", model=None, facts_json="{}", text="checked text", latency_ms=2,
+            grounding_store="local-backup", fallbacks=[], tools_used=["get_page_guide", "get_dataset_info"])
+        self.assertIsNotNone(logged)
+        rows = self.client.get("/api/ai-log?limit=1").json()["rows"]
+        self.assertEqual(rows[0]["id"], logged.id)
+        self.assertEqual(rows[0]["tools_used"], ["get_page_guide", "get_dataset_info"])
+        self.assertEqual(self.query("SELECT COALESCE(to_jsonb(legacy)->'tools_used', '[]'::jsonb) "
+                                    "FROM (SELECT 1 AS id) AS legacy"), [([], )])
 
     def test_simulate_saves_and_history_serves_the_saved_run(self):
         before = self.query("SELECT count(*) FROM simulation_runs")[0][0]

@@ -75,6 +75,23 @@ class RecordTests(AiLogTestCase):
         self.assertNotIn(TEXT, repr(params))
         self.assertTrue(self.connector.conn.closed)
 
+    def test_ask_records_only_allowlisted_tool_names_without_arguments(self):
+        logged = ai_log.record_answer({"DATABASE_URL": FAKE_URL}, **{**ANSWER, "endpoint": "ask"},
+                                      tools_used=["get_patient_facts", "compare_with_cohort", "get_patient_facts"])
+        self.assertIsNotNone(logged)
+        [row] = self.inserts()
+        self.assertEqual(row["tools_used"].obj, ["get_patient_facts", "compare_with_cohort"])
+        self.assertNotIn(TEXT, repr(row))
+        self.assertNotIn("question", row)
+
+    def test_tool_metadata_cannot_smuggle_question_text(self):
+        with self.assertLogs("rainbowbone.ai_log", "WARNING") as logs:
+            result = ai_log.record_answer({"DATABASE_URL": FAKE_URL}, **ANSWER,
+                                          tools_used=["get_patient_facts(secret question)"])
+        self.assertIsNone(result)
+        self.assertEqual(self.inserts(), [])
+        self.assertNotIn("secret question", str(logs.output))
+
     def test_a_failed_write_is_logged_with_the_password_masked_and_returns_none(self):
         self.connector.error = psycopg.OperationalError("auth failed for not-a-real-password")
         with self.assertLogs("rainbowbone.ai_log", "WARNING") as logs:
@@ -149,7 +166,7 @@ class RouteTests(AiLogTestCase):
         self.assertIn("FROM ai_analyses ORDER BY time DESC LIMIT %s", sql)
         self.assertEqual(params, (5,))
         [row] = response.json()["rows"]
-        self.assertEqual(set(row), set(ai_log.COLUMNS))
+        self.assertEqual(set(row), set(ai_log.COLUMNS) | {"tools_used"})
         self.assertEqual((row["id"], row["grounding_store"]), (str(ROW["id"]), "local-backup"))
         self.assertNotIn("not-a-real-password", response.text)
 
