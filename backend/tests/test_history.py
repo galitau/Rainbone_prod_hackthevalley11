@@ -393,7 +393,7 @@ class ConfigurationTests(unittest.TestCase):
 class MigrateCommandTests(HistoryTestCase):
     def test_migration_files(self):
         self.assertEqual([p.name for p in history.migration_files()],
-                         ["001_simulation_runs.sql", "002_ai_analyses.sql"])
+                         ["001_simulation_runs.sql", "002_ai_analyses.sql", "003_ai_tools.sql"])
 
     def test_migrate_requires_database_url(self):
         with mock.patch.object(history, "apply_migrations") as apply:

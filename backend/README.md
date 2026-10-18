@@ -13,7 +13,7 @@ uvicorn main:app --reload
 ```
 
 The API exposes `GET /health`, `POST /api/simulate`, `POST /api/explain`,
-`POST /api/risk-analysis`, `GET /api/history` and `GET /api/ai-log`. The simulation endpoint
+`POST /api/risk-analysis`, `POST /api/ask`, `GET /api/history` and `GET /api/ai-log`. The simulation endpoint
 accepts a multipart form upload named `file` containing a `.nii` or `.nii.gz`
 NIfTI volume. The dashboard posts `frontend/public/sample_bone.nii.gz` to
 `http://127.0.0.1:8000/api/simulate`, uvicorn's default port.
@@ -514,16 +514,46 @@ used as before and `grounding` is null.
 The objects are private (no public URL; read with the bucket's keys) and
 travel over HTTPS. Nothing more is claimed about their storage.
 
+## Ask Rainbone
+
+`POST /api/ask` accepts `{"question":"What does the 47% mean?","case_id":"Pat001","page":"/dashboard"}`.
+Only `question` is required (1–500 characters); unknown cases/pages and extra fields are rejected.
+It combines the verified Pat001 risk table, verified FEA manifest and a fixed code-derived page guide.
+Gemini native function calls choose up to four allowlisted read-only evidence tools. A rules router
+is explicitly labeled when native triage fails. The writer receives only those tool outputs and
+selects approved statement IDs; a code critic allows one bounded rewrite. Python renders exact cited statements,
+never arbitrary model prose, within 120 words. The offline fallback handles common data/navigation
+questions; unsupported questions receive bounded site help. No uploaded scan is included.
+
+Response: `answer`, `provider`, `model`, `served`, `saved_at`, `sources`, `grounding`, `logged`, `steps`, `trace`, `tools_used`.
+`trace` contains actual stage/tool/summary/ms events returned on completion, not streamed progress.
+The drawer reuses provider and provenance footers. Sources and routes are allowlisted. Questions go
+to the configured provider transiently, but only hashes are used in cache/audit identities; saved
+Gemini entries contain approved IDs, not question text. The Tiger row uses endpoint `ask`.
+
+Process-local limits: 8 requests/minute per transport peer, 4 active HTTP requests, 4 pending
+computations, 128 cached answers. Reverse-proxy trust configuration determines peer fairness;
+caller-supplied forwarding headers are not read directly. `429` includes `Retry-After`; invalid
+verified evidence yields `503`. The 25-second deadline covers evidence reads and provider calls; native triage is capped at six
+seconds within it. Four worker slots bound real evidence work after caller cancellation or timeout.
+Audit logging has its own existing 2.5-second cap. Configure the same `AI_CHAIN`, `AI_OFFLINE`,
+Gemini/Groq keys, `AI_ANSWER_STORE`, `VULTR_S3_*` and `DATABASE_URL` as the other explanation endpoints.
+Apply the additive migration with `python -m services.history migrate` before verifying Ask audit rows:
+`003_ai_tools.sql` adds `tools_used` (up to four allowlisted names, no arguments). Existing reads
+and other endpoints remain compatible before migration; an Ask tool audit write then returns
+`logged: null` honestly. No new dependency. Tests: `python -m unittest tests.test_ask tests.test_ask_pipeline`.
+
 ## AI audit log (Tiger Cloud)
 
-Every answer `POST /api/risk-analysis` or `POST /api/explain` produces (from a
-model or the template) is logged as one row of the `ai_analyses` TimescaleDB
+Each newly produced answer from `POST /api/risk-analysis`, `POST /api/explain` or
+`POST /api/ask` attempts a best-effort write of one row of the `ai_analyses` TimescaleDB
 hypertable (`migrations/002_ai_analyses.sql`), in the database `DATABASE_URL`
 names (see [Simulation history](#simulation-history-timescaledb)). The same
 `python -m services.history migrate` creates it, since it applies every
 migration file in order. A row holds the time, an `id`, the endpoint, the
 `case_id`, the provider and model, the fallbacks taken before it, the latency,
-the grounding store, and the sha256 of the facts and of the text. The text and
+the grounding store, the sha256 of the facts and of the text, and optional read-only tool names
+(`003_ai_tools.sql`). Tool arguments and results are not stored. The text and
 the facts themselves are not stored, nor are keys or URLs, and a fallback's
 reason is stored without the fragment a rejection quotes (`rejected: blocked
 wording`, not the word).

@@ -25,6 +25,7 @@ import { LiveRun, UploadedResult } from "@/components/live-run";
 import { PlainExplanation } from "@/components/plain-explanation";
 import { FractureRiskAnalysis } from "@/components/risk-analysis";
 import { LesionProgression } from "@/components/lesion-progression";
+import { AskRainbone } from "@/components/ask-rainbone";
 import { HeaderHelp } from "@/components/header-help";
 import { HeaderNotifications } from "@/components/header-notifications";
 import { CollapsiblePanel, PanelSplitter, useOverviewLayout, type PanelId } from "@/components/overview-layout";
@@ -126,6 +127,7 @@ export function Dashboard(props: DashboardProps) {
               </nav>
               <div className="flex shrink-0 items-center gap-2">
                 {health && <ApiStatus health={health} />}
+                <AskRainbone />
                 <HeaderHelp />
                 <HeaderNotifications health={health} risk={"run" in props ? props.risk : undefined} explanation={"run" in props ? props.explanation : undefined} />
                 <AccountChip />

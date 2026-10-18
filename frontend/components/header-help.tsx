@@ -77,6 +77,7 @@ export function HeaderHelp() {
           <h3 id="help-keys" className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted">Keyboard and mouse</h3>
           <ul className="mt-2 list-disc space-y-1.5 pl-4 marker:text-muted">
             <li><Key>Esc</Key> closes this panel.</li>
+            <li><Key>/</Key> opens Ask Rainbone when you are not typing in a field.</li>
             <li>
               On the patient overview, in a window 1024 px or wider, <Key>Tab</Key> to the divider between the 3D view and the panels: <Key>←</Key> <Key>→</Key> move
               it (hold <Key>Shift</Key> for bigger steps), <Key>Home</Key> and <Key>End</Key> give the narrowest and widest panels, and <Key>Enter</Key> or

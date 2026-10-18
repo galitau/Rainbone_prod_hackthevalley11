@@ -1,4 +1,5 @@
 import { ArrowDownToLine, Gauge, Info, Shield, Sparkles } from "lucide-react";
+import { openAskRainbone } from "@/lib/ask-rainbone";
 import { aiAnswerLabel } from "@/lib/ai-label";
 import type { RiskAnalysis, RiskAnalysisState, RiskFacts } from "@/lib/api";
 import { formatNumber } from "@/lib/format";
@@ -104,6 +105,7 @@ export function FractureRiskAnalysis({ state }: { state: RiskAnalysisState }) {
           <div className="space-y-1 border-t border-line bg-sunken/60 px-5 py-3 text-[11.5px] leading-5 text-muted">
             <p>{providerLabel(analysis)} · every number checked against the published data</p>
             <GroundingLine grounding={analysis.grounding} logged={analysis.logged} />
+            <button type="button" className="rounded font-medium text-link underline-offset-4 hover:underline" onClick={() => openAskRainbone(`What does the ${range(fall.low, fall.high, 1)}× fall ratio mean?`)}>Ask a follow-up</button>
             <p>
               ARF0 (absolute risk of fracture at time 0) and MSF (minimum sidefall strength) are the HFValid authors&apos; finite-element results,{" "}
               <a href={doiUrl(analysis.source?.doi)} target="_blank" rel="noreferrer" title={analysis.source?.citation} className="font-medium text-link hover:underline">{FEMUR_AUTHORS}</a>

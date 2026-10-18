@@ -25,6 +25,7 @@ import { API_HOST, apiUrl, checkHealth } from "@/lib/api";
 import { formatNumber } from "@/lib/format";
 import { GOOGLE_CLIENT_ID } from "@/lib/google-identity";
 import { FEMUR_MODEL } from "@/lib/model";
+import { RecentAiAnswers } from "@/components/recent-ai-answers";
 
 // Every statement on this page restates what a file in the repository does or holds; the comment above each card
 // names the files. Numbers are read from the data files themselves, not typed in.
@@ -70,6 +71,7 @@ export function SecureDatasets() {
         <CtPelvicCard />
         <HistoryCard />
         <UploadCard />
+        <div className="min-w-0 xl:col-span-2"><RecentAiAnswers /></div>
         <div className="xl:col-span-2"><KeysCard /></div>
       </div>
 
@@ -182,7 +184,7 @@ function UploadCard() {
       title="Scans you import"
       subtitle="Import scan · Solve your own CT"
       badge={<Badge tone="success" icon={<ShieldCheck size={12} />}>File not kept</Badge>}
-      note={<>The AI providers never receive a scan or its file name: <Mono>/api/explain</Mono> and <Mono>/api/risk-analysis</Mono> pass them numbers only.</>}
+      note={<>The explanation cards pass numbers to AI providers, not uploaded scans or their file names. Ask Rainbone also sends the question you type and checked source statements; do not put personal or patient details in questions.</>}
     >
       <Row icon={<FileUp size={14} />} label="What is sent">
         One <Mono>.nii</Mono> or <Mono>.nii.gz</Mono> volume of at most {MAX_UPLOAD_MIB} MiB, posted to <Mono>POST /api/simulate</Mono>. The API solves one scan at a time.
@@ -217,7 +219,7 @@ function KeysCard() {
         In production the site is served over HTTPS by Vercel, and the API sits behind a Caddy HTTPS reverse proxy on Vultr Compute.
       </Row>
       <Row icon={<Sparkles size={14} />} label="AI text">
-        Gemini, then a Gemini answer saved earlier for exactly the same numbers (labelled as saved), then Groq, then a built-in template word the explanations. They receive numbers only: the femur&apos;s solved values and {FEMUR_MODEL.caseId}&apos;s published HFValid figures. The API checks every number in their text against those facts.
+        Gemini, then a Gemini answer saved earlier for exactly the same numbers (labelled as saved), then Groq, then a built-in template word the explanations. The two explanation cards send the femur&apos;s solved values and {FEMUR_MODEL.caseId}&apos;s published HFValid figures; their text is checked against those facts. Ask Rainbone additionally sends your question and a fixed source-statement catalogue, then renders only checked selections with citations. Uploaded scans are not included in Ask Rainbone.
       </Row>
     </Card>
   );
