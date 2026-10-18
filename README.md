@@ -1,10 +1,10 @@
 # Rainbone
 
-![Rainbone: a stress test for bones](docs/images/rainbone-cover.png)
+![Rainbone: a 3D stress test for bones, explained by AI agents](docs/images/rainbone-cover.png)
 
-**[Live site](https://rainbone.health)** · **[Demo video](https://youtu.be/81SZ7VXBaV0)** · **[Devpost](https://devpost.com/software/rainbowbone)** · **[Architecture](ARCHITECTURE.md)** · **[Business process flow](BUSINESS_PROCESS_FLOW.md)**
+**[Live site](https://rainbone.health)** · **[Demo video](https://youtu.be/81SZ7VXBaV0)** · **[Devpost](https://devpost.com/software/rainbowbone)** · **[Research paper](https://rainbone.health/research-paper)** · **[Architecture](ARCHITECTURE.md)** · **[Business process flow](BUSINESS_PROCESS_FLOW.md)**
 
-**A stress test for bones, explained by AI.**
+**A 3D stress test for bones, explained by AI agents.**
 
 Built for PointClickCare's *Catch It Early* challenge at Hack the Valley 11: catch bone weakness
 early, so prevention can start before the fall.
@@ -481,8 +481,10 @@ credentials, and checks each mesh's sha256 before drawing it.
 | [`/privacy`](https://rainbone.health/privacy) | What the demo, Google sign-in and simulations store | none |
 | [`/dashboard`](https://rainbone.health/dashboard) | One-screen overview: stress map and cut-away, clinical metrics, AI fracture risk card, plain-words explanation, live engine run and history | `/health`, `/api/explain`, `/api/risk-analysis`, `/api/simulate`, `/api/history` |
 | [`/physics-simulations`](https://rainbone.health/physics-simulations) | Hydraulic-press replay of the same femur, with a printable missing region | none |
+| [`/physics-simulations/report`](https://rainbone.health/physics-simulations/report) | Printable simulation report (print or save as PDF), built from the same press manifest the 3D view loads | none |
 | [`/bones`](https://rainbone.health/bones) | Imaging library: CTPelvic1K pelvic bone meshes from Vultr Object Storage | `/api/bones`, then the bucket |
 | [`/lesion-progression`](https://rainbone.health/lesion-progression) | Baseline-to-follow-up lesion annotation over eight cached 3D frames (illustrative) | `/api/progression/*` |
+| [`/research-paper`](https://rainbone.health/research-paper) | Research paper (sidebar → Workspace): technical report on the method, with 69 numbered equations, a LangGraph state-machine figure and a French résumé | none |
 | [`/datasets`](https://rainbone.health/datasets) | Secure datasets: where each dataset comes from, where it is kept, what happens to an imported scan | `/health`, `/api/bones`, `/api/history` |
 | [`/preferences`](https://rainbone.health/preferences) | Light, Dark, High contrast or System theme, text size and motion, saved in this browser only | none |
 
@@ -650,7 +652,8 @@ optional FSL bone segmentation.
   blocked wording with rules, not by understanding the text, and when the model quotas
   run out the card falls back to Groq or to the template.
 - **Lesion progression is a visualization demo.** Its intermediate frames and metrics
-  are illustrative placeholders, not measured progression.
+  are illustrative placeholders, not measured progression. The viewer smooths the
+  voxel-derived surface in the browser for display only; frame data and metrics are unchanged.
 - **No server accounts.** The clinician in the header is a demo profile; Google sign-in,
   when it is on, keeps the name, email and photo in the browser only. `GET /api/history`
   and `GET /api/ai-log` are readable by anyone. History stores the file name exactly as

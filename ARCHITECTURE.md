@@ -3,7 +3,8 @@
 How the system behind <https://rainbone.health> is built and how data moves through it. This file
 describes the code on `main`. The product overview, live routes, API table and local setup are in
 [README.md](README.md); request and response fields, checker rules and tests are in
-[backend/README.md](backend/README.md).
+[backend/README.md](backend/README.md). The method, with its equations, is written up as a technical
+report at [`/research-paper`](https://rainbone.health/research-paper).
 
 Rainbone is a research prototype built at Hack the Valley 11. It is **not a medical device** and no
 output is a clinical measurement.
@@ -58,13 +59,19 @@ Next.js 15 App Router, React 19, Tailwind and vtk.js, built from `frontend/` and
 
 - **Pages.** Landing `/`, `/enter` (guest pass or optional Google sign-in; `/login` redirects there),
   `/privacy`, and the six workspace pages `/dashboard`, `/physics-simulations`, `/bones`,
-  `/lesion-progression`, `/datasets` and `/preferences` (`frontend/app/`).
+  `/lesion-progression`, `/datasets` and `/preferences` (`frontend/app/`). The sidebar's Workspace
+  group also links `/research-paper`, a technical report with 69 numbered MathML equations, a
+  LangGraph state-machine figure and a French résumé; `/physics-simulations/report` is a printable
+  simulation report built from the same press manifest the 3D view loads.
 - **3D viewers.** `BoneViewer.tsx` draws the HFValid femur stress map; its cut-away fetches the
   tetrahedral `bone-fea.vtu` once and slices it in the browser (`lib/vtu-cut.ts`).
   `physics-simulations.tsx` and `press-viewer.tsx` replay the precomputed press steps.
   `CloudBones.tsx` downloads CTPelvic1K meshes through signed links and compares each file's
   SHA-256 (Web Crypto) with the manifest before drawing it. `lesion-progression.tsx` loads eight
-  cached frames from the API.
+  cached frames from the API. `progression-viewer.tsx` smooths each voxel-derived VTP frame for
+  display only (vtk.js CleanPolyData → WindowedSincPolyDataFilter, 10 iterations, pass band 0.1 →
+  PolyDataNormals), caches it per frame, and loads a frame once the slider has settled (220 ms);
+  frame data and metrics are unchanged.
 - **Static assets** in `frontend/public/`: the femur FEA (`models/hfvalid-femur/`), press steps
   (`models/femur-press/`), printable reconstruction (`models/femur-reconstruction/`), the HFValid
   table `models/hfvalid-risk.json`, a `.sha256` pin next to each file the AI layer reads, and
@@ -72,6 +79,8 @@ Next.js 15 App Router, React 19, Tailwind and vtk.js, built from `frontend/` and
 - **API client.** `lib/api.ts` puts a time limit on every call: 90 s for a simulation, 5 s for
   `/health` and `/api/history`, 35 s for each AI card. `lib/ask-rainbone.ts` posts Ask questions
   and validates the response shape, sources, grounding and log identity before display.
+- **Discovery.** Per-route metadata (`lib/seo.ts`), `robots.txt` and `sitemap.xml` (`app/robots.ts`,
+  `app/sitemap.ts`), `public/llms.txt`, and a JSON-LD FAQ on the landing page (`lib/site-content.ts`).
 - **Proxy.** `next.config.ts` rewrites `/api/:path*` and `/health` to `API_PROXY_TARGET` when it is
   set, so production calls stay on the site's own origin.
 - **Browser-only state.** Preferences, dashboard layout, the notification marker and the optional
@@ -114,6 +123,10 @@ offline femur model share one SfePy solver.
 5. Report the 99.5th-percentile von Mises stress over the bone volume, the mean modulus, the bone
    volume, mesh counts, and a stress ratio: that stress divided by an assumed 150 MPa strength,
    clipped to 0–100 %. The ratio is illustrative and is not a fracture probability.
+
+Boundary-face extraction in `scripts/bone_fea/` can use an optional C++23 kernel (C++20, then C++17
+fallback): 6.26× faster than NumPy locally and 15.5–16.1× on the production API host; if it can't be
+built, the NumPy path runs ([benchmark](scripts/bone_fea/README.md#optional-native-surface-extraction)).
 
 The static HFValid femur on the dashboard was solved offline with one uniform modulus (10 GPa,
 ν 0.3) and the same 800 N load (`scripts/bone_fea/README.md`). Its stress ratio uses the peak of

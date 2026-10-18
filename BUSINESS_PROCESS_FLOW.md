@@ -113,6 +113,7 @@ flowchart TB
 | 6 | Care team, AI layer | Ask Rainbone (header button, `/` key, or **Ask a follow-up** on either card) answers from approved, cited source statements through a five-stage AI agent pipeline orchestrated with LangGraph; the drawer shows each recorded step. See the sub-process below. | `frontend/components/ask-rainbone.tsx`, `backend/services/ask.py` |
 | 7 | Care team, clinician, resident | The conversation and any action happen outside Rainbone, under the facility's existing fall-prevention protocols. Rainbone has no connection to a care record system and stores no care decision. | — |
 | Import | Care team, Rainbone app | **Import scan** posts a `.nii` or `.nii.gz` (at most 512 MiB) to `POST /api/simulate`. The API keeps the largest connected region at or above 150 HU, maps HU to stiffness, solves an 800 N compression with SfePy and returns the 99.5th-percentile stress, mean stiffness, bone volume and the stress ratio. The file itself is not saved; the file name and results are saved to `simulation_runs` in Tiger Cloud when the database is reachable. | `backend/main.py`, `backend/services/fea_solver.py`, `backend/services/history.py` |
+| Method | Care team (nurse, wellness director) | Open the printable simulation report (`/physics-simulations/report`) and the research paper (`/research-paper`) for the method behind the numbers. The lesion view (`/lesion-progression`) is illustrative, not measured progression. | `frontend/app/physics-simulations/report/page.tsx`, `frontend/app/research-paper/page.tsx` |
 
 ### Decision points
 
