@@ -36,4 +36,4 @@ Vultr Compute hosts the simulation API. Private Vultr Object Storage supplies re
 - [Devpost project](https://devpost.com/software/rainbowbone)
 - [Source repository](https://github.com/galitau/Rainbone_prod_hackthevalley11)
 - [Architecture and project README](https://github.com/galitau/Rainbone_prod_hackthevalley11/blob/main/README.md)
-- [Recorded walkthrough](https://youtu.be/BoSh5c1QNrQ): A recording may show an earlier deployment; use current page labels for live behavior.
+- [Recorded walkthrough](https://youtu.be/81SZ7VXBaV0): A recording may show an earlier deployment; use current page labels for live behavior.

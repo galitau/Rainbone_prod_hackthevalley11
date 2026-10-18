@@ -256,7 +256,7 @@ export default function Landing() {
           </div>
           <div className="mt-10 flex flex-wrap gap-x-6 gap-y-3 text-[14px]">
             <Link href="/datasets" className="rounded font-medium text-link underline underline-offset-4">Explore sources and provenance</Link>
-            <a href="https://youtu.be/BoSh5c1QNrQ" target="_blank" rel="noreferrer" className="rounded font-medium text-link underline underline-offset-4">Watch the demo</a>
+            <a href="https://youtu.be/81SZ7VXBaV0" target="_blank" rel="noreferrer" className="rounded font-medium text-link underline underline-offset-4">Watch the demo</a>
             <Link href="/privacy" className="rounded font-medium text-link underline underline-offset-4">Read the privacy notice</Link>
           </div>
         </div>
