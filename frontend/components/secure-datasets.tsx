@@ -61,7 +61,7 @@ export function SecureDatasets() {
 
       <p role="note" className="mt-6 flex gap-3 rounded-xl border border-caution/25 bg-caution/[0.06] px-4 py-3 text-[12.5px] leading-5 text-ink">
         <Info size={16} className="mt-0.5 shrink-0 text-caution" aria-hidden />
-        <span><strong className="font-semibold">Research prototype — not a medical device.</strong> Every scan comes from a public research dataset and there are no real patient accounts: the clinician in the header is a demo profile.</span>
+        <span><strong className="font-semibold">Research prototype — not a medical device.</strong> The built-in scans come from public research datasets (HFValid, CTPelvic1K), and the sample the overview runs is a synthetic test volume. There are no real patient accounts: the clinician in the header is a demo profile. Only import scans you are allowed to share.</span>
       </p>
 
       <div className="mt-6 grid gap-6 xl:grid-cols-2">
@@ -104,7 +104,7 @@ function HfvalidCard() {
         The study&apos;s published table: {HFVALID_RECORDS} de-identified records ({STUDY_CODES[0]}–{STUDY_CODES[STUDY_CODES.length - 1]}), each with age, height, weight and side, ARF0 (absolute risk of fracture at time 0), MSF (minimum sideways-fall strength) and the 5-year fracture outcome ({HFVALID_FRACTURED} fractured). No names or dates.
       </Row>
       <Row icon={<HardDrive size={14} />} label="Stored">
-        Static files served with the site: <Mono>public/models/hfvalid-femur/</Mono> (meshes, results and a manifest with each file&apos;s sha256) and <Mono>public/models/hfvalid-risk.json</Mono>. Public, read-only research data.
+        Static files served with the site: <Mono>public/models/hfvalid-femur/</Mono> (meshes, FE results and a manifest describing how they were made) and <Mono>public/models/hfvalid-risk.json</Mono>. Public, read-only research data.
       </Row>
     </Card>
   );
@@ -135,7 +135,7 @@ function CtPelvicCard() {
         A private Vultr Object Storage bucket, under <Mono>ctpelvic1k/</Mono>: the masks, the meshes and a manifest with each file&apos;s sha256. Nothing in it can be downloaded without a signed link.
       </Row>
       <Row icon={<Timer size={14} />} label="Access">
-        <Mono>GET /api/bones</Mono> reads the bucket manifest with the server&apos;s storage key and signs one download link per file, valid {SIGNED_URL_MINUTES} minutes. The browser fetches the meshes straight from the bucket through those links, never with a key, and gets fresh links first when the current ones are within a minute of expiring.
+        <Mono>GET /api/bones</Mono> reads the bucket manifest with the server&apos;s storage key and signs one download link per file, valid {SIGNED_URL_MINUTES} minutes. The browser fetches the meshes straight from the bucket through those links, without the secret key, and gets fresh links first when the current ones are within a minute of expiring.
       </Row>
       <Row icon={<Fingerprint size={14} />} label="Integrity">
         Before a case is drawn, the browser computes the sha256 of every mesh and compares it with the manifest; one mismatch and nothing is drawn. The check needs HTTPS or localhost (Web Crypto); anywhere else the viewer says the meshes were not checked.
@@ -152,7 +152,7 @@ function HistoryCard() {
       title="Simulation history"
       subtitle="Tiger Cloud · TimescaleDB"
       badge={<Badge tone="neutral" icon={<History size={12} />}>Results only</Badge>}
-      note={<>The file name is stored exactly as it was sent, so name files without patient details.</>}
+      note={<>The file name is stored exactly as it was sent and anyone can read it, so name files without patient details.</>}
     >
       <Row icon={<Database size={14} />} label="Table">
         <Mono>simulation_runs</Mono>, a hypertable in 7-day chunks, plus an hourly summary of peak stress (<Mono>simulation_runs_hourly</Mono>). The API writes one row after each successful solve, only when a database is configured; a failed save never fails the solve.
@@ -167,7 +167,7 @@ function HistoryCard() {
         Not configured: no retention or compression policy, so rows stay until someone deletes them by hand.
       </Row>
       <Row icon={<Link2 size={14} />} label="Who can read it">
-        <Mono>GET /api/history</Mono> returns the latest runs (up to {HISTORY_LIMIT}) to any caller; there is no login.
+        <Mono>GET /api/history</Mono> returns the latest runs (up to {HISTORY_LIMIT}), file names included, to any caller; there is no login.
       </Row>
     </Card>
   );
@@ -187,10 +187,10 @@ function UploadCard() {
         One <Mono>.nii</Mono> or <Mono>.nii.gz</Mono> volume of at most {MAX_UPLOAD_MIB} MiB, posted to <Mono>POST /api/simulate</Mono>. The API solves one scan at a time.
       </Row>
       <Row icon={<ServerCog size={14} />} label="Processing">
-        The API reads the file into memory and parses it there; its code never writes the upload to disk, to the bucket or to the database. The web framework (Starlette) buffers uploads larger than 1 MB in a temporary file that is deleted when the request ends. When FSL is installed, the CT volume is written to a temporary folder for two FSL commands and the folder is deleted straight after.
+        The API reads the file into memory and parses it there; its code does not save the upload to the bucket or the database, and writes it to disk only as described next. The web framework (Starlette) buffers uploads larger than 1 MB in a temporary file that is deleted when the request ends. When FSL is installed, the CT volume is written to a temporary folder for two FSL commands and the folder is deleted straight after.
       </Row>
       <Row icon={<History size={14} />} label="Kept afterwards">
-        The result numbers and the file name, as a row in the simulation history (when configured). The solver also writes the file name and its solve details to the API log at info level. The scan is not kept.
+        The result numbers and the file name, as a row in the simulation history (when configured). The solver also emits an info-level log record with the file name and solve details; uvicorn&apos;s default logging, which the README&apos;s run command uses, does not print it. The scan is not kept.
       </Row>
     </Card>
   );
@@ -207,10 +207,10 @@ function KeysCard() {
       badge={<Badge tone="success" icon={<KeyRound size={12} />}>Server only</Badge>}
     >
       <Row icon={<KeyRound size={14} />} label="Where they live">
-        The Gemini and Groq keys, the database connection string and the object-storage keys are set only on the API server (its environment or <Mono>backend/.env</Mono>). The API never logs or returns them. The only setting built into the browser code is the API&apos;s address.
+        The keys are set only on the API server: the Gemini and Groq keys and the database connection string in its environment or <Mono>backend/.env</Mono>, the <Mono>VULTR_S3_*</Mono> storage keys in its process environment. The API never logs or returns a secret: the signed storage links carry only the access key ID, as S3 requires, never the secret key. The only setting built into the browser code is the API&apos;s address.
       </Row>
       <Row icon={<Link2 size={14} />} label="Same origin">
-        With <Mono>API_PROXY_TARGET</Mono> set, the site forwards <Mono>/api/*</Mono> and <Mono>/health</Mono> to the API, so the browser only talks to the site&apos;s own origin. This page calls the API at <Mono>{API_HOST}</Mono>.
+        With <Mono>API_PROXY_TARGET</Mono> set and <Mono>NEXT_PUBLIC_API_BASE_URL</Mono> pointing at the site, the site forwards <Mono>/api/*</Mono> and <Mono>/health</Mono> to the API, so API calls stay on the site&apos;s own origin. The pelvic meshes still come straight from the Vultr bucket through signed links. This page calls the API at <Mono>{API_HOST}</Mono>.
       </Row>
       <Row icon={<Lock size={14} />} label="In transit">
         In production the site is served over HTTPS by Vercel, and the API sits behind a Caddy HTTPS reverse proxy on Vultr Compute.
@@ -283,7 +283,7 @@ function LiveChip({ title, children }: { title: string; children: React.ReactNod
 
 function Card({ id, title, subtitle, badge, note, children }: { id: string; title: string; subtitle: string; badge: React.ReactNode; note?: React.ReactNode; children: React.ReactNode }) {
   return (
-    <section aria-labelledby={`${id}-title`} className="h-full overflow-hidden rounded-2xl border border-line bg-surface shadow-card">
+    <section aria-labelledby={`${id}-title`} className="flex h-full flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-card">
       <div className="flex items-start justify-between gap-3 border-b border-line px-5 py-4">
         <div className="min-w-0">
           <h2 id={`${id}-title`} className="text-[15px] font-semibold text-ink">{title}</h2>
@@ -291,7 +291,7 @@ function Card({ id, title, subtitle, badge, note, children }: { id: string; titl
         </div>
         {badge}
       </div>
-      <dl className="divide-y divide-line">{children}</dl>
+      <dl className="flex-1 divide-y divide-line">{children}</dl>
       {note && <p className="flex gap-2 border-t border-line bg-sunken/60 px-5 py-3.5 text-[11.5px] leading-5 text-muted"><Info size={14} className="mt-0.5 shrink-0" aria-hidden /><span>{note}</span></p>}
     </section>
   );

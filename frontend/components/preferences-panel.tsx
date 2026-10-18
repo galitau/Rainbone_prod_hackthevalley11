@@ -17,8 +17,8 @@ const TEXT_SIZES = [
 ] as const;
 
 const MOTION = [
-  { value: "system", label: "Follow this device" },
-  { value: "always", label: "Always reduce" },
+  { value: "system", label: "System" },
+  { value: "always", label: "Always" },
 ] as const;
 
 export function PreferencesPanel() {
@@ -57,7 +57,7 @@ export function PreferencesPanel() {
               title="Reduce motion"
               description={
                 <>
-                  Always reduce turns off animations and transitions everywhere. Follow this device uses your system&apos;s setting
+                  Always turns off animations and transitions everywhere. System follows this device&apos;s setting
                   {systemReducesMotion !== null && <>, which currently {systemReducesMotion ? "reduces motion" : "allows motion"}</>}.
                 </>
               }
@@ -94,9 +94,12 @@ export function PreferencesPanel() {
           </p>
           <button
             type="button"
-            onClick={() => setStored(resetPreferences())}
-            disabled={isDefault}
-            className="inline-flex w-fit shrink-0 items-center gap-1.5 rounded-lg border border-line bg-surface px-3 py-2 text-[13px] font-medium text-ink shadow-card transition hover:border-line-strong hover:bg-sunken disabled:pointer-events-none disabled:opacity-50"
+            onClick={() => {
+              if (!isDefault) setStored(resetPreferences());
+            }}
+            // aria-disabled rather than disabled: the button keeps keyboard focus after a reset.
+            aria-disabled={isDefault}
+            className="inline-flex w-fit shrink-0 items-center gap-1.5 rounded-lg border border-line bg-surface px-3 py-2 text-[13px] font-medium text-ink shadow-card transition hover:border-line-strong hover:bg-sunken aria-disabled:cursor-default aria-disabled:opacity-50 aria-disabled:hover:border-line aria-disabled:hover:bg-surface"
           >
             <RotateCcw size={14} aria-hidden /> Reset to defaults
           </button>
@@ -128,7 +131,7 @@ function Segmented<T extends string>({ name, label, options, value, onChange }: 
           return (
             <label
               key={option.value}
-              className={`cursor-pointer rounded-md px-3 py-1.5 text-[13px] font-medium transition has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-focus ${checked ? "bg-surface text-ink shadow-card" : "text-muted hover:text-ink"}`}
+              className={`cursor-pointer whitespace-nowrap rounded-md px-3 py-1.5 text-[13px] font-medium transition has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-focus ${checked ? "bg-surface text-ink shadow-card" : "text-muted hover:text-ink"}`}
             >
               <input type="radio" name={name} value={option.value} checked={checked} onChange={() => onChange(option.value)} className="sr-only" />
               {option.label}

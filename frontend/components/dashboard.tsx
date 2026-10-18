@@ -27,6 +27,7 @@ import { PlainExplanation } from "@/components/plain-explanation";
 import { FractureRiskAnalysis } from "@/components/risk-analysis";
 import { API_BASE_URL, type ExplanationState, type HistoryState, type RiskAnalysisState, type SimulationResult } from "@/lib/api";
 import { FEMUR_AUTHORS, FEMUR_INSTITUTION, FEMUR_MODEL } from "@/lib/model";
+import { REDUCE_MOTION_CLASS } from "@/lib/preferences-script";
 const PhysicsSimulations = dynamic(() => import("@/components/physics-simulations").then(module => module.PhysicsSimulations));
 const CloudBones = dynamic(() => import("@/components/CloudBones").then(module => module.CloudBones));
 const SecureDatasets = dynamic(() => import("@/components/secure-datasets").then(module => module.SecureDatasets));
@@ -119,7 +120,7 @@ export function Dashboard(props: DashboardProps) {
                 </div>
               </div>
             </div>
-            <nav aria-label="Mobile workspace navigation" className="flex gap-1 overflow-x-auto border-t border-line px-4 py-2 scrollbar-hide lg:hidden">
+            <nav aria-label="Mobile workspace navigation" className="flex gap-1 overflow-x-auto border-t border-line px-4 py-2 scrollbar-hide [mask-image:linear-gradient(to_right,transparent,#000_20px,#000_calc(100%-20px),transparent)] lg:hidden">
               <MobileNavItem active={view === "overview"} href="/" label="Patient overview" />
               <MobileNavItem active={view === "physics"} href="/physics-simulations" label="Physics simulations" />
               <MobileNavItem active={view === "imaging"} href="/bones" label="Imaging library" />
@@ -149,7 +150,8 @@ function Overview({ run, explanation, risk, history, onRunSample, onUpload }: Ov
     const panel = document.getElementById(ALL_NUMBERS_ID) as HTMLDetailsElement | null;
     if (panel) {
       panel.open = true;
-      panel.scrollIntoView({ behavior: "smooth", block: "start" });
+      const still = document.documentElement.classList.contains(REDUCE_MOTION_CLASS) || window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      panel.scrollIntoView({ behavior: still ? "auto" : "smooth", block: "start" });
     }
   };
 
