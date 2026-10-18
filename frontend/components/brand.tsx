@@ -29,13 +29,14 @@ export function RainboneMark({ size = 36, className = "" }: { size?: number; cla
   );
 }
 
-export function RainboneLogo({ tone = "dark", subtitle = "Clinical biomechanics" }: { tone?: "dark" | "light"; subtitle?: string }) {
+export function RainboneLogo({ tone = "dark", subtitle = "Clinical biomechanics", size = "md" }: { tone?: "dark" | "light"; subtitle?: string; size?: "md" | "lg" }) {
+  const lg = size === "lg";
   return (
-    <div className="flex items-center gap-3">
-      <RainboneMark />
+    <div className={`flex items-center ${lg ? "gap-3.5" : "gap-3"}`}>
+      <RainboneMark size={lg ? 48 : 36} />
       <div className="leading-none">
-        <p className={`font-serif text-[19px] font-semibold tracking-[-0.01em] ${tone === "dark" ? "text-nav-ink" : "text-ink"}`}>Rainbone</p>
-        <p className={`mt-1 text-[10.5px] font-medium tracking-[0.04em] ${tone === "dark" ? "text-nav-muted" : "text-muted"}`}>{subtitle}</p>
+        <p className={`font-serif ${lg ? "text-[27px]" : "text-[19px]"} font-semibold tracking-[-0.01em] ${tone === "dark" ? "text-nav-ink" : "text-ink"}`}>Rainbone</p>
+        <p className={`${lg ? "mt-1.5 text-[12.5px]" : "mt-1 text-[10.5px]"} font-medium tracking-[0.04em] ${tone === "dark" ? "text-nav-muted" : "text-muted"}`}>{subtitle}</p>
       </div>
     </div>
   );
