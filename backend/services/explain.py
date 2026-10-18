@@ -299,7 +299,7 @@ def facts_json(facts: Mapping[str, float]) -> str:
 
 # ----------------------------------------------------------------------------- checker
 def _number_value(token: str) -> float:
-    return abs(float(token.replace(",", "").replace("−", "-")))
+    return float(token.replace(",", "").replace("−", "-"))
 
 
 def allowed_numbers(facts: Mapping[str, float]) -> set[float]:
@@ -431,9 +431,12 @@ async def explain(request: ExplainRequest, env: Optional[Mapping[str, str]] = No
         return answer.model_copy(update={"grounding": grounding, "logged": logged})
 
     # Kept per case and store too, so the ai_analyses row an answer points to records where its facts came from.
-    key = (case_id, grounding and grounding.store, facts_json(facts), chain_signature(order, tiers))
+    key = ("checker-2", case_id, grounding and (grounding.store, grounding.key, grounding.sha256,
+                                              grounding.verified), facts_json(facts),
+           chain_signature(order, tiers))
     answer = await _answers.get_or_compute(
-        key, produce, lambda answer: ai_log.kept_for(answer_ttl(answer.provider), answer.logged, e))
+        key, produce, lambda answer: ai_log.kept_for(answer_ttl(answer.provider), answer.logged, e),
+        valid=lambda answer: check(answer.text.removesuffix(" " + NOTE), facts) is None)
     # A kept answer shows this request's reason for a fallback (the store is the same, or it would not be kept).
     return answer if answer.grounding == grounding else answer.model_copy(update={"grounding": grounding})
 

@@ -251,7 +251,7 @@ def _read_local(entry: ClinicalFile, pin: Optional[str], reason: str) -> tuple[A
         raise ClinicalDataUnavailable(f"{entry.name}: bundled copy unreadable ({type(exc).__name__})") from None
     digest = sha256_bytes(data)
     if digest != pin:
-        log.warning("clinical: bundled %s does not match its pin", entry.name)
+        raise ClinicalDataUnavailable(f"{entry.name}: bundled copy does not match its pinned sha256")
     return parsed, Grounding(store="local-backup", key=entry.key, sha256=digest, verified=digest == pin,
                              reason=reason)
 

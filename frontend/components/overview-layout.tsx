@@ -39,7 +39,7 @@ function readLayout<Id extends string>({ storageKey, layout: defaults }: PanelLa
     return {
       panelWidth: typeof panelWidth === "number" && Number.isFinite(panelWidth)
         ? Math.round(Math.min(PANEL_MAX, Math.max(PANEL_MIN, panelWidth)))
-        : PANEL_DEFAULT,
+        : defaults.panelWidth,
       collapsed: Object.fromEntries((Object.keys(defaults.collapsed) as Id[]).map(id => {
         const flag = flags[id];
         return [id, typeof flag === "boolean" ? flag : defaults.collapsed[id]];
@@ -162,6 +162,7 @@ export function CollapsiblePanel({ id, title, collapsed, onCollapsedChange, clas
 
 type PanelSplitterProps = {
   width: number;
+  defaultWidth?: number;
   // The id of the panel column it resizes.
   panelsId?: string;
   rowRef: React.RefObject<HTMLDivElement | null>;
@@ -172,7 +173,7 @@ type PanelSplitterProps = {
 // VIEWER_MIN px. Arrow keys move it by STEP (Shift: BIG_STEP), Home and End go to the limits, Enter and a double-click
 // restore the default. It works from the column's rendered width: CSS caps the column when the row cannot fit the
 // saved width, and that saved width is kept until the handle actually moves.
-export function PanelSplitter({ width, panelsId = "overview-panels", rowRef, onResize }: PanelSplitterProps) {
+export function PanelSplitter({ width, defaultWidth = PANEL_DEFAULT, panelsId = "overview-panels", rowRef, onResize }: PanelSplitterProps) {
   const [dragging, setDragging] = useState(false);
   const drag = useRef<{ id: number; x: number; w: number; last: number } | null>(null);
   const [measured, setMeasured] = useState<{ shown: number; min: number; max: number } | null>(null);
@@ -262,7 +263,7 @@ export function PanelSplitter({ width, panelsId = "overview-panels", rowRef, onR
       onPointerUp={endDrag}
       onPointerCancel={endDrag}
       onLostPointerCapture={endDrag}
-      onDoubleClick={() => onResize(clamp(PANEL_DEFAULT), true)}
+      onDoubleClick={() => onResize(clamp(defaultWidth), true)}
       onKeyDown={event => {
         const base = rendered();
         let next: number;
@@ -271,7 +272,7 @@ export function PanelSplitter({ width, panelsId = "overview-panels", rowRef, onR
           case "ArrowRight": next = base - (event.shiftKey ? BIG_STEP : STEP); break;
           case "Home": next = PANEL_MIN; break;
           case "End": next = PANEL_MAX; break;
-          case "Enter": next = PANEL_DEFAULT; break;
+          case "Enter": next = defaultWidth; break;
           default: return;
         }
         event.preventDefault();

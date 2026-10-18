@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Cloud, RotateCcw, ShieldAlert, ShieldCheck } from "lucide-react";
+import { Bone, BookOpen, Box, Cloud, LayoutPanelLeft, RotateCcw, ShieldAlert, ShieldCheck } from "lucide-react";
+import { CollapsiblePanel, PanelSplitter, usePanelLayout, type PanelLayoutConfig } from "@/components/overview-layout";
 import { createVtkViewDisposer } from "@/lib/dispose-vtk-view";
 import { API_BASE_URL } from "@/lib/api";
 import type vtkActor from "@kitware/vtk.js/Rendering/Core/Actor";
@@ -54,6 +55,11 @@ const BONE_STYLE: Record<string, { label: string; color: string; dice?: string }
 const FALLBACK_COLOR = "#e6e0d1";
 // Refresh the signed URLs this long before they expire, so a download never starts on a dying link.
 const EXPIRY_MARGIN_MS = 60_000;
+const BONES_PANEL_DEFAULT = 480;
+const BONES_LAYOUT: PanelLayoutConfig<"bones" | "sources"> = {
+  storageKey: "rainbone.bones-layout.v1",
+  layout: { panelWidth: BONES_PANEL_DEFAULT, collapsed: { bones: false, sources: false } },
+};
 
 function rgb(hex: string): [number, number, number] {
   const value = Number.parseInt(hex.slice(1), 16);
@@ -107,6 +113,8 @@ export function CloudBones() {
   const [loaded, setLoaded] = useState<LoadedBone[]>([]);
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const [attempt, setAttempt] = useState(0);
+  const layout = usePanelLayout(BONES_LAYOUT);
+  const rowRef = useRef<HTMLDivElement>(null);
 
   const refresh = useCallback(async () => {
     setListError(null);
@@ -269,96 +277,124 @@ export function CloudBones() {
   const allVerified = loaded.length > 0 && loaded.every(bone => bone.integrity === "verified");
   const buttonClass = "rounded-lg border border-line bg-surface shadow-card px-3 py-2 text-xs text-muted transition hover:text-ink disabled:opacity-40";
 
+  const panel = (id: "bones" | "sources", title: string, card: React.ReactNode) => (
+    <CollapsiblePanel id={id} title={title} collapsed={layout.collapsed[id]} onCollapsedChange={collapsed => layout.setCollapsed(id, collapsed)}>{card}</CollapsiblePanel>
+  );
+
+  // The patient overview's layout: a page header, then from lg up the viewer fills the row, a splitter sets the
+  // panel column's width, and the panels scroll on their own and collapse to their header. Below lg it all stacks.
   return (
-    <div className="mx-auto max-w-6xl space-y-4">
-      <header className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="flex items-center gap-2 font-serif text-[22px] font-semibold leading-tight tracking-[-0.01em] text-ink"><Cloud size={20} className="text-link" /> Pelvic bones from Vultr Object Storage</h1>
-          <p className="mt-1 max-w-2xl text-xs text-muted">
+    <div className="mx-auto max-w-[1440px] p-5 md:p-8 lg:flex lg:min-h-0 lg:w-full lg:max-w-none lg:flex-1 lg:flex-col lg:px-6 lg:pb-3 lg:pt-4">
+      <header className="flex flex-col justify-between gap-5 md:flex-row md:items-end lg:shrink-0">
+        <div className="min-w-0">
+          <h1 className="flex items-center gap-2.5 font-serif text-[28px] font-semibold leading-tight tracking-[-0.01em] text-ink"><Cloud size={24} className="shrink-0 text-link" aria-hidden /> Pelvic bones from Vultr Object Storage</h1>
+          <p className="mt-3 max-w-3xl text-[13px] leading-5 text-body lg:mt-1">
             TotalSegmentator bone meshes of CTPelvic1K CT scans. The browser downloads each mesh from a private bucket
             through a pre-signed link that the API issues for {data ? Math.round(data.expires_in_seconds / 60) : 15} minutes.
           </p>
         </div>
-        <label className="flex items-center gap-2 text-xs text-muted">
-          Case
-          <select aria-label="CT case" value={caseId ?? ""} disabled={!data || status === "loading"} onChange={event => setCaseId(event.target.value)} className={`${buttonClass} min-w-56`}>
-            {data?.cases.map(c => <option key={c.case_id} value={c.case_id}>{c.case_id}</option>)}
-          </select>
-        </label>
+        <div className="flex max-w-full flex-wrap items-center gap-2">
+          <button type="button" onClick={layout.reset} title="Restore the default panel width and panels" className="hidden items-center gap-1.5 rounded-lg px-3 py-2.5 text-[13px] font-medium text-muted transition hover:bg-sunken hover:text-ink lg:inline-flex"><LayoutPanelLeft size={16} aria-hidden /> Reset layout</button>
+          <label className="flex items-center gap-2 text-[13px] text-muted">
+            Case
+            <select aria-label="CT case" value={caseId ?? ""} disabled={!data || status === "loading"} onChange={event => setCaseId(event.target.value)} className="min-w-56 rounded-lg border border-line bg-surface px-3 py-2.5 font-mono text-[12.5px] text-ink shadow-card transition hover:border-line-strong disabled:opacity-40">
+              {data?.cases.map(c => <option key={c.case_id} value={c.case_id}>{c.case_id}</option>)}
+            </select>
+          </label>
+        </div>
       </header>
 
-      {listError && <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line bg-surface shadow-card p-4 text-sm text-caution">
+      {listError && <div role="alert" className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line bg-surface p-4 text-sm text-caution shadow-card lg:mt-4 lg:shrink-0">
         <div className="space-y-1"><p>{listError}</p><p className="text-xs text-muted">The meshes come from a private Vultr bucket through the backend&apos;s GET /api/bones, which needs the VULTR_S3_* keys (they are not in the repo). Without them, run the front end against the live backend: NEXT_PUBLIC_API_BASE_URL=https://api.rainbone.health npm run dev</p></div><button className={buttonClass} onClick={() => void refresh()}>Retry</button>
       </div>}
 
-      {data && selected && <div className="grid gap-4 lg:h-[calc(100dvh-14rem)] lg:min-h-[460px] lg:grid-cols-[1fr_320px]">
-        <section aria-label="Interactive pelvic bone meshes" className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-line bg-viewport">
-          <div className="relative min-h-[360px] flex-1 sm:min-h-[440px] lg:min-h-0">
-            <div ref={containerRef} role="img" aria-label={`Bone meshes of ${selected.case_id}, anterior view`} className="absolute inset-0 touch-none" />
-            {status === "ready" && <p className="pointer-events-none absolute bottom-3 left-3 right-3 text-center text-[10px] text-viewport-ink">Anterior view · drag to rotate · scroll to zoom · shift + drag to pan</p>}
-            {status === "loading" && <div role="status" className="absolute inset-0 flex items-center justify-center text-sm text-viewport-ink"><span className="mr-3 h-3 w-3 animate-pulse rounded-full bg-spectrum-cyan" />Downloading meshes from object storage…</div>}
-            {status === "error" && <div role="alert" className="absolute inset-0 flex flex-col items-center justify-center gap-4 p-8 text-center"><p className="max-w-sm text-sm text-spectrum-amber">{meshError}</p><button className={buttonClass} onClick={() => { if (urlsFresh(data)) setAttempt(n => n + 1); else void refresh(); }}>Reload</button></div>}
-          </div>
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-viewport-line px-4 py-3 text-[11px] text-viewport-ink">
-            <span className="flex items-center gap-1.5">
-              {status === "ready" && (allVerified
-                ? <><ShieldCheck size={14} className="text-viewport-ink" /> {loaded.length} meshes, sha256 matches the manifest</>
-                : <><ShieldAlert size={14} className="text-spectrum-amber" /> {loaded.length} meshes, sha256 not checked (needs https or localhost)</>)}
-            </span>
-            <span className="font-mono">{storageHost ? `from ${storageHost}` : ""}{data ? ` · links expire ${new Date(data.validUntil).toLocaleTimeString()}` : ""}</span>
-            <button disabled={status !== "ready"} onClick={() => resetRef.current?.()} className={buttonClass} aria-label="Reset view"><RotateCcw size={14} /></button>
-          </div>
-        </section>
+      {data && selected && <>
+        <div ref={rowRef} style={{ "--panel-w": `${layout.panelWidth}px` } as React.CSSProperties} className="mt-6 grid gap-6 lg:mt-4 lg:flex lg:min-h-0 lg:flex-1 lg:gap-0">
+          <section aria-label="Interactive pelvic bone meshes" className="flex min-w-0 flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-card lg:min-h-0 lg:flex-1">
+            <div className="flex items-center justify-between gap-3 px-5 py-4">
+              <div className="min-w-0">
+                <h2 className="flex items-center gap-2 text-[15px] font-semibold text-ink"><Box size={17} className="shrink-0 text-link" aria-hidden /> <span className="truncate">{selected.case_id}</span></h2>
+                <p className="mt-0.5 truncate text-[12px] text-muted">{dataset?.name ?? "CTPelvic1K"}</p>
+              </div>
+              <button disabled={status !== "ready"} onClick={() => resetRef.current?.()} className="shrink-0 rounded-lg border border-line bg-surface p-2 text-muted transition hover:border-line-strong hover:text-ink disabled:opacity-40" aria-label="Reset view" title="Reset view"><RotateCcw size={16} /></button>
+            </div>
+            <div className="relative mx-3 min-h-[360px] flex-1 overflow-hidden rounded-xl bg-viewport sm:min-h-[440px] lg:min-h-[240px]">
+              <div ref={containerRef} role="img" aria-label={`Bone meshes of ${selected.case_id}, anterior view`} className="absolute inset-0 touch-none" />
+              {status === "ready" && <p className="pointer-events-none absolute bottom-3 left-3 right-3 text-center text-[11px] text-viewport-ink/70">Anterior view · drag to rotate · scroll to zoom · shift + drag to pan</p>}
+              {status === "loading" && <div role="status" className="absolute inset-0 flex items-center justify-center text-[13px] text-viewport-ink"><span className="mr-3 h-3 w-3 animate-pulse rounded-full bg-spectrum-cyan" />Downloading meshes from object storage…</div>}
+              {status === "error" && <div role="alert" className="absolute inset-0 flex flex-col items-center justify-center gap-4 p-8 text-center"><p className="max-w-sm text-sm text-spectrum-amber">{meshError}</p><button className={buttonClass} onClick={() => { if (urlsFresh(data)) setAttempt(n => n + 1); else void refresh(); }}>Reload</button></div>}
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-5 py-3 text-[12px] text-body">
+              <span className="flex items-center gap-1.5">
+                {status === "ready" && (allVerified
+                  ? <><ShieldCheck size={15} className="text-success" aria-hidden /> {loaded.length} meshes, sha256 matches the manifest</>
+                  : <><ShieldAlert size={15} className="text-caution" aria-hidden /> {loaded.length} meshes, sha256 not checked (needs https or localhost)</>)}
+              </span>
+              <span className="font-mono text-[11px] text-muted">{storageHost ? `from ${storageHost}` : ""}{data ? ` · links expire ${new Date(data.validUntil).toLocaleTimeString()}` : ""}</span>
+            </div>
+          </section>
 
-        <aside className="space-y-4 lg:min-h-0 lg:overflow-y-auto lg:pr-1">
-          <section aria-label="Bones" className="rounded-xl border border-line bg-surface shadow-card p-4">
-            <h2 className="text-sm font-medium">Bones</h2>
-            <p className="mt-1 text-[11px] text-muted">Dice: overlap with the CTPelvic1K expert mask (1 = identical).</p>
-            <ul className="mt-3 space-y-2">
-              {loaded.map(bone => {
-                const style = BONE_STYLE[bone.name];
-                const record = bonesByName.get(bone.name);
-                const score = style?.dice ? dice[style.dice] : undefined;
-                return (
-                  <li key={bone.name}>
-                    <label className="flex cursor-pointer items-start gap-2 text-xs">
-                      <input type="checkbox" checked={!hidden.has(bone.name)} onChange={() => toggle(bone.name)} className="mt-0.5 accent-link" />
-                      <span className="mt-0.5 h-3 w-3 shrink-0 rounded-sm" style={{ background: style?.color ?? FALLBACK_COLOR }} />
-                      <span className="flex-1">
-                        <span className="text-ink">{style?.label ?? bone.name}</span>
-                        <span className="block font-mono text-[10px] text-muted">
-                          {record?.volume_ml !== undefined ? `${record.volume_ml.toFixed(1)} mL · ` : ""}
-                          {typeof score === "number" ? `Dice ${score.toFixed(3)} · ` : ""}
-                          {bone.triangles.toLocaleString()} triangles
-                          {record?.touches_scan_z_limit ? " · cut off by the scan" : ""}
+          <PanelSplitter defaultWidth={BONES_PANEL_DEFAULT} width={layout.panelWidth} panelsId="bones-panels" rowRef={rowRef} onResize={layout.setPanelWidth} />
+
+          <div id="bones-panels" className="flex min-w-0 flex-col gap-6 lg:min-h-0 lg:w-[var(--panel-w)] lg:max-w-[calc(100%-416px)] lg:shrink-0 lg:gap-4 lg:overflow-y-auto lg:overscroll-contain lg:pb-1 lg:pr-1">
+            {panel("bones", "Bones", <section aria-label="Bones" className="overflow-hidden rounded-2xl border border-line bg-surface shadow-card">
+              <div className="flex items-center justify-between gap-3 border-b border-line px-5 py-4">
+                <h2 className="text-[15px] font-semibold text-ink">Bones</h2>
+                <Bone size={17} className="text-link" aria-hidden />
+              </div>
+              <ul className="px-2 py-2">
+                {loaded.map(bone => {
+                  const style = BONE_STYLE[bone.name];
+                  const record = bonesByName.get(bone.name);
+                  const score = style?.dice ? dice[style.dice] : undefined;
+                  return (
+                    <li key={bone.name}>
+                      <label className="flex cursor-pointer items-start gap-2.5 rounded-lg px-3 py-1.5 text-[13px] transition hover:bg-sunken">
+                        <input type="checkbox" checked={!hidden.has(bone.name)} onChange={() => toggle(bone.name)} className="mt-1 accent-link" />
+                        <span className="mt-1 h-3 w-3 shrink-0 rounded-sm" style={{ background: style?.color ?? FALLBACK_COLOR }} />
+                        <span className="min-w-0 flex-1">
+                          <span className="font-medium text-ink">{style?.label ?? bone.name}</span>
+                          <span className="block text-[11px] leading-4 text-muted tabular-nums">
+                            {record?.volume_ml !== undefined ? `${record.volume_ml.toFixed(1)} mL · ` : ""}
+                            {typeof score === "number" ? `Dice ${score.toFixed(3)} · ` : ""}
+                            {bone.triangles.toLocaleString()} triangles
+                            {record?.touches_scan_z_limit ? " · cut off by the scan" : ""}
+                          </span>
                         </span>
-                      </span>
-                    </label>
-                  </li>
-                );
-              })}
-            </ul>
-          </section>
+                      </label>
+                    </li>
+                  );
+                })}
+              </ul>
+              <p className="border-t border-line bg-sunken/60 px-5 py-3 text-[11.5px] leading-5 text-muted">Dice: overlap with the CTPelvic1K expert mask (1 = identical).</p>
+            </section>)}
 
-          <section aria-label="Sources and licences" className="space-y-2 rounded-xl border border-line bg-surface shadow-card p-4 text-[11px] leading-5 text-muted">
-            <h2 className="text-sm font-medium text-ink">Sources</h2>
-            <p>
-              CT: {dataset?.name ?? "CTPelvic1K"}, Liu et al.,{" "}
-              {dataset?.zenodo_record ? <a className="text-link underline underline-offset-2 hover:decoration-2" href={dataset.zenodo_record} target="_blank" rel="noreferrer">Zenodo{dataset.doi ? ` ${dataset.doi}` : ""}</a> : null}
-              {licenseUrl ? <> · <a className="text-link underline underline-offset-2 hover:decoration-2" href={licenseUrl} target="_blank" rel="noreferrer">CC BY 4.0</a></> : dataset?.license ? ` · ${dataset.license}` : ""}
-            </p>
-            <p>{dataset?.changes ?? "Masks and meshes are automatic segmentations derived from the CT, not the dataset's own annotations."}</p>
-            <p>
-              Segmentation:{" "}
-              {tool?.repository ? <a className="text-link underline underline-offset-2 hover:decoration-2" href={tool.repository} target="_blank" rel="noreferrer">{tool.name ?? "TotalSegmentator"} {tool.version}</a> : `${tool?.name ?? "TotalSegmentator"} ${tool?.version ?? ""}`}
-              {tool?.license ? ` · ${tool.license.split(" (")[0]}` : ""}
-            </p>
-            <p className="text-caution">Research data, not for clinical use.{tool?.disclaimer ? ` ${tool.disclaimer}` : ""}</p>
-          </section>
-        </aside>
-      </div>}
+            {panel("sources", "Sources", <section aria-label="Sources and licences" className="overflow-hidden rounded-2xl border border-line bg-surface shadow-card">
+              <div className="flex items-center justify-between gap-3 border-b border-line px-5 py-4">
+                <h2 className="text-[15px] font-semibold text-ink">Sources</h2>
+                <BookOpen size={17} className="text-link" aria-hidden />
+              </div>
+              <div className="space-y-2 px-5 py-4 text-[12px] leading-5 text-muted">
+                <p>
+                  CT: {dataset?.name ?? "CTPelvic1K"}, Liu et al.,{" "}
+                  {dataset?.zenodo_record ? <a className="text-link underline underline-offset-2 hover:decoration-2" href={dataset.zenodo_record} target="_blank" rel="noreferrer">Zenodo{dataset.doi ? ` ${dataset.doi}` : ""}</a> : null}
+                  {licenseUrl ? <> · <a className="text-link underline underline-offset-2 hover:decoration-2" href={licenseUrl} target="_blank" rel="noreferrer">CC BY 4.0</a></> : dataset?.license ? ` · ${dataset.license}` : ""}
+                </p>
+                <p>{dataset?.changes ?? "Masks and meshes are automatic segmentations derived from the CT, not the dataset's own annotations."}</p>
+                <p>
+                  Segmentation:{" "}
+                  {tool?.repository ? <a className="text-link underline underline-offset-2 hover:decoration-2" href={tool.repository} target="_blank" rel="noreferrer">{tool.name ?? "TotalSegmentator"} {tool.version}</a> : `${tool?.name ?? "TotalSegmentator"} ${tool?.version ?? ""}`}
+                  {tool?.license ? ` · ${tool.license.split(" (")[0]}` : ""}
+                </p>
+              </div>
+            </section>)}
+          </div>
+        </div>
+        {/* Under the row like the overview's research note, so collapsing a panel never hides it. */}
+        <p className="mt-8 border-t border-line pt-5 text-[11px] leading-5 text-caution lg:mt-3 lg:shrink-0 lg:border-t-0 lg:pt-0 lg:leading-4">Research data, not for clinical use.{tool?.disclaimer ? ` ${tool.disclaimer}` : ""}</p>
+      </>}
 
-      {!data && !listError && <div role="status" className="rounded-xl border border-line bg-surface shadow-card p-6 text-sm text-muted">Asking the API for signed links…</div>}
+      {!data && !listError && <div role="status" className="mt-6 rounded-2xl border border-line bg-surface p-6 text-sm text-muted shadow-card lg:mt-4">Asking the API for signed links…</div>}
     </div>
   );
 }

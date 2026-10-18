@@ -135,8 +135,8 @@ _OTHER_ARF0_BEFORE = re.compile(r"\b(?:median|average|mean|typical|fractured|low
                                 r"range[ds]?|ranging|other)\b[^.;]*$", re.IGNORECASE)
 
 SYSTEM_PROMPT = (
-    "You explain to a reader with no medical or engineering background how likely one real thigh bone "
-    "(femur) is to break, using only published research data about it. The user message is JSON. The femur "
+    "You explain published research measures for a real thigh bone (femur) to a reader with no medical or "
+    "engineering background, using only the supplied facts. The user message is JSON. The femur "
     "belongs to one of cohort_n women in the HFValid study, who had a CT scan of the femur and were followed "
     "to record whether they had a fracture afterwards. Fields: age is the woman's age at the CT scan. "
     "msf_newtons is the femur's Minimum Sidefall Strength (MSF): the smallest sideways-fall force, over many "
@@ -155,7 +155,7 @@ SYSTEM_PROMPT = (
     "fractured_arf0_min_percent to fractured_arf0_max_percent. fractured_within_followup says whether this "
     "woman had a recorded fracture during the follow-up, and days_ct_to_fracture is then the days from the CT scan "
     "to it. "
-    "Write 2 or 3 short plain sentences, at most 420 characters, on how likely this femur is to break: first "
+    "Write 2 or 3 short plain sentences, at most 420 characters, describing the research evidence: first "
     "what a sideways fall would do to it (factor_of_risk_low to factor_of_risk_high times its strength), then "
     "where its ARF0 sits among the cohort_n women, then what the follow-up recorded. Credit ARF0 and MSF to "
     "'the study authors' model' without naming the authors, and add no disclaimer (the page adds one). "
@@ -435,6 +435,51 @@ _ECHOED_FIELDS = re.compile(r"\b(?:" + "|".join(name.replace("_", r"\s+") for na
                             re.IGNORECASE)
 
 
+def _semantic_mismatch(text: str, facts: RiskFacts) -> Optional[str]:
+    """Conservative checks for supported claim patterns, not a proof of arbitrary prose meaning.
+
+    Keep the nearest named measure attached to its comparison within a sentence. In particular an ARF0
+    value cannot be described as 'weaker than' the MSF rank, even though both numbers occur in the facts.
+    """
+    for sentence in re.split(r"(?<=[.!?])\s+|;", text):
+        for comparison in _SUBJECT_VS_N.finditer(sentence):
+            prefix = sentence[:comparison.start()]
+            subjects = list(re.finditer(r"\bARF0?\b|\bMSF\b|\b(?:minimum sidefall )?strength\b", prefix, re.I))
+            if not subjects:
+                continue
+            subject = subjects[-1].group().lower()
+            word, count = comparison.group(1).lower(), _number_value(comparison.group(2))
+            if subject.startswith("arf"):
+                if word in {"weaker", "stronger"} or count != facts.arf0_higher_than:
+                    return "ARF0 comparison is not this femur's ARF0 rank"
+            elif count != facts.msf_lower_than:
+                return "MSF comparison is not this femur's strength rank"
+
+    # Direct numerical declarations. Other sentence forms continue through the existing checks; a
+    # rejected declaration falls through to another provider or the deterministic template.
+    declarations = (
+        (r"\b(?:its|this femur's|the femur's)\s+(?:MSF|(?:minimum sidefall )?strength)"
+         r"(?:\s*\([^)]*\))?\s*(?:is|was|of|at|=|:)\s*", _rounded(facts.msf_newtons), "MSF"),
+        (r"\b(?:sideways[- ]fall force|fall force)\s*(?:is|was|of|at|=|:)\s*",
+         _rounded(facts.fall_force_low_newtons, facts.fall_force_high_newtons), "fall force"),
+    )
+    for prefix, pool, label in declarations:
+        for match in re.finditer(prefix + r"([\d,]+(?:\.\d+)?)\s*(?:N\b|newtons?\b)", text, re.I):
+            if not _is_one_of(_number_value(match.group(1)), pool):
+                return f"not this femur's {label}"
+
+    # Recorded outcomes are retrospective. Do not confuse cohort-level '4 women fractured' with this case.
+    no_outcome = re.search(r"\bno fracture (?:was |is )?recorded\b|\b(?:this|the) woman "
+                           r"(?:did not|didn't|never) (?:have|sustain|experience|suffer) (?:a )?fracture\b|"
+                           r"\b(?:the study(?: follow-up)?|follow-up) recorded no fracture\b", text, re.I)
+    yes_outcome = re.search(r"\b(?:this|the) woman (?:had|sustained|experienced|suffered) (?:a )?fracture\b|"
+                            r"\b(?:this|the) woman fractured\b|\b(?:the study|follow-up) recorded a fracture\b|"
+                            r"\ba fracture was recorded for this\b", text, re.I)
+    if (no_outcome and facts.fractured_within_followup) or (yes_outcome and not facts.fractured_within_followup):
+        return "recorded follow-up outcome contradicts this case"
+    return None
+
+
 def check(text: str, facts: RiskFacts) -> Optional[str]:
     """None when `text` may be shown, else the reason it is rejected."""
     if not text.strip():
@@ -478,7 +523,7 @@ def check(text: str, facts: RiskFacts) -> Optional[str]:
         hit = pattern.search(scan)
         if hit:
             return f"blocked wording: {hit.group(0)!r}"
-    return None
+    return _semantic_mismatch(scan, facts)
 
 
 # ----------------------------------------------------------------------------- template
@@ -567,9 +612,12 @@ async def analyse(request: RiskRequest, env: Optional[Mapping[str, str]] = None,
         return answer.model_copy(update={"grounding": grounding, "logged": logged})
 
     # Kept per store too, so the ai_analyses row an answer points to records where its facts came from.
-    key = (request.case_id, grounding and grounding.store, facts_json(facts), chain_signature(order, tiers))
+    key = ("checker-2", request.case_id, grounding and (grounding.store, grounding.key, grounding.sha256,
+                                                      grounding.verified), facts_json(facts),
+           chain_signature(order, tiers))
     answer = await _answers.get_or_compute(
-        key, produce, lambda answer: ai_log.kept_for(answer_ttl(answer.provider), answer.logged, e))
+        key, produce, lambda answer: ai_log.kept_for(answer_ttl(answer.provider), answer.logged, e),
+        valid=lambda answer: check(answer.text.removesuffix(" " + NOTE), facts) is None)
     # A kept answer shows this request's reason for a fallback (the store is the same, or it would not be kept).
     return answer if answer.grounding == grounding else answer.model_copy(update={"grounding": grounding})
 

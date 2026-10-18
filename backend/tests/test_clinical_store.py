@@ -264,6 +264,16 @@ class GroundedAnswerTests(StoreTestCase):
         self.assertEqual(body["facts"]["arf0_percent"], 47.1)
         self.assertNoSecrets(json.dumps(body))
 
+    def test_invalid_pin_makes_grounded_routes_unavailable_without_generation(self):
+        with mock.patch.object(cs, "pinned_sha256", return_value="0" * 64), \
+                mock.patch.object(rk, "_run_chain") as risk_chain, mock.patch.object(ex, "_run_chain") as explain_chain:
+            for path in ("/api/risk-analysis", "/api/explain"):
+                with self.subTest(path=path), self.assertLogs("rainbowbone.clinical", "WARNING"):
+                    response = self.client.post(path, json={"case_id": "Pat001"})
+                self.assertEqual(response.status_code, 503)
+            risk_chain.assert_not_called()
+            explain_chain.assert_not_called()
+
     def test_risk_analysis_falls_back_when_the_bucket_is_changed(self):
         self.s3.put_object(Bucket=BUCKET, Key=RISK_KEY, Body=b'{"subjects": {}}')
         with self.assertLogs("rainbowbone.clinical", "WARNING"):
@@ -379,6 +389,13 @@ class FallbackTests(StoreTestCase):
         with mock.patch.dict(cs.CATALOGUE, {"hfvalid-risk": missing}), self.assertLogs("rainbowbone.clinical"):
             with self.assertRaises(cs.ClinicalDataUnavailable):
                 cs.get_clinical_json("hfvalid-risk", {})
+
+    def test_missing_or_mismatched_pin_fails_closed_even_for_valid_local_json(self):
+        for pin in (None, "0" * 64):
+            with self.subTest(pin=pin), mock.patch.object(cs, "pinned_sha256", return_value=pin):
+                cs.reset_cache()
+                with self.assertLogs("rainbowbone.clinical"), self.assertRaises(cs.ClinicalDataUnavailable):
+                    cs.get_clinical_json("hfvalid-risk", {})
 
 
 if __name__ == "__main__":
