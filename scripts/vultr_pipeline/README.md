@@ -1,7 +1,13 @@
 # Pelvic bones from CTPelvic1K to Vultr Object Storage
 
-`pipeline.py` moves bone assets out of `public/` and into a Vultr Object Storage
-bucket (S3-compatible). For each CT case it:
+`pipeline.py` publishes CTPelvic1K pelvic bone masks and meshes to a private Vultr
+Object Storage bucket (S3-compatible) instead of the Next.js `public/` folder. The
+backend's `GET /api/bones` hands out short-lived pre-signed URLs, and the front end's
+`/bones` page downloads the meshes from the bucket through them. The existing femur
+FEA model (`public/models/hfvalid-femur`) and `public/sample_bone.nii.gz` are still
+served from `public/`; moving them is not part of this change.
+
+For each CT case the pipeline:
 
 1. Looks up the file URLs, sizes and MD5 checksums in the Zenodo API
    (`https://zenodo.org/api/records/4588403`), so nothing is hard-coded.
@@ -27,7 +33,7 @@ bucket (S3-compatible). For each CT case it:
 earlier (by this script or by the same steps run by hand), after checking every
 file against the manifest.
 
-The backend then serves `GET /api/bones` (see `backend/README.md`): it reads the
+The backend then serves `GET /api/bones` (see [below](#get-apibones)): it reads the
 manifest from the bucket and returns 15-minute pre-signed GET URLs, so the
 browser downloads the files directly from Vultr without any credentials.
 
@@ -35,11 +41,14 @@ browser downloads the files directly from Vultr without any credentials.
 
 | Source | Licence | Cite |
 |---|---|---|
-| **CTPelvic1K**, Zenodo record [4588403](https://zenodo.org/records/4588403), DOI [10.5281/zenodo.4588403](https://doi.org/10.5281/zenodo.4588403). Code and details: [MIRACLE-Center/CTPelvic1K](https://github.com/MIRACLE-Center/CTPelvic1K) | CC BY 4.0 | Pengbo Liu, Hu Han, Yuanqi Du, Heqin Zhu, Yinhao Li, Feng Gu, Honghu Xiao, Jun Li, Chunpeng Zhao, Li Xiao, Xinbao Wu, S. Kevin Zhou. Deep Learning to Segment Pelvic Bones: Large-scale CT Datasets and Baseline Models. International Journal of Computer Assisted Radiology and Surgery (IJCARS) pp. 1-8 (2021). Preprint arXiv:2012.08721 |
+| **CTPelvic1K**, Zenodo record [4588403](https://zenodo.org/records/4588403), DOI [10.5281/zenodo.4588403](https://doi.org/10.5281/zenodo.4588403). Code and details: [MIRACLE-Center/CTPelvic1K](https://github.com/MIRACLE-Center/CTPelvic1K) | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | Pengbo Liu, Hu Han, Yuanqi Du, Heqin Zhu, Yinhao Li, Feng Gu, Honghu Xiao, Jun Li, Chunpeng Zhao, Li Xiao, Xinbao Wu, S. Kevin Zhou. Deep Learning to Segment Pelvic Bones: Large-scale CT Datasets and Baseline Models. International Journal of Computer Assisted Radiology and Surgery (IJCARS) pp. 1-8 (2021). Preprint arXiv:2012.08721 |
 | **TotalSegmentator** 2.18.0, [wasserth/TotalSegmentator](https://github.com/wasserth/TotalSegmentator) | Apache-2.0 (the code and the default `total` task used here) | Wasserthal J. et al. TotalSegmentator: Robust Segmentation of 104 Anatomic Structures in CT Images. Radiology: Artificial Intelligence, 2023. DOI [10.1148/ryai.230024](https://doi.org/10.1148/ryai.230024). Also cite [nnU-Net](https://github.com/MIC-DKFZ/nnUNet) |
 
-The manifest carries the dataset's licence, DOI, creators and reference as the
-Zenodo API returns them, and the TotalSegmentator citation.
+The manifest carries the dataset's licence (with a link to the licence text), DOI,
+creators and reference as the Zenodo API returns them, a `changes` note saying the
+masks and meshes are derived from the CT by automatic segmentation (CC BY 4.0
+asks for both), and the TotalSegmentator citation. The `/bones` page shows the same
+attribution under the viewer.
 
 CTPelvic1K is a pelvic bone segmentation dataset. Dataset 6 (CLINIC) is described
 by its authors as preoperative pelvic-fracture CT without metal artefacts. The
@@ -167,7 +176,7 @@ is `ctpelvic1k/<path>`. Content types: `.nii.gz` `application/gzip`, `.vtp`
 | Field | Content |
 |---|---|
 | `generated_utc` | Time stamp |
-| `dataset` | Name, Zenodo record, DOI, licence, creators and citation (from the Zenodo API), preprint, repository, the CTPelvic1K label map and its source file, the source archives (bytes, MD5, URL) and how they were read |
+| `dataset` | Name, Zenodo record, DOI, licence and `license_url`, `changes` (what was derived and how), creators and citation (from the Zenodo API), preprint, repository, the CTPelvic1K label map and its source file, the source archives (bytes, MD5, URL) and how they were read |
 | `segmentation_tool` | TotalSegmentator version, licence, citation, nnU-Net citation, repository, "not a medical device" disclaimer |
 | `mesh_method` | How meshes are made, with the VTK version |
 | `cases[].source_file` | Archive member, bytes, sha256, shape, spacing, orientation of the CT |
@@ -208,9 +217,99 @@ lumbar spine in view rather than L5 alone, so the L5 Dice is informational only.
   made with the same classes, `--fast` and TotalSegmentator version. Uploads skip
   every object whose stored sha256 metadata matches; `manifest.json` changes on
   each run (time stamp) and is uploaded again.
+- `manifest.json` lists only the cases of the current run. Case records that an
+  earlier run left in `cases/` (with other `--cases` or `--bones`) are not published.
 - Before any upload, every file the manifest lists is checked against its bytes and
   sha256, its path must be relative with no `..`, and the manifest must not contain
-  the folder's own path or the home directory. Any failure uploads nothing.
+  the folder's own path or the home directory (checked on the parsed values, so
+  Windows paths with `\` are caught too). Any failure uploads nothing.
+- `--work-dir` and `--from-processed` are refused inside the repository, compared
+  by file identity, so a different-case spelling of the repository path on macOS or
+  Windows is refused as well.
+
+## GET /api/bones
+
+`backend/routes_bones.py` reads `ctpelvic1k/manifest.json` from the bucket and returns
+it with the object `key` (`ctpelvic1k/<path>`), `content_type` and a pre-signed GET
+`url` added to every file, valid for 15 minutes. The browser downloads the files
+straight from the bucket; the keys stay on the server.
+
+The route reads the same four `VULTR_S3_*` variables from the process environment.
+Start the backend with them loaded only into that process:
+
+```bash
+cd backend
+python -m pip install -r requirements.txt
+( set -a; . /path/outside/repo/vultr-objstore.env; set +a; uvicorn main:app --reload )
+```
+
+```powershell
+cd backend
+python -m pip install -r requirements.txt
+Get-Content C:\secure\vultr-objstore.env | ForEach-Object {
+  if ($_ -match '^(VULTR_S3_\w+)=(.*)$') { Set-Item "env:$($matches[1])" $matches[2] } }
+uvicorn main:app --reload
+```
+
+| Status | When |
+|---|---|
+| 200 | The manifest, with `key`, `content_type` and `url` added to each file, `expires_in_seconds: 900`, `expires_at` and `manifest_key` |
+| 503 | A `VULTR_S3_*` variable is unset (`detail` names the missing variables, never their values), or `VULTR_S3_ENDPOINT` is not a valid URL |
+| 404 | The bucket has no `ctpelvic1k/manifest.json` yet: run the pipeline |
+| 502 | The bucket could not be read, or the manifest is not valid JSON or lacks a required field (`case_id`, or `path`, `kind`, `bytes`, `sha256` of a file) |
+
+Abridged 200 response (placeholder values):
+
+```json
+{
+  "expires_in_seconds": 900,
+  "expires_at": "<UTC time>",
+  "manifest_key": "ctpelvic1k/manifest.json",
+  "generated_utc": "<UTC time>",
+  "dataset": {"name": "CTPelvic1K (sub-dataset 6, CLINIC)", "license": "cc-by-4.0", "license_url": "https://creativecommons.org/licenses/by/4.0/", "doi": "10.5281/zenodo.4588403", "...": "..."},
+  "segmentation_tool": {"name": "TotalSegmentator", "version": "2.18.0", "license": "Apache-2.0 (...)", "citation": "..."},
+  "mesh_method": "vtkFlyingEdges3D at 0.5 on the binary mask ...",
+  "cases": [
+    {
+      "case_id": "<case>",
+      "bones": [{"name": "sacrum", "source_ts_classes": ["sacrum", "vertebrae_S1"], "volume_ml": 0, "...": "..."}],
+      "validation": {"dice_overlap_matched": {"sacrum_incl_S1": 0, "hip_left": 0, "hip_right": 0}, "...": "..."},
+      "files": [
+        {"path": "<case>/meshes/sacrum.vtp", "kind": "mesh", "bone": "sacrum",
+         "format": "VTK XML PolyData, binary zlib, float32 points, RAS world mm",
+         "bytes": 0, "sha256": "<hex>", "triangles": 0, "bounds_ras_mm": [0, 0, 0, 0, 0, 0],
+         "key": "ctpelvic1k/<case>/meshes/sacrum.vtp", "content_type": "application/xml",
+         "url": "https://<region>.vultrobjects.com/<bucket>/ctpelvic1k/<case>/meshes/sacrum.vtp?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Expires=900&..."}
+      ]
+    }
+  ]
+}
+```
+
+Only relative `path` values without `..` are signed, so every signed key is under
+`ctpelvic1k/`. A SigV4 pre-signed URL carries the access key ID in
+`X-Amz-Credential` (that is how S3 identifies the signer); the secret key is never
+sent. The route logs only S3 error codes and, for an invalid manifest, the field
+locations. For the browser to fetch the URLs, the bucket needs a CORS rule for the
+front end's origin (`pipeline.py --cors-origin <origin>`).
+
+## Front end: `/bones`
+
+`app/bones/page.tsx` (`components/CloudBones.tsx`) calls `GET /api/bones` at
+`NEXT_PUBLIC_API_BASE_URL` (default `http://127.0.0.1:8000`, the same variable the
+rest of the front end uses), lets you pick a case, downloads that case's `.vtp`
+meshes through their pre-signed URLs, checks each file's sha256 against the
+manifest (browsers allow this on `https` and `localhost`), and draws them with
+vtk.js. Bones can be hidden one by one; Dice against the CTPelvic1K annotation and
+the dataset and tool attribution are shown beside the viewer. When the links are
+about to expire the page asks the API for new ones.
+
+```bash
+npm run dev            # then open http://localhost:3000/bones
+```
+
+The backend's CORS list (`backend/main.py`) allows `http://localhost:3000`, and the
+bucket's CORS rule must list the same origin (`--cors-origin http://localhost:3000`).
 
 ## Tests
 
@@ -221,6 +320,14 @@ a fake executable placed first on `PATH`.
 ```bash
 python -m pip install -r scripts/vultr_pipeline/requirements.txt "moto[s3]"
 python -m unittest discover -s scripts/vultr_pipeline -p "test_*.py" -v
+```
+
+`GET /api/bones` has its own tests, also against moto:
+
+```bash
+cd backend
+python -m pip install -r requirements.txt python-multipart httpx "moto[s3]"
+python -m unittest tests.test_bones -v
 ```
 
 ## Windows notes
