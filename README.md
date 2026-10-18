@@ -1,5 +1,9 @@
 # Rainbone
 
+![Rainbone: a stress test for bones](docs/images/rainbone-cover.png)
+
+**[Live site](https://rainbone.health)** · **[Demo video](https://youtu.be/SCrmSu9aVzs)** · **[Devpost](https://devpost.com/software/rainbowbone)**
+
 **A stress test for bones, explained by AI.**
 
 Rainbone combines CT-derived 3D models, physics simulations and AI to explore how bone
@@ -14,6 +18,13 @@ those 101 women. Try it: <https://rainbone.health>
 number it writes is checked against the data before it's shown, its facts are read from
 Vultr Object Storage with a verified sha256, and every answer a model writes is logged in Tiger Cloud.
 See [The AI layer](#the-ai-layer).
+
+| Sponsor tech | What it does in Rainbone | Where to see it |
+|---|---|---|
+| **Gemini API** | Writes the AI fracture-risk analysis, the plain-words explanation and Ask Rainbone's answers, only over facts the code computed; every number is checked before it is shown | Dashboard AI cards, the Ask Rainbone drawer |
+| **Vultr** | Compute runs the FastAPI and SfePy engine at api.rainbone.health; Object Storage holds the AI's sha256-pinned clinical facts and the pelvic meshes | Imaging library, the provenance line under each AI card |
+| **Tiger Data** | TimescaleDB stores every simulation run (hypertable plus an hourly continuous aggregate) and an audit row for every AI answer | History chart, Secure datasets → Recent AI answers, `/api/ai-log` |
+| **GoDaddy Registry** | The `.health` domain | <https://rainbone.health> |
 
 ## What it does
 
