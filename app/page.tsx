@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Dashboard } from "@/components/dashboard";
 import { mockMetrics, type ClinicalMetrics } from "@/lib/mock-data";
+import { apiUrl, fetchExplanation, type ExplanationState } from "@/lib/api";
 
 type SimulationResponse = {
   max_von_mises_stress_mpa: number;
@@ -14,6 +15,7 @@ type SimulationResponse = {
 export default function Home() {
   const [metrics, setMetrics] = useState<ClinicalMetrics>(mockMetrics);
   const [simulationStatus, setSimulationStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [explanation, setExplanation] = useState<ExplanationState>({ status: "idle" });
 
   useEffect(() => {
     let cancelled = false;
@@ -23,7 +25,7 @@ export default function Home() {
         if (!scan.ok) throw new Error("Sample scan unavailable");
         const formData = new FormData();
         formData.append("file", new File([await scan.blob()], "sample_bone.nii.gz", { type: "application/gzip" }));
-        const response = await fetch("http://127.0.0.1:8000/api/simulate", { method: "POST", body: formData });
+        const response = await fetch(apiUrl("/api/simulate"), { method: "POST", body: formData });
         if (!response.ok) throw new Error(`Simulation request failed (${response.status})`);
         const result = (await response.json()) as SimulationResponse;
         if (!cancelled) {
@@ -34,6 +36,9 @@ export default function Home() {
             fractureRisk: Math.round(result.fracture_risk_index_percent),
           });
           setSimulationStatus("ready");
+          setExplanation({ status: "loading" });
+          const explained = await fetchExplanation(result);
+          if (!cancelled) setExplanation(explained);
         }
       } catch {
         if (!cancelled) setSimulationStatus("error");
@@ -43,5 +48,5 @@ export default function Home() {
     return () => { cancelled = true; };
   }, []);
 
-  return <Dashboard metrics={metrics} simulationStatus={simulationStatus} />;
+  return <Dashboard metrics={metrics} simulationStatus={simulationStatus} explanation={explanation} />;
 }

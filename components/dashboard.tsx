@@ -15,9 +15,11 @@ import {
 import { ClinicalMetrics } from "@/components/clinical-metrics";
 import { StressChart } from "@/components/stress-chart";
 import { BoneViewer } from "@/components/BoneViewer";
+import { PlainExplanation } from "@/components/plain-explanation";
+import type { ExplanationState } from "@/lib/api";
 import type { ClinicalMetrics as Metrics } from "@/lib/mock-data";
 
-export function Dashboard({ metrics, simulationStatus }: { metrics: Metrics; simulationStatus: "loading" | "ready" | "error" }) {
+export function Dashboard({ metrics, simulationStatus, explanation }: { metrics: Metrics; simulationStatus: "loading" | "ready" | "error"; explanation: ExplanationState }) {
   return (
     <main className="min-h-screen bg-canvas">
       <div className="flex min-h-screen">
@@ -76,7 +78,10 @@ export function Dashboard({ metrics, simulationStatus }: { metrics: Metrics; sim
                 <BoneViewer />
                 <StressChart />
               </div>
-              <ClinicalMetrics metrics={metrics} simulationStatus={simulationStatus} />
+              <div className="min-w-0 space-y-5">
+                <ClinicalMetrics metrics={metrics} simulationStatus={simulationStatus} />
+                <PlainExplanation state={explanation} />
+              </div>
             </div>
           </div>
         </section>
