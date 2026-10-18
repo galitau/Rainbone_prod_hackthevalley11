@@ -36,7 +36,7 @@ const PAGES = [
   {
     href: "/preferences",
     name: "Preferences",
-    text: "Text size, reduced motion and whether the overview runs the live engine check when it opens. Saved in this browser only.",
+    text: "Theme (light, dark, high contrast or system), text size, reduced motion and whether the overview runs the sample automatically. Saved in this browser only.",
   },
 ] as const;
 
