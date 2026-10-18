@@ -76,7 +76,7 @@ export function HeaderPopover({ label, icon, title, dot, onOpenChange, children 
         className={`relative rounded-lg p-2 transition hover:bg-sunken hover:text-ink ${open ? "bg-sunken text-ink" : "text-muted"}`}
       >
         {icon}
-        {dot && <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-critical ring-2 ring-surface" aria-hidden />}
+        {dot && <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-link ring-2 ring-surface" aria-hidden />}
       </button>
       {open && (
         <div
@@ -85,8 +85,10 @@ export function HeaderPopover({ label, icon, title, dot, onOpenChange, children 
           role="dialog"
           aria-labelledby={titleId}
           tabIndex={-1}
-          // A link in the panel closes it, also when it points at the page already open.
+          // A link in the panel closes it, also when it points at the page already open; a modified click that opens
+          // the link in a new tab or window leaves this page, and the panel, as they are.
           onClick={(event) => {
+            if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
             if (event.target instanceof Element && event.target.closest("a[href]")) close(true);
           }}
           className="absolute right-4 top-full z-20 mt-2 max-h-[calc(100dvh-9rem)] w-[calc(100vw-2rem)] overflow-y-auto overscroll-contain rounded-2xl border border-line bg-surface text-left shadow-raised focus-visible:outline-none sm:right-0 sm:max-h-[calc(100dvh-5rem)] sm:w-[22rem]"

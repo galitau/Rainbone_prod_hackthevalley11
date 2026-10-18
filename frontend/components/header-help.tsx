@@ -11,7 +11,7 @@ const PAGES = [
   {
     href: "/dashboard",
     name: "Patient overview",
-    text: `One published ${FEMUR_MODEL.dataset} femur in 3D with its solved stress and displacement, the AI fracture risk analysis of the study's data for that femur, and a live engine check. Import scan solves your own CT file (.nii or .nii.gz).`,
+    text: `One published ${FEMUR_MODEL.dataset} femur in 3D with its solved stress and displacement, the AI fracture risk analysis of the study's data for that femur, and a live engine check. Import scan solves your own CT file (.nii or .nii.gz). A solved scan's file name is saved with its result and can appear in anyone's Notifications, so keep patient details out of it.`,
   },
   {
     href: "/physics-simulations",

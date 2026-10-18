@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Bell } from "lucide-react";
 import { HeaderPopover } from "@/components/header-popover";
 import type { ApiHealth } from "@/components/dashboard";
+import { aiAnswerLabel } from "@/lib/ai-label";
 import { fetchHistory, type ExplanationState, type HistoryState, type RiskAnalysisState } from "@/lib/api";
 
 // The bell lists only what the app already reads: the engine's latest saved runs (GET /api/history), the health
@@ -44,10 +45,6 @@ const HEALTH = {
   offline: { label: "Engine unreachable", detail: "Two GET /health tries in a row failed · checked every 15 s", dot: "bg-caution" },
 } as const;
 
-const PROVIDER_LABELS: Record<string, string> = { gemini: "Gemini", groq: "Groq" };
-const answeredBy = ({ provider, model }: { provider: string; model: string | null }) =>
-  provider === "template" ? "the built-in template (no AI)" : `${PROVIDER_LABELS[provider] ?? provider}${model ? ` · ${model}` : ""}`;
-
 type Props = { health?: ApiHealth; risk?: RiskAnalysisState; explanation?: ExplanationState };
 
 export function HeaderNotifications({ health, risk, explanation }: Props) {
@@ -84,13 +81,17 @@ export function HeaderNotifications({ health, risk, explanation }: Props) {
   const runs = history.status === "ready" ? [...history.runs].reverse().slice(0, RECENT) : [];
   const newest = runs.length > 0 ? Math.max(...runs.map((run) => Date.parse(run.time))) : null;
 
-  // Opening the panel marks everything listed as seen; a run that arrives while it is open is seen too.
+  // Opening the panel marks everything listed as seen; a run that arrives while it is open is seen too. Only server
+  // run times are compared, so a run the panel never listed (history still loading or unavailable, or a browser clock
+  // ahead of the server) is not marked seen. A stored 0 still records that the panel was opened.
   useEffect(() => {
     if (!open) return;
-    const stamp = Math.max(Date.now(), newest ?? 0);
-    writeSeen(stamp);
-    setSeen(stamp);
-  }, [open, newest]);
+    const stamp = Math.max(seen ?? 0, newest ?? 0);
+    if (stamp !== seen) {
+      writeSeen(stamp);
+      setSeen(stamp);
+    }
+  }, [open, newest, seen]);
 
   const onOpenChange = (next: boolean) => {
     setOpen(next);
@@ -105,13 +106,14 @@ export function HeaderNotifications({ health, risk, explanation }: Props) {
   const newCount = runs.filter((run) => isNew(run.time)).length;
   const summary =
     history.status === "loading" ? "Checking for new activity…"
+    : history.status === "unavailable" ? "Couldn't check for new activity"
     : newCount === 0 ? "No new activity"
     : newCount >= RECENT ? `At least ${RECENT} new saved runs`
     : `${newCount} new saved ${newCount === 1 ? "run" : "runs"}`;
 
   const ai = [
-    risk?.status === "ready" && { name: "AI fracture risk analysis", by: answeredBy(risk.analysis) },
-    explanation?.status === "ready" && { name: "In plain words", by: answeredBy(explanation.explanation) },
+    risk?.status === "ready" && { name: "AI fracture risk analysis", by: aiAnswerLabel(risk.analysis) },
+    explanation?.status === "ready" && { name: "In plain words", by: aiAnswerLabel(explanation.explanation) },
   ].filter((item): item is { name: string; by: string } => Boolean(item));
 
   const heading = "text-[11px] font-medium uppercase tracking-[0.08em] text-muted";
@@ -127,7 +129,7 @@ export function HeaderNotifications({ health, risk, explanation }: Props) {
       <div className="text-[12.5px] leading-5 text-body">
         <div className="px-5 pt-4" role="status">
           <p className="text-[13.5px] font-medium text-ink">{summary}</p>
-          {history.status !== "loading" && <p className="text-[11.5px] text-muted">{seenBefore === null ? "This browser has not opened this panel before." : "Since you last opened this panel."}</p>}
+          {history.status === "ready" && <p className="text-[11.5px] text-muted">{seenBefore === null ? "This browser has not opened this panel before." : "Since you last opened this panel."}</p>}
         </div>
 
         {health && (
@@ -150,7 +152,7 @@ export function HeaderNotifications({ health, risk, explanation }: Props) {
                   <div className="min-w-0">
                     <p className="flex items-center gap-1.5">
                       <time dateTime={run.time} className="whitespace-nowrap font-mono text-[11.5px] text-ink">{timestamp(run.time)}</time>
-                      {isNew(run.time) && <span className="rounded-full bg-critical/[0.08] px-1.5 text-[10.5px] font-medium text-critical">New</span>}
+                      {isNew(run.time) && <span className="rounded-full bg-link/[0.08] px-1.5 text-[10.5px] font-medium text-link">New</span>}
                     </p>
                     <p title={run.source_filename} className="mt-0.5 truncate font-mono text-[11px] text-muted">{run.source_filename}</p>
                   </div>
@@ -170,14 +172,14 @@ export function HeaderNotifications({ health, risk, explanation }: Props) {
             <h3 id="notify-ai" className={heading}>AI answers on this page</h3>
             <ul className="mt-2 space-y-1.5">
               {ai.map((item) => (
-                <li key={item.name}><span className="font-medium text-ink">{item.name}</span><span className="block text-[11.5px] text-muted">Answered by {item.by}</span></li>
+                <li key={item.name}><span className="font-medium text-ink">{item.name}</span><span className="block text-[11.5px] text-muted">{item.by}</span></li>
               ))}
             </ul>
           </section>
         )}
 
         <p className="mt-4 border-t border-line bg-sunken/60 px-5 py-3 text-[11px] leading-4 text-muted">
-          Saved runs come from GET /api/history: each solve this engine completed, whoever sent the scan. Checked when the page opens, when this panel opens and every minute while the page is visible.
+          Saved runs come from GET /api/history: each solve this engine completed, whoever sent the scan. File names appear exactly as sent, to anyone who opens this panel. Checked when the page opens, when this panel opens and every minute while the page is visible.
         </p>
       </div>
     </HeaderPopover>
