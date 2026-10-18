@@ -258,13 +258,13 @@ export function CloudBones() {
   const bonesByName = new Map((selected?.bones ?? []).map(bone => [bone.name, bone]));
   const dice = selected?.validation?.dice_overlap_matched ?? {};
   const allVerified = loaded.length > 0 && loaded.every(bone => bone.integrity === "verified");
-  const buttonClass = "rounded-lg border border-line bg-panel px-3 py-2 text-xs text-muted transition hover:text-ink disabled:opacity-40";
+  const buttonClass = "rounded-lg border border-line bg-surface shadow-card px-3 py-2 text-xs text-muted transition hover:text-ink disabled:opacity-40";
 
   return (
     <div className="mx-auto max-w-6xl space-y-4">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="flex items-center gap-2 text-lg font-medium"><Cloud size={18} className="text-cyan" /> Pelvic bones from Vultr Object Storage</h1>
+          <h1 className="flex items-center gap-2 text-lg font-medium"><Cloud size={18} className="text-link" /> Pelvic bones from Vultr Object Storage</h1>
           <p className="mt-1 max-w-2xl text-xs text-muted">
             TotalSegmentator bone meshes of CTPelvic1K CT scans. The browser downloads each mesh from a private bucket
             through a pre-signed link that the API issues for {data ? Math.round(data.expires_in_seconds / 60) : 15} minutes.
@@ -278,12 +278,12 @@ export function CloudBones() {
         </label>
       </header>
 
-      {listError && <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line bg-panel p-4 text-sm text-warning">
+      {listError && <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line bg-surface shadow-card p-4 text-sm text-caution">
         <p>{listError}</p><button className={buttonClass} onClick={() => void refresh()}>Retry</button>
       </div>}
 
       {data && selected && <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
-        <section aria-label="Interactive pelvic bone meshes" className="flex flex-col overflow-hidden rounded-xl border border-line bg-[#0a121b]">
+        <section aria-label="Interactive pelvic bone meshes" className="flex flex-col overflow-hidden rounded-xl border border-line bg-viewport">
           <div className="relative min-h-[440px] flex-1 sm:min-h-[520px]">
             <div ref={containerRef} role="img" aria-label={`Bone meshes of ${selected.case_id}, anterior view`} className="absolute inset-0 touch-none" />
             {status === "ready" && <p className="pointer-events-none absolute bottom-3 left-3 right-3 text-center text-[10px] text-[#7d91a4]">Anterior view · drag to rotate · scroll to zoom · shift + drag to pan</p>}
@@ -293,8 +293,8 @@ export function CloudBones() {
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line px-4 py-3 text-[11px] text-muted">
             <span className="flex items-center gap-1.5">
               {status === "ready" && (allVerified
-                ? <><ShieldCheck size={14} className="text-cyan" /> {loaded.length} meshes, sha256 matches the manifest</>
-                : <><ShieldAlert size={14} className="text-warning" /> {loaded.length} meshes, sha256 not checked (needs https or localhost)</>)}
+                ? <><ShieldCheck size={14} className="text-link" /> {loaded.length} meshes, sha256 matches the manifest</>
+                : <><ShieldAlert size={14} className="text-caution" /> {loaded.length} meshes, sha256 not checked (needs https or localhost)</>)}
             </span>
             <span className="font-mono">{storageHost ? `from ${storageHost}` : ""}{data ? ` · links expire ${new Date(data.validUntil).toLocaleTimeString()}` : ""}</span>
             <button disabled={status !== "ready"} onClick={() => resetRef.current?.()} className={buttonClass} aria-label="Reset view"><RotateCcw size={14} /></button>
@@ -302,7 +302,7 @@ export function CloudBones() {
         </section>
 
         <aside className="space-y-4">
-          <section aria-label="Bones" className="rounded-xl border border-line bg-panel p-4">
+          <section aria-label="Bones" className="rounded-xl border border-line bg-surface shadow-card p-4">
             <h2 className="text-sm font-medium">Bones</h2>
             <p className="mt-1 text-[11px] text-muted">Dice: overlap with the CTPelvic1K expert mask (1 = identical).</p>
             <ul className="mt-3 space-y-2">
@@ -313,7 +313,7 @@ export function CloudBones() {
                 return (
                   <li key={bone.name}>
                     <label className="flex cursor-pointer items-start gap-2 text-xs">
-                      <input type="checkbox" checked={!hidden.has(bone.name)} onChange={() => toggle(bone.name)} className="mt-0.5 accent-cyan" />
+                      <input type="checkbox" checked={!hidden.has(bone.name)} onChange={() => toggle(bone.name)} className="mt-0.5 accent-link" />
                       <span className="mt-0.5 h-3 w-3 shrink-0 rounded-sm" style={{ background: style?.color ?? FALLBACK_COLOR }} />
                       <span className="flex-1">
                         <span className="text-ink">{style?.label ?? bone.name}</span>
@@ -331,25 +331,25 @@ export function CloudBones() {
             </ul>
           </section>
 
-          <section aria-label="Sources and licences" className="space-y-2 rounded-xl border border-line bg-panel p-4 text-[11px] leading-5 text-muted">
+          <section aria-label="Sources and licences" className="space-y-2 rounded-xl border border-line bg-surface shadow-card p-4 text-[11px] leading-5 text-muted">
             <h2 className="text-sm font-medium text-ink">Sources</h2>
             <p>
               CT: {dataset?.name ?? "CTPelvic1K"}, Liu et al.,{" "}
-              {dataset?.zenodo_record ? <a className="text-cyan hover:underline" href={dataset.zenodo_record} target="_blank" rel="noreferrer">Zenodo{dataset.doi ? ` ${dataset.doi}` : ""}</a> : null}
-              {licenseUrl ? <> · <a className="text-cyan hover:underline" href={licenseUrl} target="_blank" rel="noreferrer">CC BY 4.0</a></> : dataset?.license ? ` · ${dataset.license}` : ""}
+              {dataset?.zenodo_record ? <a className="text-link hover:underline" href={dataset.zenodo_record} target="_blank" rel="noreferrer">Zenodo{dataset.doi ? ` ${dataset.doi}` : ""}</a> : null}
+              {licenseUrl ? <> · <a className="text-link hover:underline" href={licenseUrl} target="_blank" rel="noreferrer">CC BY 4.0</a></> : dataset?.license ? ` · ${dataset.license}` : ""}
             </p>
             <p>{dataset?.changes ?? "Masks and meshes are automatic segmentations derived from the CT, not the dataset's own annotations."}</p>
             <p>
               Segmentation:{" "}
-              {tool?.repository ? <a className="text-cyan hover:underline" href={tool.repository} target="_blank" rel="noreferrer">{tool.name ?? "TotalSegmentator"} {tool.version}</a> : `${tool?.name ?? "TotalSegmentator"} ${tool?.version ?? ""}`}
+              {tool?.repository ? <a className="text-link hover:underline" href={tool.repository} target="_blank" rel="noreferrer">{tool.name ?? "TotalSegmentator"} {tool.version}</a> : `${tool?.name ?? "TotalSegmentator"} ${tool?.version ?? ""}`}
               {tool?.license ? ` · ${tool.license.split(" (")[0]}` : ""}
             </p>
-            <p className="text-warning">Research data, not for clinical use.{tool?.disclaimer ? ` ${tool.disclaimer}` : ""}</p>
+            <p className="text-caution">Research data, not for clinical use.{tool?.disclaimer ? ` ${tool.disclaimer}` : ""}</p>
           </section>
         </aside>
       </div>}
 
-      {!data && !listError && <div role="status" className="rounded-xl border border-line bg-panel p-6 text-sm text-muted">Asking the API for signed links…</div>}
+      {!data && !listError && <div role="status" className="rounded-xl border border-line bg-surface shadow-card p-6 text-sm text-muted">Asking the API for signed links…</div>}
     </div>
   );
 }

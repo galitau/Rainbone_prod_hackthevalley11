@@ -11,20 +11,20 @@ function sourceLabel({ provider, model }: Explanation) {
 export function PlainExplanation({ state }: { state: ExplanationState }) {
   if (state.status === "idle" || state.status === "unavailable") return null;
   return (
-    <section className="rounded-xl border border-line bg-panel p-5" aria-live="polite" aria-busy={state.status === "loading"}>
-      <div className="flex items-center justify-between">
-        <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-muted">In plain words</p>
-        <MessageSquareText size={16} className="text-cyan" />
+    <section aria-labelledby="plain-words-title" className="overflow-hidden rounded-2xl border border-line bg-surface shadow-card" aria-live="polite" aria-busy={state.status === "loading"}>
+      <div className="flex items-center justify-between gap-3 border-b border-line px-5 py-4">
+        <h2 id="plain-words-title" className="text-[15px] font-semibold text-ink">In plain words</h2>
+        <MessageSquareText size={17} className="text-link" aria-hidden />
       </div>
-      {state.status === "loading" && <p className="mt-3 text-xs leading-5 text-muted">Explaining the femur&apos;s results in plain words…</p>}
-      {state.status === "error" && <p className="mt-3 text-xs leading-5 text-warning">{state.message}</p>}
+      <div className="px-5 py-4">
+        {state.status === "loading" && <p className="text-[13px] leading-6 text-muted">Explaining the femur&apos;s results in plain words…</p>}
+        {state.status === "error" && <p className="text-[13px] leading-6 text-caution">{state.message}</p>}
+        {state.status === "ready" && <p className="text-[13.5px] leading-6 text-body">{state.explanation.text}</p>}
+      </div>
       {state.status === "ready" && (
-        <>
-          <p className="mt-3 text-[13px] leading-6 text-ink">{state.explanation.text}</p>
-          <p className="mt-4 font-mono text-[10px] text-muted">
-            {sourceLabel(state.explanation)} · every number in it was checked against the femur&apos;s solved values
-          </p>
-        </>
+        <p className="border-t border-line bg-sunken/60 px-5 py-3 text-[11.5px] leading-5 text-muted">
+          {sourceLabel(state.explanation)} · every number in it was checked against the femur&apos;s solved values
+        </p>
       )}
     </section>
   );

@@ -17,5 +17,26 @@ export function StressChart({ runs, name }: { runs: HistoryRun[]; name: string }
   // The axis starts at 0 MPa, so a change of a few hundredths does not look like a big swing.
   const points = values.map((value, index) => `${(index / (values.length - 1)) * 100},${100 - (max > 0 ? (value / max) * 78 : 0) - 8}`).join(" ");
   const ticks = [1, 2 / 3, 1 / 3, 0].map((share) => (max * share).toFixed(1));
-  return <section className="rounded-xl border border-line bg-panel p-5"><div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center"><div><p className="font-mono text-[10px] uppercase tracking-[0.16em] text-muted">Longitudinal tracking</p><h3 className="mt-1 text-sm font-medium text-ink">Peak stress of the last {runs.length} saved runs of <span className="break-all font-mono">{name}</span></h3></div><div className="flex items-center gap-2 text-[10px] text-muted"><span className="h-2 w-2 rounded-full bg-cyan" /> Von Mises stress <span className="ml-3 font-mono">MPa</span></div></div><div className="relative mt-5 h-36"><div className="absolute inset-0 flex flex-col justify-between border-b border-l border-line/70">{ticks.map((tick, index) => <span key={index} className="border-t border-line/50 font-mono text-[9px] text-muted">{tick}</span>)}</div><svg className="absolute inset-0 h-full w-full overflow-visible pl-8" viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label={`Peak stress of the last ${runs.length} saved runs, up to ${max.toFixed(1)} MPa`}><polyline fill="none" points={points} stroke="#4fdbd1" strokeWidth="1.5" vectorEffect="non-scaling-stroke" /><polyline fill="url(#chart-fill)" points={`0,100 ${points} 100,100`} stroke="none" /><defs><linearGradient id="chart-fill" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stopColor="#4fdbd1" stopOpacity=".18" /><stop offset="100%" stopColor="#4fdbd1" stopOpacity="0" /></linearGradient></defs></svg></div><div className="ml-8 mt-2 flex justify-between font-mono text-[9px] text-muted"><span>{when(first)}</span><span>{when(last)}</span></div></section>;
+  return (
+    <section aria-label="Peak stress history" className="rounded-2xl border border-line bg-surface p-5 shadow-card md:p-6">
+      <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+        <div>
+          <h2 className="text-[15px] font-semibold text-ink">Peak stress over simulation history</h2>
+          <p className="mt-0.5 text-[12px] text-muted">Last {runs.length} saved runs of <span className="break-all font-mono">{name}</span> · von Mises, MPa</p>
+        </div>
+        <p className="text-right"><span className="font-mono text-[22px] font-medium text-ink tabular-nums">{values[values.length - 1].toFixed(1)}</span><span className="ml-1 text-[11px] text-muted">MPa · latest</span></p>
+      </div>
+      <div className="relative mt-5 h-40">
+        <div className="absolute inset-0 flex flex-col justify-between">
+          {ticks.map((tick, index) => <div key={index} className="flex items-center gap-2"><span className="w-6 text-right font-mono text-[10px] text-muted">{tick}</span><span className="h-px flex-1 bg-line" /></div>)}
+        </div>
+        <svg className="absolute inset-y-0 left-8 right-0 h-full w-[calc(100%-2rem)] overflow-visible" viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label={`Peak stress of the last ${runs.length} saved runs, up to ${max.toFixed(1)} MPa`}>
+          <defs><linearGradient id="chart-fill" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stopColor="rgb(37 70 184)" stopOpacity=".14" /><stop offset="100%" stopColor="rgb(37 70 184)" stopOpacity="0" /></linearGradient></defs>
+          <polyline fill="url(#chart-fill)" points={`0,100 ${points} 100,100`} stroke="none" />
+          <polyline fill="none" points={points} stroke="rgb(37 70 184)" strokeWidth="2" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+        </svg>
+      </div>
+      <div className="ml-8 mt-2 flex justify-between font-mono text-[10px] text-muted"><span>{when(first)}</span><span>{when(last)}</span></div>
+    </section>
+  );
 }
