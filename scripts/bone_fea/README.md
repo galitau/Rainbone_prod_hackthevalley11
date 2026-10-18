@@ -74,6 +74,53 @@ Open the STL in Bambu Studio or another compatible slicer, select the printer,
 and scale or split it to fit. At 50% uniform scale the height is 198.5 mm. Choose
 orientation and supports, then slice and inspect the preview before printing.
 
+## Printable reconstruction of simulated missing material
+
+The Physics Simulations side panel provides **Print missing region** for the
+selected compression step. It is outside the fullscreen press viewer. Steps
+before visible element erosion have no missing-region export. The interactive
+preview uses the exported STLs themselves; cyan shows the insert, with an
+optional view inside its matching remaining femur.
+
+```powershell
+& 'C:/tools/Slicer/bin/PythonSlicer.exe' scripts/bone_fea/test_reconstruction.py
+& 'C:/tools/Slicer/bin/PythonSlicer.exe' scripts/bone_fea/export_reconstruction.py
+```
+
+The exporter requires VTK, NumPy and SciPy. It checks the simulation's source
+mesh hash, matches each saved frame's original Float32 coordinates and owning
+element IDs to the tetrahedral mesh, then floods the element adjacency graph
+without crossing the saved boundary. The complement is the removed region.
+It verifies the **entire** recovered boundary and the reported eroded volume
+for every step, including steps with no erosion, and checks irreversible
+removal through the saved history. No additional FEA solve or threshold based
+on surface colors is used.
+
+Raw element erosion produces pinched edges/vertices and very small loose
+fragments. For printing only, the exporter absorbs nearby tetrahedral slivers
+into the insert until each part is manifold. Around pinches it retains the
+largest remaining fan or connects missing fans through a minimum-volume local
+path. Remaining fragments below 5 mm³ are also absorbed into the insert.
+Every added element ID and volume is recorded; the UI displays the added
+percentage. This adjustment can be substantial in early break steps and is
+not a recalculated damage prediction. The simulation files remain unchanged.
+
+The adjusted missing and remaining element sets are complementary: they fill
+the original FEA mesh without volume overlap. Their shared interface uses
+identical triangles with opposite winding. Each face-connected component is
+exported separately. No vertex is smoothed, displaced or scaled. All parts
+share one translation in millimeters. The existing intact anatomy STL uses a
+different surface resolution; use the **matching reconstruction ZIP** to
+assemble the printed demonstration.
+
+Validation checks finite coordinates, nonzero triangles, closed edges, face
+winding, nonmanifold vertices, connected surfaces, positive volume, agreement
+with tetrahedral volume, STL round trips and total reconstructed volume. The
+ZIP contains all matching STLs, their report and printing instructions. No fit
+clearance is applied. Scale all parts uniformly together; inspect thin features,
+support requirements and assembly access in the slicer, then test physical fit.
+This represents simulated element erosion, not measured tissue loss or an implant.
+
 ## Finite-element calculation
 
 SfePy assembles and solves three-dimensional, small-strain linear elasticity
