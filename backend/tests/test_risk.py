@@ -2,7 +2,7 @@
 
 No network: provider calls go to the httpx.MockTransport helpers of test_explain. Tests pass an
 explicit env mapping and read the committed frontend/public/models/hfvalid-risk.json (the HFValid table).
-Run from backend/:  python -m unittest discover -s tests -v
+Run from backend/:  python -m unittest discover -s tests -t .
 """
 from __future__ import annotations
 
@@ -48,6 +48,10 @@ def reasons(result):
 
 class RiskTestCase(unittest.TestCase):
     def setUp(self):
+        # Saved Gemini answers are off here whatever the runner imports, so the developer's backend/.ai-answers.json
+        # is never written or read by these tests (tests/__init__.py does the same for the whole suite).
+        self.addCleanup(setattr, llm_providers, "ANSWER_STORE_DEFAULT", llm_providers.ANSWER_STORE_DEFAULT)
+        llm_providers.ANSWER_STORE_DEFAULT = None
         rk.reset_cooldowns()
         logging.getLogger("rainbowbone.risk").disabled = True
 

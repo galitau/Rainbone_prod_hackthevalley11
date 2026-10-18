@@ -8,9 +8,11 @@ Keys travel only in request headers; reasons and log lines never contain them.
   x-goog-api-key header, JSON output constrained by responseJsonSchema,
   thinkingConfig.thinkingLevel LOW. Keys come from GEMINI_API_KEY and
   GEMINI_API_KEYS (comma list), in that order, without repeats. When a key
-  answers HTTP 400, 401, 403 or 429 (an invalid, refused or spent key) the
-  same model is asked with the next key; that key and model are skipped for
-  300 s after a 429, else 60 s. Reasons name keys only as "key 1", "key 2".
+  answers HTTP 400, 401 or 403 (an invalid or refused key) the same model is
+  asked with the next key, and that key is skipped for that model for 60 s.
+  A 429 (a spent quota) is never retried with another key, so a rate limit is
+  not worked around: the model cools down for 300 s and the next model, the
+  saved answer or Groq answers. Reasons name keys only as "key 1", "key 2".
 - Groq: OpenAI-compatible POST {GROQ_BASE_URL}/chat/completions, bearer key,
   response_format json_schema with strict=true.
 
@@ -27,8 +29,12 @@ that passed the route's checker is also saved to a JSON file (AI_ANSWER_STORE,
 default backend/.ai-answers.json) under its route, facts and prompts. When no
 Gemini model answers now, the saved Gemini answer for exactly those facts and
 prompts is served instead, marked served="saved" with its own model and
-saved_at, before the chain moves on to Groq. A missing, unreadable or
-unwritable file never fails a request: the chain only goes without it.
+saved_at, before the chain moves on to Groq. Only answers Gemini returned with
+its responseId and modelVersion are saved, and an entry without them, or not
+marked provider "gemini", is never served. A missing, unreadable or unwritable
+file never fails a request: the chain only goes without it. The file is read
+and rewritten whole on each save, which assumes one server process: with
+several workers two saves at once can lose one entry (never corrupt the file).
 """
 from __future__ import annotations
 
@@ -58,8 +64,9 @@ GROQ_DEFAULT_MODEL = "openai/gpt-oss-120b"
 GROQ_TIMEOUT_S = 8.0
 
 # HTTP statuses that belong to one key rather than to the model: 400 is what Gemini answers for an invalid key
-# (API_KEY_INVALID), 401 and 403 a refused one, 429 a spent quota. The next key may still be answered.
-KEY_STATUSES = frozenset({400, 401, 403, 429})
+# (API_KEY_INVALID), 401 and 403 a refused one. The next key may still be answered. 429 is not one: another key
+# must not be used to get around a rate limit, so a 429 leaves the model as on a single key.
+KEY_STATUSES = frozenset({400, 401, 403})
 
 log = logging.getLogger("rainbowbone.llm")
 
@@ -85,6 +92,20 @@ class ProviderError(Exception):
         self.reason = reason
         self.status = status
         self.key_level = key_level
+
+
+class GeminiText(str):
+    """The text of one Gemini answer, carrying the response's own responseId and modelVersion (None when the
+    response left them out), so a saved answer records which Gemini response it came from."""
+
+    response_id: Optional[str]
+    model_version: Optional[str]
+
+    def __new__(cls, text: str, response_id: Optional[str] = None, model_version: Optional[str] = None):
+        value = super().__new__(cls, text)
+        value.response_id = response_id
+        value.model_version = model_version
+        return value
 
 
 def env_value(env: Mapping[str, str], name: str) -> Optional[str]:
@@ -184,9 +205,9 @@ class GeminiProvider:
             failures.append((label, reason))
         return self._reason(failures) if failures else None
 
-    async def generate(self, system: str, user: str) -> str:
+    async def generate(self, system: str, user: str) -> GeminiText:
         """The model's text from the first key that answers. A KEY_STATUSES error moves to the next key and starts
-        that key's cooldown for this model; any other failure would repeat with every key, so it ends the call."""
+        that key's cooldown for this model; any other failure, a 429 included, ends the call."""
         failures: list[tuple[str, str]] = []
         last_status: Optional[int] = None
         for label, key, key_id in self._keys:
@@ -206,7 +227,7 @@ class GeminiProvider:
             raise ProviderError("no key")
         raise ProviderError(self._reason(failures), status=last_status, key_level=True)
 
-    async def _generate_with(self, key: str, system: str, user: str) -> str:
+    async def _generate_with(self, key: str, system: str, user: str) -> GeminiText:
         body = {
             "systemInstruction": {"parts": [{"text": system}]},
             "contents": [{"role": "user", "parts": [{"text": user}]}],
@@ -232,7 +253,12 @@ class GeminiProvider:
             text = "".join(p.get("text", "") for p in parts if not p.get("thought"))
         except (KeyError, TypeError, AttributeError):
             raise ProviderError("unexpected response body") from None
-        return _output_text(text)
+
+        def field(name: str) -> Optional[str]:
+            value = data.get(name) if isinstance(data, dict) else None
+            return value.strip() if isinstance(value, str) and value.strip() else None
+
+        return GeminiText(_output_text(text), field("responseId"), field("modelVersion"))
 
 
 class GroqProvider:
@@ -474,6 +500,8 @@ class SavedAnswer:
     text: str
     model: str
     saved_at: str  # ISO 8601, UTC
+    response_id: str  # Gemini's responseId and modelVersion for the response the text came from
+    model_version: str
 
 
 def _read_entries(path: Path) -> dict:
@@ -496,14 +524,20 @@ def _read_entries(path: Path) -> dict:
 
 def save_answer(path: Optional[Path], kind: str, facts: str, system: str, user: str, model: str, text: str) -> None:
     """Keep a checked Gemini answer for the same route, facts and prompts. Written to a temporary file in the same
-    folder and renamed over the old one, so a reader sees the old or the new file, never half of one."""
+    folder and renamed over the old one, so a reader sees the old or the new file, never half of one. `text` is the
+    GeminiText generate() returned; without its responseId and modelVersion it is not kept."""
     if path is None:
+        return
+    response_id, model_version = getattr(text, "response_id", None), getattr(text, "model_version", None)
+    if not (response_id and model_version):
+        log.warning("saved Gemini answers: the response had no responseId or modelVersion; not saved")
         return
     tmp: Optional[str] = None
     try:
         entries = _read_entries(path)
         entries[_entry_id(kind, facts, system, user)] = {
-            "kind": kind, "facts": facts, "model": model, "text": text,
+            "provider": "gemini", "kind": kind, "facts": facts, "model": model, "text": str(text),
+            "response_id": response_id, "model_version": model_version,
             "saved_at": _wall_now().isoformat(timespec="seconds"),
         }
         if len(entries) > ANSWER_STORE_MAX:
@@ -530,18 +564,22 @@ def save_answer(path: Optional[Path], kind: str, facts: str, system: str, user: 
 
 
 def load_answer(path: Optional[Path], kind: str, facts: str, system: str, user: str) -> Optional[SavedAnswer]:
-    """The saved Gemini answer for exactly this route, facts and prompts, or None."""
+    """The saved Gemini answer for exactly this route, facts and prompts, or None. An entry not marked provider
+    "gemini", or without the responseId and modelVersion of the Gemini response it came from, is never served."""
     if path is None:
         return None
     try:
         entry = _read_entries(path).get(_entry_id(kind, facts, system, user))
-        if not isinstance(entry, dict) or entry.get("kind") != kind or entry.get("facts") != facts:
+        if (not isinstance(entry, dict) or entry.get("provider") != "gemini" or entry.get("kind") != kind
+                or entry.get("facts") != facts):
             return None
-        text, model, saved_at = entry.get("text"), entry.get("model"), entry.get("saved_at")
-        if not all(isinstance(v, str) and v.strip() for v in (text, model, saved_at)):
+        fields = [entry.get(name) for name in ("text", "model", "saved_at", "response_id", "model_version")]
+        if not all(isinstance(v, str) and v.strip() for v in fields):
             return None
+        text, model, saved_at, response_id, model_version = fields
         datetime.fromisoformat(saved_at)  # ValueError: not a time
-        return SavedAnswer(text=text, model=model, saved_at=saved_at)
+        return SavedAnswer(text=text, model=model, saved_at=saved_at, response_id=response_id,
+                           model_version=model_version)
     except Exception as exc:
         log.warning("saved Gemini answers: unusable entry in %s (%s)", path.name, type(exc).__name__)
         return None
@@ -565,9 +603,10 @@ async def ask_models(models: list, system: str, user: str, check: Callable[[str]
 
     Its models are asked in turn with attempt(). Each failure is passed to fell_through(model, reason), with
     model None when the provider has no key. A Gemini answer is saved under (kind, facts, system, user); when no
-    Gemini model answers, the saved answer for the same four is served if it still passes check().
+    Gemini model answers, the saved answer for the same four is served if it still passes check(). Only the
+    provider named "gemini" saves or serves saved answers.
     """
-    store = getattr(models[0], "answer_store", None)
+    store = getattr(models[0], "answer_store", None) if models[0].name == "gemini" else None
     if not models[0].configured:
         fell_through(None, f"{models[0].key_name} not set")
     else:
@@ -575,7 +614,7 @@ async def ask_models(models: list, system: str, user: str, check: Callable[[str]
             text, reason, try_next = await attempt(provider, system, user, check)
             if text is not None:
                 save_answer(store, kind, facts, system, user, provider.model, text)
-                return ModelAnswer(text=text, model=provider.model)
+                return ModelAnswer(text=str(text), model=provider.model)
             fell_through(provider.model, reason or "no text")
             if not try_next:
                 break

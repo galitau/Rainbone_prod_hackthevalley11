@@ -283,8 +283,8 @@ sent.
 ### Response
 
 ```json
-{"text": "...", "provider": "gemini", "model": "gemini-3.8-flash", "fallbacks": [],
- "grounding": null, "logged": null}
+{"text": "...", "provider": "gemini", "model": "gemini-3.8-flash", "served": "live", "saved_at": null,
+ "fallbacks": [], "grounding": null, "logged": null}
 ```
 
 `grounding` is null when the numbers came in the request, and says where they
@@ -292,7 +292,12 @@ were read from with a `case_id`; `logged` is the
 [AI audit log](#ai-audit-log-tiger-cloud) row, or null.
 
 `provider` is `gemini`, `groq` or `template`; `model` is null for the
-template. `fallbacks` lists, in order, every model that did not answer and why
+template. `served` is `live` (written for this request), `cached` (kept in
+memory from an earlier request) or `saved` (no Gemini model answered, so this
+is the Gemini answer saved earlier for the same facts; `model` is the model
+that wrote it and `saved_at` when, ISO 8601 UTC; `saved_at` is null
+otherwise). A saved answer is not written to the AI audit log, since no model
+was called for it. `fallbacks` lists, in order, every model that did not answer and why
 (`GEMINI_API_KEY not set`, `gemini-3.8-flash: HTTP 503`,
 `gemini-3.8-flash: timed out after 10 s`,
 `openai/gpt-oss-120b: rejected: number not in input: 60`, ...). Every `text`
@@ -305,17 +310,27 @@ simulation with assumed material properties, not a medical assessment."
    `generateContent` with a JSON response schema and thinking level LOW,
    timeout 10 s. When that model answers with an HTTP error (429, 503, ...) or
    is cooling down, `gemini-3.5-flash-lite` is tried before leaving Gemini. A
-   timeout, a connection error or a rejected text goes straight to Groq.
-2. Groq (`GROQ_MODEL`, default `openai/gpt-oss-120b`) through its
+   timeout, a connection error or a rejected text leaves Gemini at once
+   (step 2, then Groq). With
+   more keys in `GEMINI_API_KEYS`, a key that is invalid or refused (HTTP 400,
+   401, 403) is followed by the next key for the same model; a 429 is never
+   retried with another key.
+2. Saved Gemini answer: when no Gemini model answers, the Gemini answer saved
+   for exactly the same route, facts and prompts (`AI_ANSWER_STORE`) is
+   served with `served: "saved"`, the model that wrote it and `saved_at`, if
+   it still passes the checker. Only answers Gemini returned with its
+   `responseId` and `modelVersion` are saved.
+3. Groq (`GROQ_MODEL`, default `openai/gpt-oss-120b`) through its
    OpenAI-compatible chat completions endpoint with a strict JSON schema,
    timeout 8 s.
-3. Template: deterministic sentences built from the same numbers. No
+4. Template: deterministic sentences built from the same numbers. No
    network, and it passes the checker for every valid request.
 
 A provider without a key is skipped. A model whose call failed (HTTP error,
 timeout, connection error) is skipped for 60 s, so later requests do not wait
 for the same failure. A rejected text does not start that pause. The pause is
-kept in process memory. Responses are not cached.
+kept in process memory. Answers are kept in memory, and every checked Gemini
+answer is also saved to `AI_ANSWER_STORE`.
 
 Live checks on 2026-10-17 (our keys). With the test request below:
 `gemini-3.8-flash` answered in 2.5 s, 3.3 s, 7.9 s and 18.2 s, timed out
@@ -362,6 +377,8 @@ files are gitignored. Process environment variables override the file.
 | `AI_CHAIN` | `gemini,groq,template` | Order; `template` is appended when missing. Unknown names give HTTP 500 with the reason. |
 | `AI_OFFLINE` | `0` | `1` answers with the template only and makes no network calls |
 | `GEMINI_API_KEY`, `GEMINI_MODEL` | `gemini-3.8-flash` | Gemini Developer API |
+| `GEMINI_API_KEYS` | empty | More Gemini keys, comma list, tried after `GEMINI_API_KEY` when a key is invalid or refused (HTTP 400, 401, 403); never after a 429 |
+| `AI_ANSWER_STORE` | `backend/.ai-answers.json` | File of saved Gemini answers (gitignored; a relative path is under `backend/`). Read and rewritten whole on each save, so it assumes one server process |
 | `GROQ_API_KEY`, `GROQ_MODEL` | `openai/gpt-oss-120b` | Groq |
 
 Keys are sent only in request headers and are never logged or returned.
@@ -414,8 +431,8 @@ many subjects had a lower ARF0, the cohort size, median ARF0, fractured count
 and the fractured subjects' ARF0 range, the MSF (whole newtons) and how many
 subjects had a higher MSF, the strongest MSF in the cohort, and the factor of
 risk, fall force / MSF, for both fall forces (2 decimals). The response is
-`{"case_id", "facts", "text", "provider", "model", "fallbacks", "source",
-"grounding", "logged"}`, with `source` the dataset's citation, DOI and
+`{"case_id", "facts", "text", "provider", "model", "served", "saved_at",
+"fallbacks", "source", "grounding", "logged"}`, with `source` the dataset's citation, DOI and
 licence, `grounding` where the table was read from, and `logged` the
 [AI audit log](#ai-audit-log-tiger-cloud) row (or null).
 

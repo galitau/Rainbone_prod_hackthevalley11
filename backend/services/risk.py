@@ -23,7 +23,8 @@ store, facts and chain (a Gemini answer for 1 h, a Groq or template answer for
 60 s), so a reload does not spend another model call. Each answer the chain
 produces is logged once in Tiger Cloud (services.ai_log); a kept answer is not
 logged again and keeps the `logged` id of its row, and one whose row was not
-written is kept for at most 60 s.
+written is kept for at most 60 s. A saved Gemini answer (served="saved") is not
+logged, since no model was called for it.
 
 The chain order, providers, timeouts and fallback reasons are the ones
 POST /api/explain uses (AI_CHAIN, AI_OFFLINE, GEMINI_*, GROQ_*).
@@ -547,8 +548,9 @@ async def analyse(request: RiskRequest, env: Optional[Mapping[str, str]] = None,
 
     async def produce() -> RiskResponse:
         answer = await _run_chain(request.case_id, order, facts, source, tiers)
-        logged = await ai_log.log_answer(e, "risk-analysis", request.case_id, answer, facts_json(facts), started,
-                                         grounding)
+        # A saved Gemini answer was produced earlier, not now: the log records model answers and template answers.
+        logged = None if answer.served == "saved" else await ai_log.log_answer(
+            e, "risk-analysis", request.case_id, answer, facts_json(facts), started, grounding)
         return answer.model_copy(update={"grounding": grounding, "logged": logged})
 
     # Kept per store too, so the ai_analyses row an answer points to records where its facts came from.

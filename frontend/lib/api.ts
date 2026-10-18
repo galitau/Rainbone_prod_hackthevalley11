@@ -183,6 +183,10 @@ export type Explanation = {
   text: string;
   provider: "gemini" | "groq" | "template";
   model: string | null;
+  // live: written for this request; cached: kept from an earlier one; saved: the Gemini answer saved for the same
+  // facts, served because no Gemini model answered (saved_at: when Gemini wrote it, ISO 8601 UTC).
+  served: "live" | "cached" | "saved";
+  saved_at: string | null;
   fallbacks: { provider: string; reason: string }[];
   // Optional: absent from older APIs. grounding is null when the numbers came in the request.
   grounding?: Grounding | null;
@@ -256,6 +260,10 @@ export type RiskAnalysis = {
   text: string;
   provider: "gemini" | "groq" | "template";
   model: string | null;
+  // live: written for this request; cached: kept from an earlier one; saved: the Gemini answer saved for the same
+  // facts, served because no Gemini model answered (saved_at: when Gemini wrote it, ISO 8601 UTC).
+  served: "live" | "cached" | "saved";
+  saved_at: string | null;
   fallbacks: { provider: string; reason: string }[];
   source: { citation: string; doi: string; license: string };
   grounding?: Grounding | null; // absent from older APIs

@@ -1,4 +1,5 @@
-"""Gemini key failover, per-key rate-limit memory and saved Gemini answers (services.llm_providers).
+"""Gemini key failover, per-key memory, no key failover on a rate limit, and saved Gemini answers
+(services.llm_providers).
 
 No network: every call goes to an httpx.MockTransport that answers per model and per key. The keys below are fake
 and only ever sent to that transport. Saved answers go to a temporary AI_ANSWER_STORE file per test.
@@ -50,9 +51,14 @@ FE = {"peak_stress_mpa": 15.83, "load_newtons": 800.0, "stress_index_percent": 1
 SAVED_TIME = datetime(2026, 10, 18, 14, 5, 0, tzinfo=timezone.utc)
 
 
-def gemini_reply(text):
-    return httpx.Response(200, json={"candidates": [{"content": {"parts": [{"text": json.dumps({"text": text})}]},
-                                                     "finishReason": "STOP"}]})
+RESPONSE_ID, MODEL_VERSION = "test-response-id", "test-model-version"
+
+
+def gemini_reply(text, ids=True):
+    body = {"candidates": [{"content": {"parts": [{"text": json.dumps({"text": text})}]}, "finishReason": "STOP"}]}
+    if ids:  # what a real generateContent response carries besides the candidates
+        body.update(responseId=RESPONSE_ID, modelVersion=MODEL_VERSION)
+    return httpx.Response(200, json=body)
 
 
 def groq_reply(text):
@@ -153,7 +159,7 @@ class KeyListTests(unittest.TestCase):
 
 class KeyFailoverTests(FailoverTestCase):
     def test_a_key_level_error_moves_to_the_next_key_for_the_same_model(self):
-        for status in (400, 401, 403, 429):
+        for status in (400, 401, 403):
             with self.subTest(status=status):
                 ex.reset_cooldowns()
                 mock = KeyMock({(PRIMARY, 1): httpx.Response(status)}, gemini=gemini_reply(GOOD))
@@ -162,16 +168,31 @@ class KeyFailoverTests(FailoverTestCase):
                 self.assertEqual((result.provider, result.model, result.served), ("gemini", PRIMARY, "live"))
                 self.assertEqual(reasons(result), [])
 
+    def test_a_429_is_never_retried_with_another_key(self):
+        mock = KeyMock({(PRIMARY, 1): httpx.Response(429)}, gemini=gemini_reply(GOOD))
+        result = self.ask(mock)
+        self.assertEqual(mock.calls, [(PRIMARY, 1), (LITE, 1)])  # key 2 is not used to get around the limit
+        self.assertEqual((result.provider, result.model), ("gemini", LITE))
+        self.assertEqual(reasons(result), [("gemini", f"{PRIMARY}: key 1: HTTP 429")])
+        ex.reset_cooldowns()  # a 429 from key 2, after key 1 was refused, ends that model too
+        self.store.unlink()  # so Groq answers, not the answer just saved
+        mock = KeyMock({(PRIMARY, 1): httpx.Response(403), (PRIMARY, 2): httpx.Response(429),
+                        (LITE, 1): httpx.Response(429)}, groq=groq_reply(GOOD_GROQ))
+        result = self.ask(mock)
+        self.assertEqual(mock.calls, [(PRIMARY, 1), (PRIMARY, 2), (LITE, 1), "groq"])
+        self.assertEqual(reasons(result), [("gemini", f"{PRIMARY}: key 1: HTTP 403; key 2: HTTP 429"),
+                                           ("gemini", f"{LITE}: key 1: HTTP 429")])
+
     def test_every_key_on_the_primary_before_the_lite_model_then_groq(self):
-        mock = KeyMock(gemini=httpx.Response(429), groq=groq_reply(GOOD_GROQ))
+        mock = KeyMock(gemini=httpx.Response(403), groq=groq_reply(GOOD_GROQ))
         result = self.ask(mock)
         self.assertEqual(mock.calls, [(PRIMARY, 1), (PRIMARY, 2), (LITE, 1), (LITE, 2), "groq"])
         self.assertEqual(result.provider, "groq")
-        self.assertEqual(reasons(result), [("gemini", f"{PRIMARY}: key 1: HTTP 429; key 2: HTTP 429"),
-                                           ("gemini", f"{LITE}: key 1: HTTP 429; key 2: HTTP 429")])
+        self.assertEqual(reasons(result), [("gemini", f"{PRIMARY}: key 1: HTTP 403; key 2: HTTP 403"),
+                                           ("gemini", f"{LITE}: key 1: HTTP 403; key 2: HTTP 403")])
 
     def test_the_lite_model_starts_again_from_key_1(self):
-        mock = KeyMock({(PRIMARY, 1): httpx.Response(429), (PRIMARY, 2): httpx.Response(403)},
+        mock = KeyMock({(PRIMARY, 1): httpx.Response(401), (PRIMARY, 2): httpx.Response(403)},
                        gemini=gemini_reply(GOOD))
         result = self.ask(mock)
         self.assertEqual(mock.calls, [(PRIMARY, 1), (PRIMARY, 2), (LITE, 1)])
@@ -200,31 +221,43 @@ class KeyFailoverTests(FailoverTestCase):
 
 
 class PerKeyMemoryTests(FailoverTestCase):
-    def test_a_429_skips_that_key_for_that_model_for_five_minutes(self):
+    def test_a_refused_key_is_skipped_for_that_model_for_a_minute(self):
+        self.ask(KeyMock({(PRIMARY, 1): httpx.Response(403)}, gemini=gemini_reply(GOOD)))
+        self.clock.now = 1000.0 + 59
+        mock = KeyMock(gemini=gemini_reply(GOOD))
+        result = self.ask(mock)
+        self.assertEqual(mock.calls, [(PRIMARY, 2)])  # key 1 is not called for the primary
+        self.assertEqual((result.model, reasons(result)), (PRIMARY, []))
+        self.clock.now = 1000.0 + 61
+        mock = KeyMock(gemini=gemini_reply(GOOD))
+        self.ask(mock)
+        self.assertEqual(mock.calls, [(PRIMARY, 1)])
+
+    def test_a_429_cools_the_model_for_every_key_for_five_minutes(self):
         self.ask(KeyMock({(PRIMARY, 1): httpx.Response(429)}, gemini=gemini_reply(GOOD)))
         for elapsed in (61, 299):
             with self.subTest(elapsed=elapsed):
                 self.clock.now = 1000.0 + elapsed
                 mock = KeyMock(gemini=gemini_reply(GOOD))
                 result = self.ask(mock)
-                self.assertEqual(mock.calls, [(PRIMARY, 2)])  # key 1 is not called for the primary
-                self.assertEqual((result.model, reasons(result)), (PRIMARY, []))
+                self.assertEqual(mock.calls, [(LITE, 1)])  # neither key asks the primary
+                self.assertEqual(reasons(result), [("gemini", f"{PRIMARY}: skipped: HTTP 429 less than 300 s ago")])
         self.clock.now = 1000.0 + 301
         mock = KeyMock(gemini=gemini_reply(GOOD))
         self.ask(mock)
         self.assertEqual(mock.calls, [(PRIMARY, 1)])
 
     def test_the_memory_is_per_model_so_key_1_still_asks_the_lite_model(self):
-        self.ask(KeyMock({(PRIMARY, 1): httpx.Response(429), (PRIMARY, 2): httpx.Response(429)},
+        self.ask(KeyMock({(PRIMARY, 1): httpx.Response(403), (PRIMARY, 2): httpx.Response(403)},
                          gemini=gemini_reply(GOOD)))
         mock = KeyMock(gemini=gemini_reply(GOOD))
         result = self.ask(mock)
         self.assertEqual(mock.calls, [(LITE, 1)])
-        skipped = "skipped: HTTP 429 less than 300 s ago"
+        skipped = "skipped: failed less than 60 s ago"
         self.assertEqual(reasons(result), [("gemini", f"{PRIMARY}: key 1: {skipped}; key 2: {skipped}")])
 
     def test_key_failures_do_not_cool_the_whole_model(self):
-        self.ask(KeyMock({(PRIMARY, 1): httpx.Response(429), (PRIMARY, 2): httpx.Response(401)},
+        self.ask(KeyMock({(PRIMARY, 1): httpx.Response(403), (PRIMARY, 2): httpx.Response(401)},
                          gemini=gemini_reply(GOOD)))
         self.assertEqual(llm_providers._cooldowns, {})
         self.assertEqual(len(llm_providers._key_cooldowns), 2)
@@ -232,22 +265,21 @@ class PerKeyMemoryTests(FailoverTestCase):
             self.assertEqual(model, PRIMARY)
             self.assertNotIn(KEY1, key_id)
             self.assertNotIn(KEY2, key_id)
-        # A 401 cools its key for 60 s and a 429 for 300 s: after 61 s only key 2 is asked again.
-        self.clock.now += 61
+        self.clock.now += 61  # both keys may ask the primary again
         mock = KeyMock(gemini=gemini_reply(GOOD))
         self.ask(mock)
-        self.assertEqual(mock.calls, [(PRIMARY, 2)])
+        self.assertEqual(mock.calls, [(PRIMARY, 1)])
 
     def test_a_new_key_is_tried_even_while_the_others_cool_down(self):
         env1 = {"GEMINI_API_KEY": KEY1, "GROQ_API_KEY": GROQ, "AI_ANSWER_STORE": str(self.store)}
-        self.ask(KeyMock(gemini=httpx.Response(429), groq=groq_reply(GOOD_GROQ)), env1)
+        self.ask(KeyMock(gemini=httpx.Response(403), groq=groq_reply(GOOD_GROQ)), env1)
         mock = KeyMock(gemini=gemini_reply(GOOD))
-        result = self.ask(mock)  # key 2 added (GEMINI_API_KEYS): asked although key 1 still cools down
+        result = self.ask(mock)  # key 2 added (GEMINI_API_KEYS): asked although key 1 is still refused
         self.assertEqual(mock.calls, [(PRIMARY, 2)])
         self.assertEqual((result.provider, result.model, result.served), ("gemini", PRIMARY, "live"))
 
     def test_both_routes_share_the_key_memory(self):
-        self.ask(KeyMock({(PRIMARY, 1): httpx.Response(429)}, gemini=gemini_reply(GOOD)))
+        self.ask(KeyMock({(PRIMARY, 1): httpx.Response(403)}, gemini=gemini_reply(GOOD)))
         mock = KeyMock(gemini=gemini_reply(GOOD_RISK))
         result = self.ask_risk(mock)
         self.assertEqual(mock.calls, [(PRIMARY, 2)])
@@ -289,11 +321,54 @@ class SavedAnswerTests(FailoverTestCase):
         self.assertEqual((live.provider, live.model, live.served, live.saved_at), ("gemini", PRIMARY, "live", None))
         mock = KeyMock(gemini=httpx.Response(429), groq=groq_reply(GOOD_GROQ))
         saved = self.ask(mock)
-        self.assertEqual(mock.calls, [(PRIMARY, 1), (PRIMARY, 2), (LITE, 1), (LITE, 2)])  # Groq not called
+        self.assertEqual(mock.calls, [(PRIMARY, 1), (LITE, 1)])  # Groq not called
         self.assertEqual((saved.provider, saved.model, saved.served), ("gemini", PRIMARY, "saved"))
         self.assertEqual(saved.saved_at, "2026-10-18T14:05:00+00:00")
         self.assertEqual(saved.text, live.text)
         self.assertEqual([f.provider for f in saved.fallbacks], ["gemini", "gemini"])  # why it is not live
+
+    def test_an_entry_records_the_gemini_response_it_came_from(self):
+        self.ask(KeyMock(gemini=gemini_reply(GOOD)))
+        entry = next(iter(json.loads(self.store.read_text())["answers"].values()))
+        self.assertEqual((entry["provider"], entry["model"], entry["response_id"], entry["model_version"]),
+                         ("gemini", PRIMARY, RESPONSE_ID, MODEL_VERSION))
+
+    def test_a_reply_without_its_response_id_or_model_version_is_not_saved(self):
+        for body in ({"responseId": RESPONSE_ID}, {"modelVersion": MODEL_VERSION}, {}):
+            with self.subTest(body=body):
+                ex.reset_cooldowns()
+                reply = gemini_reply(GOOD, ids=False)
+                reply = httpx.Response(200, json={**reply.json(), **body})
+                live = self.ask(KeyMock(gemini=reply))
+                self.assertEqual((live.provider, live.served), ("gemini", "live"))
+                self.assertFalse(self.store.exists())
+
+    def test_only_the_gemini_provider_saves_or_serves_saved_answers(self):
+        self.ask(KeyMock(gemini=gemini_reply(GOOD)))
+        before = self.store.read_text()
+        facts = ex.build_facts(ExplainRequest(**SIM))
+        store = self.store
+
+        class Other:  # another provider that happens to carry an answer_store
+            name, key_name, model, timeout, configured, answer_store = "groq", "GROQ_API_KEY", "m", 1.0, True, store
+
+            def __init__(self, reply):
+                self.reply = reply
+
+            async def generate(self, system, user):
+                if isinstance(self.reply, Exception):
+                    raise self.reply
+                return self.reply
+
+        def ask(reply):
+            return asyncio.run(llm_providers.ask_models(
+                [Other(reply)], ex.SYSTEM_PROMPT, ex.facts_json(facts), lambda t: ex.check(t, facts),
+                lambda model, reason: None, kind="explain", facts=ex.facts_json(facts)))
+
+        answer = ask(llm_providers.GeminiText(PLAIN, RESPONSE_ID, MODEL_VERSION))
+        self.assertEqual((answer.text, answer.served), (PLAIN, "live"))
+        self.assertEqual(self.store.read_text(), before)  # not saved
+        self.assertIsNone(ask(llm_providers.ProviderError("HTTP 503", status=503)))  # nor served the Gemini entry
 
     def test_the_saved_answer_keeps_the_model_that_wrote_it(self):
         self.ask(KeyMock({(PRIMARY, 1): httpx.Response(503)}, gemini=gemini_reply(GOOD)))  # the lite model answers
@@ -379,8 +454,9 @@ class StoreRobustnessTests(FailoverTestCase):
         self.ask(KeyMock(gemini=gemini_reply(GOOD)))
         good = json.loads(self.store.read_text())
         for field, value in [("text", 5), ("model", ""), ("saved_at", "yesterday"), ("facts", "{}"),
-                             ("kind", "risk-analysis")]:
-            with self.subTest(field=field):
+                             ("kind", "risk-analysis"), ("provider", "groq"), ("provider", None),
+                             ("response_id", ""), ("model_version", None)]:
+            with self.subTest(field=field, value=value):
                 ex.reset_cooldowns()
                 data = json.loads(json.dumps(good))
                 for entry in data["answers"].values():
@@ -461,6 +537,23 @@ class ChainOrderTests(FailoverTestCase):
         recovered = KeyMock(gemini=gemini_reply(GOOD))
         live = asyncio.run(explain(ExplainRequest(**SIM), self.env, transport=recovered.transport()))
         self.assertEqual((live.served, recovered.calls), ("live", [(PRIMARY, 1)]))
+
+    def test_a_saved_answer_is_not_written_to_the_ai_log(self):
+        logged = []
+
+        async def log_answer(env, endpoint, case_id, answer, *rest):
+            logged.append((endpoint, answer.served))
+            return None
+
+        with umock.patch.object(ex.ai_log, "log_answer", log_answer):
+            live = self.ask(KeyMock(gemini=gemini_reply(GOOD)))
+            saved = self.ask(KeyMock(gemini=httpx.Response(503), groq=groq_reply(GOOD_GROQ)))
+            self.clock.now += 61
+            self.ask_risk(KeyMock(gemini=gemini_reply(GOOD_RISK)))
+            risk_saved = self.ask_risk(KeyMock(gemini=httpx.Response(503), groq=groq_reply(GOOD_RISK)))
+        self.assertEqual((live.served, saved.served, risk_saved.served), ("live", "saved", "saved"))
+        self.assertEqual((saved.logged, risk_saved.logged), (None, None))
+        self.assertEqual(logged, [("explain", "live"), ("risk-analysis", "live")])  # no model was called for a saved one
 
     def test_the_route_returns_served_and_saved_at(self):
         self.ask(KeyMock(gemini=gemini_reply(GOOD)))

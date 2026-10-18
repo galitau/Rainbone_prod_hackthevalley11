@@ -43,7 +43,7 @@ flowchart TB
   end
 
   subgraph CLOUD["Managed services"]
-    llm["Gemini, then Groq,<br/>then offline template"]
+    llm["Gemini (live, then a saved Gemini<br/>answer for the same numbers),<br/>then Groq, then offline template"]
     tiger[("Tiger Cloud<br/>TimescaleDB")]
     vos[("Vultr Object Storage<br/>private bucket")]
   end
@@ -100,8 +100,8 @@ Open PR [#2](https://github.com/galitau/Rainbone_prod_hackthevalley11/pull/2) ta
 API address from `NEXT_PUBLIC_API_BASE_URL` (on `main` it is fixed to
 `http://127.0.0.1:8000`) and adds three calls on load: `GET /health` (repeated every
 15 s), `POST /api/explain` with the femur's numbers for the plain-language card, and
-`GET /api/history`. `/api/explain` asks Gemini, then Groq, then falls back to an
-offline template; a checker rejects any text containing a number it was not given.
+`GET /api/history`. `/api/explain` asks Gemini (live, then a saved Gemini answer for the
+same numbers), then Groq, then falls back to an offline template; a checker rejects any text containing a number it was not given.
 The AI fracture risk card under Clinical metrics posts the femur's HFValid case id to
 `POST /api/risk-analysis`, which reads the dataset authors' published ARF0 and MSF from
 `frontend/public/models/hfvalid-risk.json` and words them through the same chain; its checker

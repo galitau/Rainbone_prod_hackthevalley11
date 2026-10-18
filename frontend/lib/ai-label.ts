@@ -1,7 +1,7 @@
 // What wrote an AI answer, in words that are true of every answer the API sends (POST /api/explain and
 // /api/risk-analysis): a Gemini answer names its model; a saved Gemini answer (no Gemini model answered this time,
-// so the API served the one Gemini wrote earlier for the same facts) says when it was written; Groq is the backup
-// model; the template is no AI at all.
+// so the API served the one Gemini wrote earlier for the same facts) says when it was written; one the API kept in
+// memory from an earlier request says it was reused; Groq is the backup model; the template is no AI at all.
 export type AiAnswerSource = {
   provider: string;
   model: string | null;
@@ -26,6 +26,7 @@ export function aiAnswerLabel({ provider, model, served, saved_at }: AiAnswerSou
       const at = savedTime(saved_at);
       return at ? `Gemini · saved answer from ${at}` : "Gemini · saved answer";
     }
+    if (served === "cached") return model ? `Gemini · ${model} · reused from an earlier request` : "Gemini · reused from an earlier request";
     return model ? `Gemini · ${model}` : "Gemini";
   }
   if (provider === "groq") return `Backup model · Groq${model ? ` ${model}` : ""}`;

@@ -2,7 +2,7 @@
 
 No network: every provider call goes to an httpx.MockTransport. Tests pass an explicit env
 mapping, so keys in the developer's environment or backend/.env are never read.
-Run from backend/:  python -m unittest discover -s tests -v
+Run from backend/:  python -m unittest discover -s tests -t .
 """
 from __future__ import annotations
 
@@ -122,6 +122,10 @@ class Clock:
 
 class ExplainTestCase(unittest.TestCase):
     def setUp(self):
+        # Saved Gemini answers are off here whatever the runner imports, so the developer's backend/.ai-answers.json
+        # is never written or read by these tests (tests/__init__.py does the same for the whole suite).
+        self.addCleanup(setattr, llm_providers, "ANSWER_STORE_DEFAULT", llm_providers.ANSWER_STORE_DEFAULT)
+        llm_providers.ANSWER_STORE_DEFAULT = None
         ex.reset_cooldowns()
         logging.getLogger("rainbowbone.explain").disabled = True
 
