@@ -14,9 +14,24 @@ const plexMono = IBM_Plex_Mono({
   variable: "--font-ibm-plex-mono",
 });
 
+const description =
+  "For senior-living care teams: turns a resident's existing hip CT into a fall-fracture check before a fall becomes an emergency. Research prototype built at Hack the Valley 11, not a medical device.";
+
 export const metadata: Metadata = {
-  title: "Rainbone | Clinical Biomechanics",
-  description: "Patient-specific bone mechanics and finite element analysis for clinical review.",
+  title: "Rainbone | Fall-fracture check for senior-living care teams",
+  description,
+  openGraph: {
+    type: "website",
+    url: "https://rainbone.health",
+    siteName: "Rainbone",
+    title: "Rainbone: check a hip for fall fracture before the fall",
+    description,
+  },
+  twitter: {
+    card: "summary",
+    title: "Rainbone: check a hip for fall fracture before the fall",
+    description,
+  },
 };
 
 export default function RootLayout({

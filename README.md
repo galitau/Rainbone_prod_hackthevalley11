@@ -1,5 +1,18 @@
 # Rainbone
 
+Rainbone is for care teams in senior living. The problem it targets is the hip fracture
+from a fall: by the time a resident falls and breaks a hip, it is already an emergency.
+Rainbone is built to turn a hip CT the resident already has into a fall-fracture check
+the team can act on beforehand. Today it runs on one woman's femur CT from the published
+HFValid study (case Pat001, age 78 at the scan): it shows the femur in 3D under an 800 N
+standing load, then sets the study authors' own fall results beside it. Their absolute
+risk of fracture at time 0 (ARF0), from a finite-element model coupled with a fall
+model, is 47.1 % for her, higher than 56 of the 101 women (study median 44.3 %; the 4
+who fractured had 53.7–73.2 %). Her minimum sideways-fall strength is 1,339 N, weaker
+than 75 of the 101, and a sideways fall hits the hip with 2.90–4.26 kN (van den
+Kroonenberg 1995), or 2.17–3.18 times that strength. An AI card words these numbers in
+plain language, and a checker rejects any answer containing a number it was not given.
+
 Rainbone (RainbowBone) shows how a real bone carries load. It runs a finite-element
 analysis (FEA) on a complete femur segmented from CT, colours the bone by von Mises
 stress in a 3D viewer you can rotate and cut open, reports an illustrative fracture
