@@ -29,7 +29,7 @@ flowchart TB
   user(["Browser"])
 
   subgraph VERCEL["Front end · Vercel · rainbone.health"]
-    next["Next.js 15 App Router<br/>/ and /physics-simulations<br/>/bones in PR #3"]
+    next["Next.js 15 App Router<br/>/ landing, /enter, /dashboard<br/>/physics-simulations<br/>/bones in PR #3"]
     static["frontend/public/ static files<br/>models/hfvalid-femur<br/>models/femur-press<br/>sample_bone.nii.gz"]
   end
 
@@ -78,7 +78,7 @@ Dashed lines and boxes marked PR #3 are in open pull request
 
 ### What happens when a page loads
 
-The dashboard (`/`):
+The dashboard (`/dashboard`; `/` is the landing page and `/enter` the guest pass, `/login` redirects there):
 
 1. Next.js serves the page and the static files in `frontend/public/`.
 2. The 3D viewer (`frontend/components/BoneViewer.tsx`, vtk.js) fetches
@@ -119,8 +119,8 @@ bucket without seeing any credentials.
 | Path | What it holds |
 |---|---|
 | `package.json` (root) | Shortcuts only: `npm run setup`, `npm run dev`, `npm run build` and `npm start` run the same scripts inside `frontend/` |
-| `frontend/app/` | Next.js App Router pages: `/` and `/physics-simulations` |
-| `frontend/components/` | Dashboard, `BoneViewer.tsx` (femur stress map and cut-away), `physics-simulations.tsx` and `press-viewer.tsx` (press replay) |
+| `frontend/app/` | Next.js App Router pages: `/` (landing), `/enter` (guest pass; `/login` redirects there), `/dashboard`, `/physics-simulations` and `/bones` |
+| `frontend/components/` | Dashboard, `BoneViewer.tsx` (femur stress map and cut-away), `physics-simulations.tsx` and `press-viewer.tsx` (press replay), `landing/` (the landing hero, which renders the same femur mesh with vtk.js, and the guest pass) |
 | `frontend/lib/` | Colour ramp, tetrahedral slicing, press model types, demo data |
 | `frontend/public/models/` | Precomputed femur FEA (`hfvalid-femur`), press steps (`femur-press`) and the HFValid fracture risk table (`hfvalid-risk.json`) |
 | `backend/` | FastAPI app: `/api/simulate`, `/api/explain`, `/api/risk-analysis`, `/api/history`, `/health`. Details in [`backend/README.md`](backend/README.md) |

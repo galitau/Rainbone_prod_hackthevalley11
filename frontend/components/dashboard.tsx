@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import {
   Activity,
   Bell,
@@ -25,8 +25,10 @@ import { BoneViewer } from "@/components/BoneViewer";
 import { LiveRun, ALL_NUMBERS_ID } from "@/components/live-run";
 import { PlainExplanation } from "@/components/plain-explanation";
 import { FractureRiskAnalysis } from "@/components/risk-analysis";
+import { LesionProgression } from "@/components/lesion-progression";
 import { API_BASE_URL, type ExplanationState, type HistoryState, type RiskAnalysisState, type SimulationResult } from "@/lib/api";
 import { FEMUR_AUTHORS, FEMUR_INSTITUTION, FEMUR_MODEL } from "@/lib/model";
+import { prefetchProgressionFrames } from "@/lib/progression-cache";
 const PhysicsSimulations = dynamic(() => import("@/components/physics-simulations").then(module => module.PhysicsSimulations));
 const CloudBones = dynamic(() => import("@/components/CloudBones").then(module => module.CloudBones));
 
@@ -49,11 +51,15 @@ type OverviewProps = {
 };
 
 // app/physics-simulations/page.tsx renders <Dashboard view="physics" />, app/bones/page.tsx <Dashboard view="imaging" />.
-type DashboardProps = OverviewProps | { view: "physics" | "imaging" };
+type DashboardProps = OverviewProps | { view: "physics" | "imaging" | "progression" };
 
 export function Dashboard(props: DashboardProps) {
   const view = "run" in props ? "overview" : props.view;
   const health = "run" in props ? props.health : undefined;
+  useEffect(() => {
+    void prefetchProgressionFrames();
+  }, []);
+
   return (
     <main className="min-h-screen bg-canvas text-ink">
       <div className="flex min-h-screen">
@@ -62,9 +68,10 @@ export function Dashboard(props: DashboardProps) {
           <div className="px-5 pb-2 pt-6"><RainboneLogo /></div>
           <nav aria-label="Workspace" className="mt-8 space-y-1 px-3">
             <p className="px-3 pb-2 text-[11px] font-medium uppercase tracking-[0.08em] text-nav-muted">Analysis</p>
-            <NavItem active={view === "overview"} href="/" icon={<LayoutDashboard size={17} />} label="Patient overview" />
+            <NavItem active={view === "overview"} href="/dashboard" icon={<LayoutDashboard size={17} />} label="Patient overview" />
             <NavItem active={view === "physics"} href="/physics-simulations" icon={<Activity size={17} />} label="Physics simulations" />
             <NavItem active={view === "imaging"} href="/bones" icon={<FolderOpen size={17} />} label="Imaging library" />
+            <NavItem active={view === "progression"} href="/lesion-progression" icon={<ScanLine size={17} />} label="Lesion progression" />
           </nav>
           <nav aria-label="Account" className="mt-8 space-y-1 px-3">
             <p className="px-3 pb-2 text-[11px] font-medium uppercase tracking-[0.08em] text-nav-muted">Workspace</p>
@@ -88,7 +95,7 @@ export function Dashboard(props: DashboardProps) {
                 <ChevronRight size={14} className="hidden shrink-0 sm:block" aria-hidden />
                 <span className="hidden sm:inline">{view === "imaging" ? "CTPelvic1K" : `${FEMUR_MODEL.dataset} ${FEMUR_MODEL.caseId}`}</span>
                 <ChevronRight size={14} className="hidden shrink-0 sm:block" aria-hidden />
-                <span className="truncate font-medium text-ink" aria-current="page">{view === "physics" ? "Physics simulations" : view === "imaging" ? "Imaging library" : "Patient overview"}</span>
+                <span className="truncate font-medium text-ink" aria-current="page">{view === "physics" ? "Physics simulations" : view === "imaging" ? "Imaging library" : view === "progression" ? "Lesion progression" : "Patient overview"}</span>
               </nav>
               <div className="flex items-center gap-2">
                 {health && <ApiStatus health={health} />}
@@ -102,13 +109,14 @@ export function Dashboard(props: DashboardProps) {
               </div>
             </div>
             <nav aria-label="Mobile workspace navigation" className="flex gap-1 overflow-x-auto border-t border-line px-4 py-2 scrollbar-hide lg:hidden">
-              <MobileNavItem active={view === "overview"} href="/" label="Patient overview" />
+              <MobileNavItem active={view === "overview"} href="/dashboard" label="Patient overview" />
               <MobileNavItem active={view === "physics"} href="/physics-simulations" label="Physics simulations" />
               <MobileNavItem active={view === "imaging"} href="/bones" label="Imaging library" />
+              <MobileNavItem active={view === "progression"} href="/lesion-progression" label="Lesion progression" />
             </nav>
           </header>
 
-          {"run" in props ? <Overview {...props} /> : props.view === "physics" ? <PhysicsSimulations /> : <div className="mx-auto max-w-[1440px] p-5 md:p-8"><CloudBones /></div>}
+          {"run" in props ? <Overview {...props} /> : props.view === "physics" ? <PhysicsSimulations /> : props.view === "progression" ? <LesionProgression /> : <div className="mx-auto max-w-[1440px] p-5 md:p-8"><CloudBones /></div>}
         </section>
       </div>
     </main>

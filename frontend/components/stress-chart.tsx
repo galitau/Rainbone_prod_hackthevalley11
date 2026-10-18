@@ -6,7 +6,26 @@ function timestamp(value: string) {
 }
 
 // The caller selects an input filename. Repeated executions are not patient follow-up scans.
-export function StressChart({ runs, name, hourly }: { runs: HistoryRun[]; name: string; hourly?: HistoryHour[] }) {
+type StressChartProps =
+  | { runs: HistoryRun[]; name: string; hourly?: HistoryHour[]; activeMonth?: never }
+  | { activeMonth: number; runs?: never; name?: never; hourly?: never };
+
+export function StressChart(props: StressChartProps) {
+  if ("activeMonth" in props) {
+    const month = Math.max(0, Math.min(12, props.activeMonth ?? 0));
+    return (
+      <section aria-label="Progression stress timeline" className="rounded-2xl border border-line bg-surface p-5 shadow-card md:p-6">
+        <h2 className="text-[15px] font-semibold text-ink">Progression stress timeline</h2>
+        <p className="mt-1 text-[12px] text-muted">Illustrative interpolated stress across the 12-month timeline.</p>
+        <div className="relative mt-5 h-16 rounded-lg border border-line bg-sunken/40">
+          <div className="absolute inset-y-0 w-px bg-caution" style={{ left: `${(month / 12) * 100}%` }} aria-label={`Active month ${month}`} />
+          <div className="absolute inset-x-3 bottom-3 flex justify-between text-[10px] text-muted"><span>0 mo</span><span>12 mo</span></div>
+        </div>
+      </section>
+    );
+  }
+
+  const { runs, name, hourly } = props;
   if (runs.length === 0) return null;
   const isSample = name === "sample_bone.nii.gz";
   const values = runs.map((run) => run.max_von_mises_stress_mpa);
