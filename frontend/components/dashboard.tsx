@@ -23,14 +23,14 @@ import { RainboneLogo } from "@/components/brand";
 import { ClinicalMetrics } from "@/components/clinical-metrics";
 import { StressChart } from "@/components/stress-chart";
 import { BoneViewer } from "@/components/BoneViewer";
-import { LiveRun, ALL_NUMBERS_ID } from "@/components/live-run";
+import { LiveRun, UploadedResult } from "@/components/live-run";
 import { PlainExplanation } from "@/components/plain-explanation";
 import { FractureRiskAnalysis } from "@/components/risk-analysis";
 import { LesionProgression } from "@/components/lesion-progression";
 import { CollapsiblePanel, PanelSplitter, useOverviewLayout, type PanelId } from "@/components/overview-layout";
 import { API_BASE_URL, type ExplanationState, type HistoryState, type RiskAnalysisState, type SimulationResult } from "@/lib/api";
 import { FEMUR_AUTHORS, FEMUR_INSTITUTION, FEMUR_MODEL } from "@/lib/model";
-import { REDUCE_MOTION_CLASS } from "@/lib/preferences-script";
+import { matchingSimulationRuns } from "@/lib/simulation-history";
 import { prefetchProgressionFrames } from "@/lib/progression-cache";
 const PhysicsSimulations = dynamic(() => import("@/components/physics-simulations").then(module => module.PhysicsSimulations));
 const CloudBones = dynamic(() => import("@/components/CloudBones").then(module => module.CloudBones));
@@ -154,19 +154,17 @@ export function Dashboard(props: DashboardProps) {
 }
 
 function Overview({ run, explanation, risk, history, onRunSample, onUpload }: OverviewProps) {
-  // Saved runs of the same input as the live run, so the chart never mixes different scans.
-  const runs = history.status === "ready" ? history.runs.filter((saved) => saved.source_filename === run.input.name) : [];
+  const result = run.status === "ready" ? run.result : undefined;
+  const runs = matchingSimulationRuns(history, result, run.input.name);
 
-  // "Import scan" solves the file and opens the panel that shows its numbers.
-  const importScan = (file: File) => {
-    onUpload(file);
-    const panel = document.getElementById(ALL_NUMBERS_ID) as HTMLDetailsElement | null;
-    if (panel) {
-      panel.open = true;
-      const still = document.documentElement.classList.contains(REDUCE_MOTION_CLASS) || window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-      panel.scrollIntoView({ behavior: still ? "auto" : "smooth", block: "start" });
+  // Make the uploaded input visible immediately, even when the advanced panel
+  // was collapsed. Completion is announced without moving focus a second time.
+  useEffect(() => {
+    if (run.input.kind === "upload" && run.status === "loading") {
+      document.getElementById("uploaded-result-title")?.focus({ preventScroll: true });
+      document.getElementById("uploaded-scan-result")?.scrollIntoView({ block: "nearest" });
     }
-  };
+  }, [run.input.kind, run.status]);
 
   // From lg up: the femur viewer fills the row, a splitter sets the panel column's width, and the panels scroll
   // on their own and collapse to their header. Width and collapsed panels are remembered per browser.
@@ -178,11 +176,11 @@ function Overview({ run, explanation, risk, history, onRunSample, onUpload }: Ov
     <CollapsiblePanel id={id} title={title} collapsed={layout.collapsed[id]} onCollapsedChange={collapsed => layout.setCollapsed(id, collapsed)} className={className}>{card}</CollapsiblePanel>
   );
   // Below lg the saved runs stay under the viewer, as before; from lg up they are the last panel.
-  const stressChart = runs.length > 0 && <StressChart runs={runs} name={run.input.name} hourly={history.status === "ready" ? history.hourly : undefined} />;
+  const stressChart = runs.length > 0 && <StressChart runs={runs} name={run.input.name} matchKind={result?.run_id ? "run" : "filename"} sample={run.input.kind === "sample"} hourly={history.status === "ready" ? history.hourly : undefined} />;
 
   return (
     <div className="mx-auto max-w-[1440px] p-5 md:p-8 lg:flex lg:min-h-0 lg:w-full lg:max-w-none lg:flex-1 lg:flex-col lg:px-6 lg:pb-3 lg:pt-4">
-      <PatientHeader importing={run.status === "loading"} onImport={importScan} onResetLayout={layout.reset} />
+      <PatientHeader importing={run.status === "loading"} onImport={onUpload} onResetLayout={layout.reset} />
       <div ref={rowRef} style={{ "--panel-w": `${layout.panelWidth}px` } as React.CSSProperties} className="mt-6 grid gap-6 lg:mt-4 lg:flex lg:min-h-0 lg:flex-1 lg:gap-0">
         <div className="min-w-0 space-y-6 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col lg:[&>section]:flex lg:[&>section]:min-h-0 lg:[&>section]:flex-1 lg:[&>section]:flex-col lg:[&>section]:overflow-y-auto lg:[&>section>div.relative]:min-h-[240px] lg:[&>section>div.relative+div>span]:min-w-48">
           {viewer}
@@ -190,6 +188,7 @@ function Overview({ run, explanation, risk, history, onRunSample, onUpload }: Ov
         </div>
         <PanelSplitter width={layout.panelWidth} rowRef={rowRef} onResize={layout.setPanelWidth} />
         <div id="overview-panels" className="flex min-w-0 flex-col gap-6 lg:min-h-0 lg:w-[var(--panel-w)] lg:max-w-[calc(100%-416px)] lg:shrink-0 lg:gap-4 lg:overflow-y-auto lg:overscroll-contain lg:pb-1 lg:pr-1 lg:[&_#all-numbers]:scroll-mt-0">
+          {run.input.kind === "upload" && <UploadedResult run={run} history={history} />}
           {panel("metrics", "Clinical metrics", <ClinicalMetrics />)}
           {panel("risk", "AI fracture risk analysis", <FractureRiskAnalysis state={risk} />)}
           {panel("plain", "In plain words", <PlainExplanation state={explanation} />)}

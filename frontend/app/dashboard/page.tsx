@@ -14,6 +14,7 @@ import {
 } from "@/lib/api";
 import { FEMUR_EXPLAIN_REQUEST, FEMUR_MODEL, FEMUR_RISK_FE } from "@/lib/model";
 import { readPreferences } from "@/lib/preferences";
+import { readBackSimulation } from "@/lib/simulation-history";
 
 const SAMPLE: RunInput = { name: "sample_bone.nii.gz", kind: "sample" };
 const HEALTH_POLL_MS = 15_000;
@@ -56,6 +57,7 @@ export default function Home() {
   const simulate = useCallback(async (getFile: () => Promise<File>, input: RunInput) => {
     const id = ++latestRun.current;
     setRun({ status: "loading", input });
+    setHistory({ status: "loading" });
     let file: File;
     try {
       file = await getFile();
@@ -68,17 +70,7 @@ export default function Home() {
     setRun(outcome.ok ? { status: "ready", input, result: outcome.result, ms: outcome.ms } : { status: "error", input, message: outcome.message });
     void refreshHealth(); // the API answered (or not), so don't leave an older status on screen until the next poll
     if (!outcome.ok) return;
-    // Saving happens after the response. Refresh for a bounded window: another
-    // browser can save the same filename, so a recent row is not an exact acknowledgement.
-    const deadline = Date.now() + 5_000;
-    while (mounted.current && id === latestRun.current && Date.now() < deadline) {
-      const next = await fetchHistory(12, input.name, Math.max(1, deadline - Date.now()));
-      if (!mounted.current || id !== latestRun.current) return;
-      // A final short-deadline timeout must not erase rows already read back.
-      setHistory((previous) => next.status === "ready" || previous.status !== "ready" ? next : previous);
-      if (Date.now() >= deadline) return;
-      await new Promise((resolve) => window.setTimeout(resolve, Math.min(500, deadline - Date.now())));
-    }
+    await readBackSimulation(outcome.result, input.name, setHistory, () => mounted.current && id === latestRun.current);
   }, [refreshHealth]);
 
   const runSample = useCallback(() => simulate(loadSample, SAMPLE), [simulate]);
@@ -91,8 +83,13 @@ export default function Home() {
     void analyseRisk();
     // Preferences can turn the automatic sample run off; "Run the sample" still runs it.
     if (readPreferences().autoRunSample) void runSample();
-    else setRun({ status: "idle", input: SAMPLE });
-    void fetchHistory().then((next) => mounted.current && setHistory(next));
+    else {
+      setRun({ status: "idle", input: SAMPLE });
+      const id = latestRun.current;
+      void fetchHistory(12, SAMPLE.name).then(next => {
+        if (mounted.current && latestRun.current === id) setHistory(next);
+      });
+    }
     const timer = window.setInterval(() => void refreshHealth(), HEALTH_POLL_MS);
     return () => {
       window.clearInterval(timer);

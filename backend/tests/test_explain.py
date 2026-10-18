@@ -645,8 +645,9 @@ class RouteTests(ExplainTestCase):
     def test_a_simulate_response_is_accepted_as_is(self):
         from main import SimulationResponse
 
-        self.assertEqual(set(ExplainRequest.model_fields) - {"case_id"}, set(SimulationResponse.model_fields))
-        payload = SimulationResponse(**SIM).model_dump()
+        self.assertTrue((set(ExplainRequest.model_fields) - {"case_id"}).issubset(SimulationResponse.model_fields))
+        payload = SimulationResponse(**SIM, run_id="00000000-0000-0000-0000-000000000001", input_sha256="a" * 64,
+                                     original_source_filename=SIM["source_filename"], persistence="saved").model_dump()
         response = self.client({}).post("/api/explain", json=payload)
         self.assertEqual(response.status_code, 200)
         body = response.json()

@@ -5,9 +5,9 @@ function timestamp(value: string) {
   return Number.isFinite(date.getTime()) ? date.toISOString().replace("T", " ").replace(/\.\d{3}Z$/, " UTC") : "Time unavailable";
 }
 
-// The caller selects an input filename. Repeated executions are not patient follow-up scans.
+// Exact run identity for current APIs, filename history for older deployments.
 type StressChartProps =
-  | { runs: HistoryRun[]; name: string; hourly?: HistoryHour[]; activeMonth?: never }
+  | { runs: HistoryRun[]; name: string; hourly?: HistoryHour[]; activeMonth?: never; matchKind?: "run" | "filename"; sample?: boolean }
   | { activeMonth: number; runs?: never; name?: never; hourly?: never };
 
 export function StressChart(props: StressChartProps) {
@@ -25,9 +25,9 @@ export function StressChart(props: StressChartProps) {
     );
   }
 
-  const { runs, name, hourly } = props;
+  const { runs, name, hourly, matchKind = "filename" } = props;
   if (runs.length === 0) return null;
-  const isSample = name === "sample_bone.nii.gz";
+  const isSample = props.sample ?? name === "sample_bone.nii.gz";
   const values = runs.map((run) => run.max_von_mises_stress_mpa);
   const max = Math.max(...values);
   const points = values.map((value, index) => `${(index / Math.max(1, values.length - 1)) * 100},${100 - (max > 0 ? (value / max) * 78 : 0) - 8}`).join(" ");
@@ -39,9 +39,9 @@ export function StressChart(props: StressChartProps) {
     <section aria-label="Saved simulation runs" className="rounded-2xl border border-line bg-surface p-5 shadow-card md:p-6">
       <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
         <div>
-          <h2 className="text-[15px] font-semibold text-ink">{isSample ? "Engine test history" : "Simulation history by input"}</h2>
-          <p className="mt-1 text-[12px] text-muted">{runs.length} returned runs for <span className="break-all font-mono">{name}</span></p>
-          <p className="mt-2 text-[12px] leading-5 text-body">{isSample ? "The bundled sample is a synthetic test volume, not the HFValid femur above. Runs are matched by filename only; matching names do not prove identical contents. This is execution history, not patient change." : "Saved engine executions, not patient progression. Matching filenames do not confirm identical scans or settings."}</p>
+          <h2 className="text-[15px] font-semibold text-ink">{matchKind === "run" ? "Saved simulation record" : isSample ? "Engine test history" : "Simulation history by input"}</h2>
+          <p className="mt-1 text-[12px] text-muted">{matchKind === "run" ? "Exact execution for" : `${runs.length} returned runs for`} <span className="break-all font-mono">{name}</span></p>
+          <p className="mt-2 text-[12px] leading-5 text-body">{isSample && "The bundled sample is synthetic, not the HFValid femur above. "}{matchKind === "run" ? "Matched by run ID. Reusing identical contents does not create another execution. The original filename appears in Run evidence." : "Matched by filename only; matching names do not prove identical contents or settings."} This is execution history, not patient change.</p>
         </div>
         <p className="shrink-0 text-right"><span className="font-mono text-[22px] font-medium text-ink tabular-nums">{values[values.length - 1].toFixed(1)}</span><span className="ml-1 text-[11px] text-muted">MPa · latest returned</span></p>
       </div>
@@ -56,7 +56,7 @@ export function StressChart(props: StressChartProps) {
           </svg>
         </div>
         <div className="ml-10 mt-2 flex justify-between gap-2 text-[10px] text-muted"><span>Oldest returned</span><span>Run order · equal spacing</span><span>Newest returned</span></div>
-      </details> : <p className="mt-4 text-[12px] text-muted">One saved run returned. Another execution will allow a run-order comparison.</p>}
+      </details> : <p className="mt-4 text-[12px] text-muted">One saved execution returned.</p>}
       <div className="mt-5 overflow-x-auto rounded-lg border border-line" role="region" aria-label="Recent saved run evidence" tabIndex={0}>
         <table className="w-full text-left text-[11px]">
           <caption className="border-b border-line bg-sunken/60 px-3 py-2 text-left font-medium text-ink">Latest {recent.length} returned {recent.length === 1 ? "run" : "runs"} · newest first</caption>
@@ -75,7 +75,7 @@ export function StressChart(props: StressChartProps) {
         </table>
       </div>
       {latestHour ? <p className="mt-3 rounded-lg border border-line bg-sunken/60 px-3 py-2 text-[11px] leading-5 text-body"><span className="font-medium">All-input engine activity:</span> {latestHour.runs} saved {latestHour.runs === 1 ? "execution" : "executions"} in the hour starting {timestamp(latestHour.bucket)}. Hourly count from the history API; not a patient measure.</p> : null}
-      <p className="mt-3 text-[11px] leading-5 text-muted">Read back from saved history. This list does not confirm that an in-progress run has been saved.</p>
+      <p className="mt-3 text-[11px] leading-5 text-muted">{matchKind === "run" ? "The execution behind this result was read back from Tiger." : "Read back by filename. This list does not confirm that the latest upload was saved."}</p>
     </section>
   );
 }

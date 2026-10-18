@@ -108,6 +108,18 @@ class SimulateCacheTests(unittest.TestCase):
         # History records the solve that ran, under its own name, and nothing for the repeat.
         self.assertEqual(self.saved.call_count, 1)
         self.assertEqual(self.saved.call_args.args[0]["source_filename"], "first.nii.gz")
+        self.assertEqual(first.json()["original_source_filename"], "first.nii.gz")
+        self.assertEqual(second.json()["run_id"], first.json()["run_id"])
+        self.assertEqual(second.json()["input_sha256"], hashlib.sha256(b"abc").hexdigest())
+
+    def test_same_filename_different_bytes_have_different_execution_identity(self):
+        with TestClient(app) as client:
+            first = self.post(client, b"abc").json()
+            second = self.post(client, b"def").json()
+        self.assertNotEqual(first["run_id"], second["run_id"])
+        self.assertNotEqual(first["input_sha256"], second["input_sha256"])
+        self.assertEqual(first["source_filename"], second["source_filename"])
+        self.assertEqual(self.saved.call_count, 2)
 
     def test_a_kept_result_answers_while_another_solve_holds_the_queue(self):
         with TestClient(app) as client:
