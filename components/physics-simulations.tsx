@@ -80,7 +80,7 @@ export function PhysicsSimulations() {
             </div>
             {frameIndex === firstBreak - 1 && <p className="mt-3 text-[11px] leading-5 text-caution">Last solved step before a visible gap. In Failure proximity, red elements have reached the assumed strain limit that initiates damage. The gap develops between saved steps.</p>}
           </section>
-          <PressViewer model={model} frameIndex={frameIndex} field={field} scale={scale} edges={edges} playing={playing} onTogglePlayback={togglePlayback} onRestart={restartPlayback} onReady={onReady} />
+          <PressViewer model={model} frameIndex={frameIndex} field={field} scale={scale} edges={edges} playing={playing} onTogglePlayback={togglePlayback} onRestart={restartPlayback} onScrub={scrub} onReady={onReady} />
         </div>
         <aside aria-label="Compression results and settings" className="space-y-4">
           <section className="rounded-2xl border border-line bg-surface shadow-card p-5">

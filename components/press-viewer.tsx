@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Maximize2, Minimize2, Pause, Play, RotateCcw } from "lucide-react";
+import { ChevronLeft, ChevronRight, Maximize2, Minimize2, Pause, Play, RotateCcw } from "lucide-react";
 import type vtkPolyData from "@kitware/vtk.js/Common/DataModel/PolyData";
 import { BONE, DATA_RAMP, VIEWPORT_BACKGROUND } from "@/lib/spectrum";
 import { PRESS_PATH, type PressField, type PressModel } from "@/lib/press-model";
@@ -31,9 +31,9 @@ function updateDisplayNormals(data: vtkPolyData) {
   array.modified();
 }
 
-export function PressViewer({ model, frameIndex, field, scale, edges, playing, onTogglePlayback, onRestart, onReady }: {
+export function PressViewer({ model, frameIndex, field, scale, edges, playing, onTogglePlayback, onRestart, onScrub, onReady }: {
   model: PressModel; frameIndex: number; field: PressField; scale: number; edges: boolean;
-  playing: boolean; onTogglePlayback: () => void; onRestart: () => void; onReady: (ready: boolean) => void;
+  playing: boolean; onTogglePlayback: () => void; onRestart: () => void; onScrub: (index: number) => void; onReady: (ready: boolean) => void;
 }) {
   const section = useRef<HTMLElement>(null);
   const container = useRef<HTMLDivElement>(null);
@@ -219,6 +219,7 @@ export function PressViewer({ model, frameIndex, field, scale, edges, playing, o
   useEffect(() => { if (ready) void controls.current?.update(frameIndex, field, scale, edges); }, [frameIndex, field, scale, edges, ready]);
   const maximum = field === "damage" || field === "failure_index" ? 1 : field === "displacement_mm" ? Math.max(...model.frames.map(f => f.max_displacement_mm)) : model.stress_color_max_mpa;
   const atEnd = frameIndex === model.frames.length - 1;
+  const frame = model.frames[frameIndex];
   const canPlay = ready && !loading && !error;
   async function fullscreen() {
     try {
@@ -227,34 +228,44 @@ export function PressViewer({ model, frameIndex, field, scale, edges, playing, o
     } catch { setError("Fullscreen is unavailable. The inline viewer remains interactive."); }
   }
   return <section ref={section} aria-label="Hydraulic press 3D simulation" className="flex min-w-0 flex-col overflow-hidden rounded-xl border border-line bg-surface shadow-card [&:fullscreen]:h-[100dvh] [&:fullscreen]:rounded-none">
-    <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-line bg-surface px-4 py-3">
-      <div><p className="text-sm font-medium">{field === "failure_index" ? "Failure proximity · strain / limit" : "Hydraulic compression rig"}</p><p className="mt-1 font-mono text-[10px] text-muted">HFValid {model.case_id} · FEA step {frameIndex + 1}/{model.frames.length} · {model.elements.toLocaleString()} elements</p></div>
-      <div className="flex flex-wrap gap-2">
-        {isFullscreen && <div role="group" aria-label="Fullscreen playback controls" className="flex gap-2">
-          <button aria-label={playing ? "Pause fullscreen simulation" : atEnd ? "Replay fullscreen simulation" : "Play fullscreen simulation"} disabled={!canPlay && !playing} onClick={onTogglePlayback} className="flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-white disabled:opacity-40">{playing ? <Pause size={15} /> : <Play size={15} />}{playing ? "Pause" : atEnd ? "Replay" : "Play"}</button>
-          <button aria-label="Restart fullscreen simulation" disabled={!canPlay} onClick={onRestart} className="flex items-center gap-2 rounded-lg border border-line px-3 py-2 text-xs text-muted hover:text-ink disabled:opacity-40"><RotateCcw size={15} />Restart</button>
-        </div>}
-        <button aria-label="Reset press camera" title="Reset camera" onClick={() => controls.current?.reset()} className="rounded-lg border border-line p-2 text-muted hover:text-ink"><RotateCcw size={15} /></button>
-        <button aria-label={isFullscreen ? "Exit fullscreen press viewer" : "Fullscreen press viewer"} onClick={fullscreen} className="rounded-lg border border-line p-2 text-muted hover:text-ink">{isFullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}</button>
+    <div className="shrink-0 border-b border-line bg-surface px-4 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div><p className="text-sm font-medium">{isFullscreen ? "FEA compression" : field === "failure_index" ? "Failure proximity · strain / limit" : "Hydraulic compression rig"}</p><p className="mt-1 font-mono text-[10px] text-muted">HFValid {model.case_id} · FEA step {frameIndex + 1}/{model.frames.length} · {isFullscreen ? `${frame.stroke_mm.toFixed(3)} mm applied displacement` : `${model.elements.toLocaleString()} elements`}</p></div>
+        <div className="flex flex-wrap items-center gap-2">
+          {isFullscreen && <div role="group" aria-label="Fullscreen playback controls" className="flex items-center gap-2">
+            <button aria-label="Previous compression step" disabled={frameIndex === 0} onClick={() => onScrub(frameIndex - 1)} className="rounded-lg border border-line p-2 text-muted hover:text-ink disabled:opacity-30"><ChevronLeft size={16} /></button>
+            <button aria-label={playing ? "Pause fullscreen simulation" : atEnd ? "Replay fullscreen simulation" : "Play fullscreen simulation"} disabled={!canPlay && !playing} onClick={onTogglePlayback} className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-xs font-semibold text-white disabled:opacity-40">{playing ? <Pause size={15} /> : <Play size={15} />}{playing ? "Pause" : atEnd ? "Replay" : "Run press"}</button>
+            <button aria-label="Next compression step" disabled={atEnd} onClick={() => onScrub(frameIndex + 1)} className="rounded-lg border border-line p-2 text-muted hover:text-ink disabled:opacity-30"><ChevronRight size={16} /></button>
+            <button aria-label="Restart fullscreen simulation" disabled={!canPlay} onClick={onRestart} className="flex items-center gap-2 rounded-lg border border-line px-3 py-2 text-xs text-muted hover:text-ink disabled:opacity-40"><RotateCcw size={15} />Restart</button>
+          </div>}
+          <button aria-label="Reset press camera" title="Reset camera" onClick={() => controls.current?.reset()} className="rounded-lg border border-line p-2 text-muted hover:text-ink"><RotateCcw size={15} /></button>
+          <button aria-label={isFullscreen ? "Exit fullscreen press viewer" : "Fullscreen press viewer"} onClick={fullscreen} className="rounded-lg border border-line p-2 text-muted hover:text-ink">{isFullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}</button>
+        </div>
       </div>
+      {isFullscreen && <div className="mt-3">
+        <input aria-label="Compression step" type="range" min={0} max={model.frames.length - 1} step={1} value={frameIndex} onChange={event => onScrub(Number(event.target.value))} className="w-full accent-primary" />
+        <div className="mt-1 flex justify-between font-mono text-[10px] text-muted"><span>UNLOADED</span><span>COMPRESSION → DAMAGE</span></div>
+      </div>}
     </div>
     <div className={`relative flex-1 bg-viewport ${isFullscreen ? "min-h-0" : "min-h-[400px] sm:min-h-[500px]"}`}>
       <div ref={container} role="img" aria-label="Rotatable femur between a hydraulic ram and distal support" className="absolute inset-0 touch-none" />
-      <div className="pointer-events-none absolute left-4 top-3 rounded-md bg-surface/80 px-2 py-1 font-mono text-[10px] text-muted">DEFORMATION ×{scale} · VISUAL SCALE</div>
-      {field === "failure_index" && <div className="pointer-events-none absolute left-4 top-11 max-w-[240px] rounded-md bg-surface/90 px-2 py-1.5 text-[10px] leading-4"><p className="text-critical">Red: damage-initiation limit reached</p><p className="text-muted">Gray: failure disabled near fixtures</p></div>}
+      <div className="pointer-events-none absolute left-4 top-3 rounded-md border border-viewport-line bg-viewport/85 px-2 py-1 font-mono text-[10px] text-viewport-ink">DEFORMATION ×{scale} · VISUAL SCALE</div>
+      {field === "failure_index" && <div className="pointer-events-none absolute left-4 top-11 max-w-[240px] rounded-md border border-viewport-line bg-viewport/85 px-2 py-1.5 text-[10px] leading-4"><p className="text-[#ff8a78]">Red: damage-initiation limit reached</p><p className="text-viewport-ink">Gray: failure disabled near fixtures</p></div>}
       {loading && <p role="status" className="absolute bottom-10 left-1/2 -translate-x-1/2 rounded-lg bg-surface/90 px-4 py-2 text-xs text-link">Loading solved step…</p>}
       {error && <div role="alert" className="absolute inset-x-4 bottom-12 rounded-lg border border-caution/30 bg-surface p-4 text-sm text-caution"><p>{error}</p><button onClick={() => setAttempt(value => value + 1)} className="mt-2 underline">Retry press viewer</button></div>}
       <p className="pointer-events-none absolute inset-x-3 bottom-3 text-center text-[11px] text-viewport-ink/70">Drag to rotate · Scroll to zoom · Shift + drag to pan</p>
     </div>
-    <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-line bg-surface px-4 py-3 text-[10px] text-muted">
+    <div className={`shrink-0 border-t border-line bg-surface text-muted ${isFullscreen ? "grid grid-cols-1 items-center gap-x-10 gap-y-4 px-8 py-5 text-xs md:grid-cols-[1fr_minmax(0,560px)_1fr]" : "flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-[10px]"}`}>
       <p>Precomputed SfePy steps · displacement-controlled test</p>
-      {field !== "anatomy" && <div className="w-72 max-w-full">
-        <p>{field === "failure_index" ? "Failure proximity · peak principal strain / assumed limit" : field === "stress_mpa" ? "Nodal von Mises stress · MPa" : field === "damage" ? "Damage · 0 intact / 1 fully degraded" : "Displacement magnitude · mm"}</p>
-        <div className={`relative mt-1.5 h-1.5 w-full rounded-full ${field === "failure_index" ? "bg-[linear-gradient(to_right,#2f4fd8_0%,#12a0c4_50%,#f0b429_75%,#f0b429_100%)]" : "bg-[linear-gradient(to_right,#2f4fd8,#12a0c4,#3baa6e,#f0b429,#d9412b)]"}`}>{field === "failure_index" && <span className="absolute right-0 h-1.5 w-1.5 rounded-r-full bg-spectrum-red" />}</div>
+      {field !== "anatomy" && <div className={isFullscreen ? "w-full" : "w-72 max-w-full"}>
+        <p className={isFullscreen ? "mb-2 text-center font-medium text-ink" : ""}>{field === "failure_index" ? "Failure proximity · peak principal strain / assumed limit" : field === "stress_mpa" ? "Nodal von Mises stress · MPa" : field === "damage" ? "Damage · 0 intact / 1 fully degraded" : "Displacement magnitude · mm"}</p>
+        <div className={`relative mt-1.5 w-full rounded-full ${isFullscreen ? "h-2.5" : "h-1.5"} ${field === "failure_index" ? "bg-[linear-gradient(to_right,#2f4fd8_0%,#12a0c4_50%,#f0b429_75%,#f0b429_100%)]" : "bg-[linear-gradient(to_right,#2f4fd8,#12a0c4,#3baa6e,#f0b429,#d9412b)]"}`}>{field === "failure_index" && <span className={`absolute right-0 rounded-r-full bg-spectrum-red ${isFullscreen ? "h-2.5 w-2" : "h-1.5 w-1.5"}`} />}</div>
         <div className="mt-1 grid grid-cols-3 font-mono"><span>0</span><span className="text-center">{field === "failure_index" ? "0.5" : ""}</span><span className="text-right">{field === "failure_index" ? "≥ 1" : `${field === "stress_mpa" ? "≥ " : ""}${maximum.toFixed(field === "damage" ? 1 : 2)}`}</span></div>
-        {field === "stress_mpa" && <p className="mt-1">Fixed 99th-percentile cap · red is not a failure threshold</p>}
-        {field === "failure_index" && <><div className="flex justify-between"><span>Below limit</span><span className="text-critical">Limit reached</span></div><p className="mt-2 flex items-center gap-1.5"><span className="h-2 w-2 rounded-sm bg-[#737d8c]" />Gray: failure disabled near fixtures</p><p className="mt-1">Same element criterion as the damage model.<br />Records loading history, not fracture probability.</p></>}
+        {field === "failure_index" && <div className="flex justify-between"><span>Below limit</span><span className="text-critical">Limit reached</span></div>}
+        {field === "stress_mpa" && <p className={isFullscreen ? "mt-2 text-center" : "mt-1"}>Fixed 99th-percentile cap · red is not a failure threshold</p>}
+        {field === "failure_index" && !isFullscreen && <><p className="mt-2 flex items-center gap-1.5"><span className="h-2 w-2 rounded-sm bg-[#737d8c]" />Gray: failure disabled near fixtures</p><p className="mt-1">Same element criterion as the damage model.<br />Records loading history, not fracture probability.</p></>}
       </div>}
+      {isFullscreen && field === "failure_index" && <div className="space-y-1.5 md:justify-self-end md:text-right"><p className="flex items-center gap-1.5 md:justify-end"><span className="h-2.5 w-2.5 rounded-sm bg-[#737d8c]" />Gray: failure disabled near fixtures</p><p>Same element criterion as the damage model.</p><p>Records loading history, not fracture probability.</p></div>}
     </div>
   </section>;
 }
