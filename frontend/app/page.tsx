@@ -57,8 +57,16 @@ export default function Home() {
     setRun(outcome.ok ? { status: "ready", input, result: outcome.result, ms: outcome.ms } : { status: "error", input, message: outcome.message });
     void refreshHealth(); // the API answered (or not), so don't leave an older status on screen until the next poll
     if (!outcome.ok) return;
-    // The API saves a run after it has answered, so read the history once that save has had time to finish.
-    window.setTimeout(() => void fetchHistory().then((next) => mounted.current && setHistory(next)), 1500);
+    // Saving happens after the response. Refresh for a bounded window: another
+    // browser can save the same filename, so a recent row is not an exact acknowledgement.
+    const deadline = Date.now() + 5_000;
+    while (mounted.current && id === latestRun.current && Date.now() < deadline) {
+      const next = await fetchHistory(12, input.name, Math.max(1, deadline - Date.now()));
+      if (!mounted.current || id !== latestRun.current) return;
+      setHistory(next);
+      if (Date.now() >= deadline) return;
+      await new Promise((resolve) => window.setTimeout(resolve, Math.min(500, deadline - Date.now())));
+    }
   }, [refreshHealth]);
 
   const runSample = useCallback(() => simulate(loadSample, SAMPLE), [simulate]);

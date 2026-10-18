@@ -174,6 +174,16 @@ class FetchTests(HistoryTestCase):
         self.assertEqual(out["hourly"], hourly)
         self.assertEqual([params for _, params in conn.executed], [(2,), (2,)])
 
+    def test_source_filter_is_parameterized_before_limit_and_keeps_global_hourly(self):
+        filename = "scan 'one' & two.nii.gz"
+        conn = self.use_database(FakeConnection(results=[[], []]))
+        self.assertEqual(history.fetch_history(3, filename), {"series": [], "runs": [], "hourly": []})
+        sql, params = conn.executed[0]
+        self.assertLess(sql.index("WHERE source_filename = %s"), sql.index("LIMIT %s"))
+        self.assertNotIn(filename, sql)
+        self.assertEqual(params, (filename, 3))
+        self.assertEqual(conn.executed[1], (history.HOURLY_SQL, (3,)))
+
     def test_missing_schema_points_at_the_migrate_command(self):
         self.use_database(FakeConnection(error=psycopg.errors.UndefinedTable("simulation_runs")))
         with self.assertRaisesRegex(history.HistoryUnavailable, "python -m services.history migrate"):
@@ -207,6 +217,14 @@ class RouteTests(HistoryTestCase):
         self.assertEqual(body["runs"][0]["run_id"], str(run["run_id"]))
         self.assertEqual(body["runs"][0]["source_filename"], "test.nii.gz")
         self.assertEqual(body["hourly"], [])
+
+    def test_source_filename_reaches_sql_and_empty_filter_is_rejected(self):
+        conn = self.use_database(FakeConnection(results=[[], []]))
+        filename = "patient & sample.nii.gz"
+        response = self.client.get("/api/history", params={"limit": 2, "source_filename": filename})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(conn.executed[0][1], (filename, 2))
+        self.assertEqual(self.client.get("/api/history", params={"source_filename": ""}).status_code, 422)
 
     def test_limit_is_validated(self):
         self.assertEqual(self.client.get("/api/history", params={"limit": 0}).status_code, 422)
