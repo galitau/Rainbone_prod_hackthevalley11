@@ -2,10 +2,7 @@
 
 ![Rainbone: a stress test for bones](docs/images/rainbone-cover.png)
 
-- **Live site:** <https://rainbone.health>
-- **Devpost:** <https://devpost.com/software/rainbowbone>
-- **Demo video:** <https://youtu.be/SCrmSu9aVzs>
-- **Docs:** [Architecture](ARCHITECTURE.md) · [Business process flow](BUSINESS_PROCESS_FLOW.md)
+**[Live site](https://rainbone.health)** · **[Demo video](https://youtu.be/SCrmSu9aVzs)** · **[Devpost](https://devpost.com/software/rainbowbone)** · **[Architecture](ARCHITECTURE.md)** · **[Business process flow](BUSINESS_PROCESS_FLOW.md)**
 
 **A stress test for bones, explained by AI.**
 
@@ -15,8 +12,8 @@ early, so prevention can start before the fall.
 **Who it's for:** the care team in nursing homes and senior living: nurses, CNAs, wellness
 directors, doctors and admin staff.
 
-Rainbone combines CT-derived 3D models, physics simulations and AI to explore how bone
-vulnerability can be made visible and understandable early enough to support prevention.
+Rainbone combines CT-derived 3D models, physics simulations and checked AI to help the care
+team see bone weakness early, before a fall becomes an emergency.
 
 101 women had their thighbones CT-scanned. Four had a recorded fracture during follow-up.
 Rainbone shows, in 3D and in colour, where a real femur takes the most strain under
