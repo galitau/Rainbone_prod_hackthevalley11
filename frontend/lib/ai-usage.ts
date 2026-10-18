@@ -30,14 +30,14 @@ export type UsageSource = {
 export const GEMINI_PROMPT_FOOTPRINT = {
   wh: 0.24,
   gco2e: 0.03,
-  label: "Google 2025 median Gemini Apps text prompt",
+  label: "Google, May 2025",
   url: "https://cloud.google.com/blog/products/infrastructure/measuring-the-environmental-impact-of-ai-inference",
 } as const;
 
 // The tooltip under a counted answer, naming the model that wrote it.
 export function usageWhy(provider: string): string {
   const writer = provider === "gemini" ? "Gemini" : "the AI model";
-  return `Why we show this: code computes every number; ${writer} only writes the words, so each answer is one short model call, and the count is the provider's own usage report.`;
+  return `Why we show this: code computes every number; ${writer} only writes the words, and the count is the provider's own usage report for the call that wrote this answer (a fallback can add calls).`;
 }
 
 export type UsageLine = { text: string; estimate: string | null; why: string | null };
@@ -63,7 +63,7 @@ export function usageLine({ provider, served, usage }: UsageSource): UsageLine |
   ].filter(Boolean);
   const text = `This answer: ${count(usage.total_tokens)} tokens${parts.length ? ` (${parts.join(" · ")})` : ""}`;
   const estimate = provider === "gemini"
-    ? `est. ≈ ${GEMINI_PROMPT_FOOTPRINT.wh} Wh, ${GEMINI_PROMPT_FOOTPRINT.gco2e} gCO2e`
+    ? `for scale, not measured for this answer: a median Gemini Apps text prompt ≈ ${GEMINI_PROMPT_FOOTPRINT.wh} Wh, ${GEMINI_PROMPT_FOOTPRINT.gco2e} gCO2e`
     : null;
   return { text, estimate, why: usageWhy(provider) };
 }

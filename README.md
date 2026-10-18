@@ -194,10 +194,10 @@ logging (`backend/services/risk.py`, `explain.py`, `ask.py`, `llm_providers.py`,
   `served`. A cached answer made no new call, so the card says "Reused — no new Gemini call".
   A saved answer is served after Gemini failed or was skipped, so the card says only that it
   was reused; the template reports none. Under a live Gemini answer the card adds an
-  energy and CO2e figure that is an estimate, not a measurement: Google's published median for one Gemini Apps text prompt, 0.24 Wh and
+  reference figure for scale, clearly marked as not measured for this answer: Google's published median for one Gemini Apps text prompt (May 2025), 0.24 Wh and
   0.03 gCO2e ([Google Cloud blog, Aug 2025](https://cloud.google.com/blog/products/infrastructure/measuring-the-environmental-impact-of-ai-inference);
-  method in [arXiv:2508.15734](https://arxiv.org/abs/2508.15734)). It is shown per answer
-  and never scaled by tokens, since the source gives no per-token figure. Tokens are not
+  method in [arXiv:2508.15734](https://arxiv.org/abs/2508.15734)). It is the same reference
+  number for every answer and never scaled by tokens, since the source gives no per-token figure. Tokens are not
   written to the audit log.
 - **Audit log.** Each answer the chain produces attempts to write one row to the `ai_analyses`
   hypertable in Tiger Cloud: endpoint, case, provider, model, latency, grounding store,

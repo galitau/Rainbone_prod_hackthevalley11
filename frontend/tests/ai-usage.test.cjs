@@ -20,7 +20,7 @@ const usage = (over = {}) => ({prompt_tokens: 480, output_tokens: 132, thinking_
 
 test('a live Gemini answer shows its tokens and the labelled per-prompt estimate', () => {
   assert.deepEqual(usageLine({provider: 'gemini', served: 'live', usage: usage()}),
-    {text: 'This answer: 612 tokens (480 in · 132 out)', estimate: 'est. ≈ 0.24 Wh, 0.03 gCO2e', why: usageWhy('gemini')});
+    {text: 'This answer: 612 tokens (480 in · 132 out)', estimate: 'for scale, not measured for this answer: a median Gemini Apps text prompt ≈ 0.24 Wh, 0.03 gCO2e', why: usageWhy('gemini')});
   assert.equal(usageLine({provider: 'gemini', served: 'live', usage: usage({total_tokens: 1234, prompt_tokens: 1100, output_tokens: 134})}).text,
     'This answer: 1,234 tokens (1,100 in · 134 out)');
 });
@@ -30,7 +30,7 @@ test('the estimate is Google\'s published median, cited, never scaled per token'
   assert.equal(GEMINI_PROMPT_FOOTPRINT.gco2e, 0.03);
   assert.match(GEMINI_PROMPT_FOOTPRINT.url, /^https:\/\/cloud\.google\.com\/blog\/products\/infrastructure\/measuring-the-environmental-impact-of-ai-inference$/);
   const small = usageLine({provider: 'gemini', served: 'live', usage: usage({total_tokens: 10})});
-  assert.equal(small.estimate, 'est. ≈ 0.24 Wh, 0.03 gCO2e');
+  assert.equal(small.estimate, 'for scale, not measured for this answer: a median Gemini Apps text prompt ≈ 0.24 Wh, 0.03 gCO2e');
   assert.match(usageWhy('gemini'), /code computes every number; Gemini only writes the words/);
   assert.match(usageWhy('groq'), /code computes every number; the AI model only writes the words/);
 });
