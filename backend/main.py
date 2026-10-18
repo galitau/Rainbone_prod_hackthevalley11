@@ -14,6 +14,7 @@ from routes_bones import router as bones_router
 
 from routes_explain import router as explain_router
 from routes_history import router as history_router
+from routes_risk import router as risk_router
 from services.fea_solver import MAX_UPLOAD_BYTES, FEASolverError, simulate_fea
 from services.fsl_segmentation import segmentation_tool
 from services.history import save_simulation_run
@@ -52,6 +53,7 @@ app.add_middleware(
 )
 app.include_router(explain_router)
 app.include_router(history_router)
+app.include_router(risk_router)
 # Printed by uvicorn's default logging, so the console says whether FSL makes the bone mask.
 logging.getLogger("uvicorn.error").info("Bone segmentation: %s", segmentation_tool())
 

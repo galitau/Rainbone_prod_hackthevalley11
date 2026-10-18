@@ -6,11 +6,13 @@ import {
   checkHealth,
   fetchExplanation,
   fetchHistory,
+  fetchRiskAnalysis,
   runSimulation,
   type ExplanationState,
   type HistoryState,
+  type RiskAnalysisState,
 } from "@/lib/api";
-import { FEMUR_EXPLAIN_REQUEST } from "@/lib/model";
+import { FEMUR_EXPLAIN_REQUEST, FEMUR_MODEL, FEMUR_RISK_FE } from "@/lib/model";
 
 const SAMPLE: RunInput = { name: "sample_bone.nii.gz", kind: "sample" };
 const HEALTH_POLL_MS = 15_000;
@@ -24,6 +26,7 @@ async function loadSample(): Promise<File> {
 export default function Home() {
   const [run, setRun] = useState<RunState>({ status: "loading", input: SAMPLE });
   const [explanation, setExplanation] = useState<ExplanationState>({ status: "loading" });
+  const [risk, setRisk] = useState<RiskAnalysisState>({ status: "loading" });
   const [history, setHistory] = useState<HistoryState>({ status: "loading" });
   const [health, setHealth] = useState<ApiHealth>("checking");
   const latestRun = useRef(0);
@@ -39,6 +42,13 @@ export default function Home() {
     setExplanation({ status: "loading" });
     const explained = await fetchExplanation(FEMUR_EXPLAIN_REQUEST);
     if (mounted.current) setExplanation(explained);
+  }, []);
+
+  // The AI risk card reads the published HFValid numbers of the same subject, by the case id in the model manifest.
+  const analyseRisk = useCallback(async () => {
+    setRisk({ status: "loading" });
+    const analysed = await fetchRiskAnalysis(FEMUR_MODEL.caseId, FEMUR_RISK_FE);
+    if (mounted.current) setRisk(analysed);
   }, []);
 
   // The live engine check: posts a NIfTI volume to /api/simulate and shows what comes back.
@@ -68,6 +78,7 @@ export default function Home() {
     mounted.current = true;
     void refreshHealth();
     void explainFemur();
+    void analyseRisk();
     void runSample();
     void fetchHistory().then((next) => mounted.current && setHistory(next));
     const timer = window.setInterval(() => void refreshHealth(), HEALTH_POLL_MS);
@@ -76,19 +87,23 @@ export default function Home() {
       mounted.current = false;
       latestRun.current += 1; // ignore a run that finishes after unmount
     };
-  }, [refreshHealth, explainFemur, runSample]);
+  }, [refreshHealth, explainFemur, analyseRisk, runSample]);
 
-  // When the API comes back after being unreachable, fetch the explanation the page could not get earlier.
+  // When the API comes back after being unreachable, fetch the explanation and risk analysis the page could not get earlier.
   const previousHealth = useRef<ApiHealth>("checking");
   useEffect(() => {
-    if (previousHealth.current === "offline" && health === "online" && explanation.status === "unavailable") void explainFemur();
+    if (previousHealth.current === "offline" && health === "online") {
+      if (explanation.status === "unavailable") void explainFemur();
+      if (risk.status === "unavailable") void analyseRisk();
+    }
     previousHealth.current = health;
-  }, [health, explanation.status, explainFemur]);
+  }, [health, explanation.status, risk.status, explainFemur, analyseRisk]);
 
   return (
     <Dashboard
       run={run}
       explanation={explanation}
+      risk={risk}
       history={history}
       health={health}
       onRunSample={runSample}

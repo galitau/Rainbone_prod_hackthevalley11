@@ -11,8 +11,8 @@ python -m pip install -r requirements.txt
 uvicorn main:app --reload
 ```
 
-The API exposes `GET /health`, `POST /api/simulate`, `POST /api/explain` and
-`GET /api/history`. The simulation endpoint
+The API exposes `GET /health`, `POST /api/simulate`, `POST /api/explain`,
+`POST /api/risk-analysis` and `GET /api/history`. The simulation endpoint
 accepts a multipart form upload named `file` containing a `.nii` or `.nii.gz`
 NIfTI volume. The dashboard posts `frontend/public/sample_bone.nii.gz` to
 `http://127.0.0.1:8000/api/simulate`, uvicorn's default port.
@@ -376,6 +376,60 @@ with `AI_OFFLINE=1`:
 
 `tests/test_explain.py` runs with the backend tests above and needs no
 network: provider calls go to `httpx.MockTransport`.
+
+## AI fracture risk analysis
+
+`POST /api/risk-analysis` explains how likely one HFValid femur is to break,
+from the dataset authors' published numbers. It reads
+`frontend/public/models/hfvalid-risk.json` from the repository: per subject, the
+Absolute Risk of Fracture at time 0 (ARF0) and the Minimum Sidefall Strength
+(MSF) computed with the authors' finite-element model, and whether
+a hip fracture was recorded in the follow-up (HFValid collection, Aldieri,
+La Mattina, Szyszko, Baruffaldi, Viceconti 2025, University of Bologna,
+DOI 10.6092/unibo/amsacta/8431, CC BY 4.0). Sideways-fall forces of 2,900 N
+to 4,260 N on the hip are from van den Kroonenberg et al. 1995
+(PubMed 8618384).
+
+Request: `{"case_id": "Pat001", "fe": {"peak_stress_mpa": 15.83,
+"load_newtons": 800, "stress_index_percent": 10.55}}`; `fe` (our own
+standing-load solve) is optional. It is echoed in `facts.fe` but never sent
+to a model, and its numbers may not appear in `text`. An unknown `case_id`
+returns 404, a bad body 422, and a missing or unreadable data file 503.
+
+The code computes every number in `facts` from the published values (the
+table keeps the CSV's precision): the subject's age, ARF0 (1 decimal) and how
+many subjects had a lower ARF0, the cohort size, median ARF0, fractured count
+and the fractured subjects' ARF0 range, the MSF (whole newtons) and how many
+subjects had a higher MSF, the strongest MSF in the cohort, and the factor of
+risk, fall force / MSF, for both fall forces (2 decimals). The response is
+`{"case_id", "facts", "text", "provider", "model", "fallbacks", "source"}`,
+with `source` the dataset's citation, DOI and licence.
+
+`text` comes from the same provider chain, settings and fallback reasons as
+`/api/explain`, with its own prompt (2 or 3 sentences) and checker. The
+checker accepts a number only when it is a fact or a fact rounded to fewer
+decimals, and only as its own kind of quantity: a percent must be an ARF0
+value, newtons the MSF or a fall force, "times" a factor of risk, and a count
+of women a rank, the fractured count or the cohort size, so the age cannot
+become "a 78% risk" nor a rank a fracture risk. "Its ARF0 is ...%" must be
+this subject's ARF0. A number with a time unit is allowed only as her age
+("78-year-old", "aged 78") or the recorded days to her fracture. It rejects
+a rank stated in the wrong direction ("stronger than 75 women" when 75 women
+had a stronger femur), spelled-out quantities, time horizons ("next year",
+"within", "later", "lifetime", "in her eighties"), "chance", "probability",
+"likelihood" and certainty ("will", "going to", "sure to"), diagnosis and
+disease names, treatment, drugs, screening, referrals, prevention, advice
+and "you". Fracture, risk, break and fall are allowed. A rejected text falls
+through to the next provider and finally to a deterministic template built
+only from the facts. Every `text` ends with "Published research data, not a
+diagnosis or medical advice." An AI answer is kept in memory per case, facts
+and chain order (up to 256), so reloading the page does not spend another
+model call; a template answer is not kept, so a later request can still get
+an AI one.
+
+`tests/test_risk.py` reads the committed `frontend/public/models/hfvalid-risk.json`
+(Pat001's facts, a fractured subject, the template for all 101 subjects) and
+needs no network.
 
 ## Simulation history (TimescaleDB)
 

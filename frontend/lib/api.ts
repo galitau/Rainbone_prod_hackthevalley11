@@ -149,3 +149,94 @@ export async function fetchExplanation(simulation: unknown): Promise<Explanation
   }
   return { status: "error", message: "The explanation service returned no text." };
 }
+
+// The femur's finite-element numbers sent along with its HFValid subject; the API echoes them back in facts.fe.
+export type RiskFeNumbers = { peak_stress_mpa: number; load_newtons: number; stress_index_percent: number };
+
+// The published numbers behind a risk analysis: the subject's own HFValid row, where it sits among the study's
+// women, and the factor of risk (sideways-fall impact force divided by the femur's sideways-fall strength).
+export type RiskFacts = {
+  age: number;
+  arf0_percent: number;
+  arf0_higher_than: number; // how many subjects have a lower ARF0
+  cohort_n: number;
+  cohort_median_arf0_percent: number;
+  cohort_fractured: number;
+  fractured_arf0_min_percent: number | null; // null when nobody in the cohort fractured
+  fractured_arf0_max_percent: number | null;
+  msf_newtons: number;
+  msf_lower_than: number; // how many subjects have a higher (stronger) MSF
+  fall_force_low_newtons: number;
+  fall_force_high_newtons: number;
+  factor_of_risk_low: number;
+  factor_of_risk_high: number;
+  cohort_msf_max_newtons: number; // the strongest MSF in the study
+  fractured_within_followup: boolean;
+  days_ct_to_fracture: number | null;
+  fe: RiskFeNumbers | null;
+};
+
+export type RiskAnalysis = {
+  case_id: string;
+  facts: RiskFacts;
+  text: string;
+  provider: "gemini" | "groq" | "template";
+  model: string | null;
+  fallbacks: { provider: string; reason: string }[];
+  source: { citation: string; doi: string; license: string };
+};
+
+// "unavailable": the API has no /api/risk-analysis or no published data for this case (404), or this page cannot
+// reach it, so the dashboard shows nothing for it.
+export type RiskAnalysisState =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { status: "ready"; analysis: RiskAnalysis }
+  | { status: "unavailable" }
+  | { status: "error"; message: string };
+
+// The same Gemini → Groq → template chain as /api/explain, so the same time limit.
+const RISK_TIMEOUT_MS = EXPLAIN_TIMEOUT_MS;
+
+const RISK_NUMBERS = [
+  "age", "arf0_percent", "arf0_higher_than", "cohort_n", "cohort_fractured", "msf_newtons", "msf_lower_than",
+  "fall_force_low_newtons", "fall_force_high_newtons", "factor_of_risk_low", "factor_of_risk_high", "cohort_msf_max_newtons",
+] as const;
+const RISK_NULLABLE_NUMBERS = ["fractured_arf0_min_percent", "fractured_arf0_max_percent"] as const;
+const isFiniteNumber = (value: unknown) => typeof value === "number" && Number.isFinite(value);
+
+function isRiskAnalysis(body: unknown): body is RiskAnalysis {
+  const answer = body as Partial<RiskAnalysis> | null;
+  const facts = answer?.facts as Record<string, unknown> | undefined;
+  return (
+    typeof answer?.text === "string" && answer.text.trim() !== "" &&
+    typeof facts === "object" && facts !== null &&
+    RISK_NUMBERS.every((name) => isFiniteNumber(facts[name])) &&
+    RISK_NULLABLE_NUMBERS.every((name) => facts[name] === null || isFiniteNumber(facts[name]))
+  );
+}
+
+// Posts one HFValid case id (and the femur's own solve) to /api/risk-analysis. Never throws.
+export async function fetchRiskAnalysis(caseId: string, fe?: RiskFeNumbers): Promise<RiskAnalysisState> {
+  let response: Response;
+  try {
+    response = await fetch(apiUrl("/api/risk-analysis"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(fe ? { case_id: caseId, fe } : { case_id: caseId }),
+      signal: timeout(RISK_TIMEOUT_MS),
+    });
+  } catch (cause) {
+    if (timedOut(cause)) return { status: "error", message: `The risk analysis did not arrive within ${RISK_TIMEOUT_MS / 1000} s.` };
+    return { status: "unavailable" };
+  }
+  if (response.status === 404) return { status: "unavailable" };
+  if (!response.ok) return { status: "error", message: `Risk analysis request failed (${response.status}).` };
+  try {
+    const analysis: unknown = await response.json();
+    if (isRiskAnalysis(analysis)) return { status: "ready", analysis };
+  } catch {
+    // fall through to the error below
+  }
+  return { status: "error", message: "The risk analysis service returned no usable answer." };
+}
