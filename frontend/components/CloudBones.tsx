@@ -289,11 +289,11 @@ export function CloudBones() {
             {status === "loading" && <div role="status" className="absolute inset-0 flex items-center justify-center text-sm text-viewport-ink"><span className="mr-3 h-3 w-3 animate-pulse rounded-full bg-spectrum-cyan" />Downloading meshes from object storage…</div>}
             {status === "error" && <div role="alert" className="absolute inset-0 flex flex-col items-center justify-center gap-4 p-8 text-center"><p className="max-w-sm text-sm text-spectrum-amber">{meshError}</p><button className={buttonClass} onClick={() => { if (urlsFresh(data)) setAttempt(n => n + 1); else void refresh(); }}>Reload</button></div>}
           </div>
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line px-4 py-3 text-[11px] text-muted">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-viewport-line px-4 py-3 text-[11px] text-viewport-ink">
             <span className="flex items-center gap-1.5">
               {status === "ready" && (allVerified
-                ? <><ShieldCheck size={14} className="text-link" /> {loaded.length} meshes, sha256 matches the manifest</>
-                : <><ShieldAlert size={14} className="text-caution" /> {loaded.length} meshes, sha256 not checked (needs https or localhost)</>)}
+                ? <><ShieldCheck size={14} className="text-viewport-ink" /> {loaded.length} meshes, sha256 matches the manifest</>
+                : <><ShieldAlert size={14} className="text-spectrum-amber" /> {loaded.length} meshes, sha256 not checked (needs https or localhost)</>)}
             </span>
             <span className="font-mono">{storageHost ? `from ${storageHost}` : ""}{data ? ` · links expire ${new Date(data.validUntil).toLocaleTimeString()}` : ""}</span>
             <button disabled={status !== "ready"} onClick={() => resetRef.current?.()} className={buttonClass} aria-label="Reset view"><RotateCcw size={14} /></button>
@@ -334,13 +334,13 @@ export function CloudBones() {
             <h2 className="text-sm font-medium text-ink">Sources</h2>
             <p>
               CT: {dataset?.name ?? "CTPelvic1K"}, Liu et al.,{" "}
-              {dataset?.zenodo_record ? <a className="text-link hover:underline" href={dataset.zenodo_record} target="_blank" rel="noreferrer">Zenodo{dataset.doi ? ` ${dataset.doi}` : ""}</a> : null}
-              {licenseUrl ? <> · <a className="text-link hover:underline" href={licenseUrl} target="_blank" rel="noreferrer">CC BY 4.0</a></> : dataset?.license ? ` · ${dataset.license}` : ""}
+              {dataset?.zenodo_record ? <a className="text-link underline underline-offset-2 hover:decoration-2" href={dataset.zenodo_record} target="_blank" rel="noreferrer">Zenodo{dataset.doi ? ` ${dataset.doi}` : ""}</a> : null}
+              {licenseUrl ? <> · <a className="text-link underline underline-offset-2 hover:decoration-2" href={licenseUrl} target="_blank" rel="noreferrer">CC BY 4.0</a></> : dataset?.license ? ` · ${dataset.license}` : ""}
             </p>
             <p>{dataset?.changes ?? "Masks and meshes are automatic segmentations derived from the CT, not the dataset's own annotations."}</p>
             <p>
               Segmentation:{" "}
-              {tool?.repository ? <a className="text-link hover:underline" href={tool.repository} target="_blank" rel="noreferrer">{tool.name ?? "TotalSegmentator"} {tool.version}</a> : `${tool?.name ?? "TotalSegmentator"} ${tool?.version ?? ""}`}
+              {tool?.repository ? <a className="text-link underline underline-offset-2 hover:decoration-2" href={tool.repository} target="_blank" rel="noreferrer">{tool.name ?? "TotalSegmentator"} {tool.version}</a> : `${tool?.name ?? "TotalSegmentator"} ${tool?.version ?? ""}`}
               {tool?.license ? ` · ${tool.license.split(" (")[0]}` : ""}
             </p>
             <p className="text-caution">Research data, not for clinical use.{tool?.disclaimer ? ` ${tool.disclaimer}` : ""}</p>
