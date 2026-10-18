@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Image from "next/image";
 import Link from "next/link";
 import { Activity, Box, Cloud, MessageSquareText } from "lucide-react";
 import manifest from "@/public/models/hfvalid-femur/manifest.json";
@@ -205,6 +206,21 @@ export default function Landing() {
             <Link href="/bones" className="mt-4 w-fit rounded text-[15px] font-medium text-link hover:underline">Open the imaging library →</Link>
           </div>
         </article>
+      </section>
+
+      <section id="print" aria-labelledby="print-title" className="border-t border-line">
+        <div className="mx-auto max-w-[1200px] px-4 py-16 lg:px-12 lg:py-24">
+          <p className={KICKER}>New in the lab</p>
+          <h2 id="print-title" className={H2}>Print the simulated break.</h2>
+          <p className="mt-4 max-w-2xl text-[17px] leading-relaxed text-body">
+            Scrub the virtual press to the first break, then download the missing region as an STL, or the matching bone + insert set, and print it at 1:1 scale. A model a care team can hold.
+          </p>
+          <Image src="/images/print-the-break.png" width={1600} height={900} sizes="(min-width: 1200px) 1104px, 100vw" alt="The femur in the virtual press at step 10, the missing region rendered as an STL, and the Print missing region card with its download buttons." className="mt-8 h-auto w-full rounded-2xl border border-line" />
+          <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-2">
+            <Link href="/physics-simulations" className="rounded text-[15px] font-medium text-link hover:underline">Open Physics simulations →</Link>
+            <span className="text-[13px] text-muted">Research illustration: assumed material, not a validated crack path.</span>
+          </div>
+        </div>
       </section>
 
       <section id="how" aria-labelledby="how-title" className="scroll-mt-6 border-t border-line bg-surface">

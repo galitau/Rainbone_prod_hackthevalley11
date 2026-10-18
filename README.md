@@ -37,6 +37,15 @@ See [The AI layer](#the-ai-layer) and
 | **Tiger Data** | TimescaleDB stores completed simulation runs (hypertable plus an hourly continuous aggregate) and the provenance of each new AI generation, including the evidence tools Ask Rainbone's agent pipeline ran; a cached or saved answer adds no row | History chart, Secure datasets → Recent AI answers, `/api/ai-log` |
 | **GoDaddy Registry** | The `.health` domain | <https://rainbone.health> |
 
+## Try it in 60 seconds
+
+1. Open <https://rainbone.health> and press **Enter the lab**. The demo seat (Dr. Rowan, care team) needs no account.
+2. **Patient overview:** rotate the femur and turn on **Cut-away** to see the stress inside the bone.
+3. **Physics simulations:** scrub the press, press **Go to first break**, download the missing region as an STL to 3D-print, then **Open simulation report**.
+4. **AI cards:** read the provenance line under each card: which model wrote it, and that its facts were verified from Vultr Object Storage.
+5. **Ask Rainbone:** click *What does the 47% mean?* and watch the agents run: triage, evidence, writer, critic, audit.
+6. **Secure datasets → Recent AI answers:** the audit rows that Tiger Cloud stored for those answers.
+
 ## What it does
 
 Rainbone is for the care team in nursing homes and senior living: nurses, CNAs, wellness
@@ -66,6 +75,14 @@ an uploaded CT volume, with each voxel's stiffness taken from its Hounsfield uni
 a research prototype built at Hack the Valley 11, **not a medical device**: it gives no
 forecast and no diagnosis, material properties and loads are assumptions, and no output
 is a clinical measurement.
+
+### Print the simulated break
+
+![Print the simulated break: the press at step 10, the missing region as an STL, and the print card](docs/images/rainbone-print-the-break.png)
+
+On **Physics simulations**, scrub the press to the first break, then **Download missing region STL**
+(or the matching bone + insert ZIP) and print it at 1:1 scale. It is a research illustration with
+assumed material, not a validated crack path.
 
 ## Architecture
 
