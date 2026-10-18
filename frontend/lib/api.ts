@@ -48,6 +48,7 @@ export type SimulationOutcome =
 
 // Posts one NIfTI file to /api/simulate. Never throws.
 export async function runSimulation(file: File): Promise<SimulationOutcome> {
+  if (file.size > 512 * 2 ** 20) return { ok: false, reachedApi: false, message: "Upload a NIfTI file of at most 512 MiB." };
   const form = new FormData();
   form.append("file", file);
   const started = performance.now();

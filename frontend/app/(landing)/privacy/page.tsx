@@ -39,7 +39,7 @@ export default function PrivacyPage() {
         <h2 className="font-serif text-xl font-semibold text-white">Simulations and AI answers</h2>
         <p>
           When a scan is simulated, the server records the file name and the computed results (stress, stiffness, volume,
-          load, mesh size and timing) in a database, so the history chart can show earlier runs. The uploaded file itself
+          load, mesh size and timing) in a database, so the dashboard can read each saved run back. The uploaded file itself
           is processed in memory and not saved. Each AI explanation is logged by its endpoint, model, timing and
           fingerprints (SHA-256 hashes) of its input facts and its text. None of these records says who ran them.
         </p>

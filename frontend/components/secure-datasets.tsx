@@ -92,7 +92,7 @@ function HfvalidCard() {
       note={<>Changes: Slicer import and export, surface reduction, tetrahedral meshing and a new illustrative finite-element analysis. It does not reproduce the dataset authors&apos; own fracture-risk analyses.</>}
     >
       <Row icon={<Link2 size={14} />} label="Source">
-        HFValid collection (Hip-Fracture validation collection), DOI{" "}
+        HFValid collection, DOI{" "}
         <a className="text-link hover:underline" href={`https://doi.org/${HFVALID_DOI}`} target="_blank" rel="noreferrer">{HFVALID_DOI}</a>
         {" · "}
         <a className="text-link hover:underline" href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noreferrer">{FEMUR_MODEL.license}</a>
@@ -210,7 +210,7 @@ function KeysCard() {
       badge={<Badge tone="success" icon={<KeyRound size={12} />}>Server only</Badge>}
     >
       <Row icon={<KeyRound size={14} />} label="Where they live">
-        The keys are set only on the API server: the Gemini and Groq keys, the database connection string and the lesion-progression storage keys in its environment, <Mono>backend/.env</Mono> or a <Mono>.env</Mono> at the repository root; the <Mono>VULTR_S3_*</Mono> storage keys in its process environment. The API never logs or returns a secret: the signed storage links carry only the access key ID, as S3 requires, never the secret key. The only setting built into the browser code is the API&apos;s address.
+        The keys are set only on the API server: the Gemini and Groq keys, the database connection string and the lesion-progression storage keys in its environment, <Mono>backend/.env</Mono> or a <Mono>.env</Mono> at the repository root; the <Mono>VULTR_S3_*</Mono> storage keys in its process environment. The API never logs or returns a secret: the signed storage links carry only the access key ID, as S3 requires, never the secret key. The only settings built into the browser code are the API&apos;s address and the Google sign-in client ID, which is public by design.
       </Row>
       <Row icon={<Link2 size={14} />} label="Same origin">
         With <Mono>API_PROXY_TARGET</Mono> set and <Mono>NEXT_PUBLIC_API_BASE_URL</Mono> pointing at the site, the site forwards <Mono>/api/*</Mono> and <Mono>/health</Mono> to the API, so API calls stay on the site&apos;s own origin. The pelvic meshes still come straight from the Vultr bucket through signed links. This page calls the API at <Mono>{API_HOST}</Mono>.

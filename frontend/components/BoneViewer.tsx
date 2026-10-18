@@ -284,7 +284,7 @@ export function BoneViewer() {
           <h2 className="flex items-center gap-2 text-[15px] font-semibold text-ink"><Box size={17} className="text-link" aria-hidden /> Femur · finite element analysis</h2>
           <p className="mt-0.5 text-[12px] text-muted">{model ? `${model.dataset} ${model.case_id} · ${model.anatomy}` : "Loading the complete femur"}</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <div role="radiogroup" aria-label="Displayed FEA field" className="flex rounded-lg border border-line bg-sunken p-0.5">
             {fields.map(option => (
               <button key={option.value} role="radio" aria-checked={field === option.value} disabled={status !== "ready"} onClick={() => setField(option.value)}
@@ -323,7 +323,7 @@ export function BoneViewer() {
           <p>Complete patient-derived femur from HFValid, processed in 3D Slicer {model.slicer_version}. The tetrahedral mesh follows the Slicer surface: {model.metrics.elements.toLocaleString()} elements and {model.metrics.nodes.toLocaleString()} nodes. Smooth lighting does not move the mesh or alter stress values.</p>
           <p>Distal 15 mm fixed in all directions; {model.metrics.load_newtons} N distributed over the superior femoral-head surface in −Z. Homogeneous, isotropic linear elasticity: E = {model.metrics.youngs_modulus_mpa / 1000} GPa, ν = {model.metrics.poisson_ratio}. Undeformed geometry; FEA colors show solved values.</p>
           <p>Stress contours use volume-weighted nodal averages. The download retains raw element stresses, with a peak of {model.metrics.max_von_mises_mpa.toFixed(2)} MPa. The cut-away face is sliced from the solved tetrahedra.</p>
-          <p>Research example with assumed material and loading, without mesh-convergence or clinical validation. Nearby dashboard cards and history are separate demo data.</p>
+          <p>Research example with assumed material and loading, without mesh-convergence or clinical validation. The clinical metrics and AI cards describe this same femur: ARF0 and MSF as the HFValid authors published them, stresses from this solve. The engine check and its saved runs use a synthetic sample, not this femur.</p>
           <p>HFValid: Aldieri, La Mattina, Szyszko, Baruffaldi &amp; Viceconti (2025), University of Bologna · CC BY 4.0.</p>
           <div className="flex flex-wrap gap-x-4 gap-y-1 font-medium text-link"><a href={model.source_url} target="_blank" rel="noreferrer" className="hover:underline">CT dataset &amp; attribution</a><a href={`${MODEL_PATH}/bone.seg.nrrd`} download className="hover:underline">Slicer segmentation</a><a href={`${MODEL_PATH}/manifest.json`} download className="hover:underline">Solver report</a></div>
         </div>

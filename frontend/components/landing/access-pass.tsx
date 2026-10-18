@@ -120,11 +120,11 @@ export function AccessPass({ maxMpa }: { maxMpa: number }) {
             autoFocus
             aria-describedby="pass-title pass-note"
             onClick={enter}
-            className={`mt-5 inline-flex h-[52px] w-full items-center justify-center gap-3 rounded-xl bg-white px-4 text-center text-[15px] font-semibold text-ink transition hover:bg-white/90 ${FOCUS_DARK}`}
+            className={`mt-5 inline-flex h-[52px] w-full items-center justify-center gap-3 rounded-xl bg-white px-4 text-center text-[15px] font-semibold text-[#14212e] transition hover:bg-white/90 ${FOCUS_DARK}`}
           >
             {GOOGLE ? "Continue as Dr. Rowan (demo)" : "Enter as guest"}
             {/* Phones have no Enter key, and the longer Google-mode label needs the room at 390 px. */}
-            <kbd aria-hidden className={`rounded-md border border-line px-1.5 font-mono text-[12px] font-normal text-muted${GOOGLE ? " hidden sm:inline" : ""}`}>↵</kbd>
+            <kbd aria-hidden className={`rounded-md border border-[#e4dfd5] px-1.5 font-mono text-[12px] font-normal text-[#5f6b78]${GOOGLE ? " hidden sm:inline" : ""}`}>↵</kbd>
           </Link>
           <p role="status" aria-live="polite" className={phase === "opening" ? "mt-2 text-center font-mono text-[11px] text-nav-muted" : "sr-only"}>
             {phase === "opening" ? "Opening the lab…" : ""}
