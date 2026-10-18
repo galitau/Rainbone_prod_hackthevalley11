@@ -288,11 +288,14 @@ timeout, connection error) is skipped for 60 s, so later requests do not wait
 for the same failure. A rejected text does not start that pause. The pause is
 kept in process memory. Responses are not cached.
 
-Live check on 2026-10-17 (our keys, the test request below):
+Live checks on 2026-10-17 (our keys). With the test request below:
 `gemini-3.8-flash` answered in 2.5 s, 3.3 s, 7.9 s and 18.2 s, timed out
 once at 10 s and returned HTTP 503 twice; `gemini-3.5-flash-lite` answered
-5 times in 0.8 to 1.4 s; Groq answered once in 1.1 s. Every answer passed
-the checker. For a live demo,
+5 times in 0.8 to 1.4 s; Groq answered once in 1.1 s. With the bundled
+sample's response and the current checker: `gemini-3.8-flash` returned
+HTTP 429 and was then skipped; `gemini-3.5-flash-lite` answered 6 times in
+0.74 to 2.67 s; Groq (`AI_CHAIN=groq`) answered 3 times in 1.12 to 1.60 s.
+Every answer passed the checker. For a live demo,
 `GEMINI_MODEL=gemini-3.5-flash-lite` in `backend/.env` avoids the slow model.
 
 ### Checker
@@ -301,16 +304,24 @@ A model's text is rejected when it:
 
 - is empty, cut off at the token limit, or longer than 700 characters;
 - contains a number that is not one of the rounded inputs, or one of them
-  rounded to 1 or 0 decimals. Numbers are digit tokens that do not follow a
-  letter, so `cm3` is not a number but `15mm` is; `10,000` reads as one
-  number; signs are ignored;
-- spells out a quantity (`one`, `two`, `half`, `twice`, ...);
-- uses clinical or outcome wording (`diagnos`, `predict`, `recommend`,
-  `should`, `surg`, `treat`, `therap`, `risk`, `cancer`, `fractur`, ...).
+  rounded to 1 or 0 decimals. Every digit run is a number, also after a
+  letter or a point (`15mm`, `x40`, `.5`), except the 2 or 3 of a unit such
+  as `cm3`, `mm2` or `cm^3`; `10,000` reads as one number; signs are ignored;
+- spells out a quantity: zero to nineteen, the tens, hundred, thousand,
+  million, billion, trillion and dozen, with their plurals and -fold forms
+  (`hundreds`, `tenfold`), and `half`, `third`, `quarter`, `double`, `twice`,
+  `triple`, `quadruple` and their forms;
+- contains a blocked word stem: `diagnos`, `predict`, `recommend`, `should`,
+  `surg`, `treat`, `therap`, `respond`, `likely`, `probab`, `chance`, `risk`,
+  `cancer`, `metasta`, `prognos`, `urgent`, `fractur`, `break`/`broke`,
+  `crack`, `fail`, `safe`, `danger`, `health`, `osteopor`, `patient`,
+  `doctor`, `withstand`.
 
-The word lists come from the team's earlier AI interface contract. The
-checker proves that no number was invented. It cannot prove that a supplied
-number is attached to the right quantity.
+The first list of stems comes from the team's earlier AI interface
+contract; the stems from `break` on were added for bone loading. The checker
+rejects digits and number words that are not supplied values, and the listed
+stems; other wording, such as a quantity in a phrase the lists do not cover,
+or a supplied number attached to the wrong quantity, is not caught.
 
 ### Configuration
 

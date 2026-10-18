@@ -3,8 +3,8 @@
 The request carries the numbers /api/simulate computed (the SimulationResponse
 fields). No model computes a number: models only word the facts built here, and
 check() rejects any text that uses a number which is not a fact (or a fact
-rounded to 1 or 0 decimals), spells a quantity out, uses clinical or fracture
-wording, or runs too long.
+rounded to 1 or 0 decimals), spells a quantity out, uses a word from
+BLOCKED_OUTPUT_PATTERNS, or runs too long.
 
 Providers are tried in order. AI_CHAIN sets it (comma list of gemini, groq,
 template; default gemini,groq,template; template is appended when missing).
@@ -47,24 +47,35 @@ COOLDOWN_S = 60.0
 MAX_CHARS = 700  # the prompt asks for 600; the template's longest text stays below this
 NOTE = "Illustrative engineering simulation with assumed material properties, not a medical assessment."
 
-# Wording lists from the team's AI contract (HackTheValley11 contracts/labels.json, "ai").
+# Wording lists from the team's AI contract (HackTheValley11 contracts/labels.json, "ai"), plus words that
+# judge what the load does to this bone (break, fail, safe, ...).
 BLOCKED_OUTPUT_PATTERNS: tuple[str, ...] = (
     "diagnos", "predict", "recommend", "should", "surg", "treat", "therap", r"respon(se|ding|d)\b",
     "likely", "probab", "chance", r"\brisk", "cancer", "metasta", "prognos", "urgent", "fractur",
+    r"\bbr(?:eak|oke|eaking)", r"\bcrack", r"\bfail", r"\bsafe", r"\bdanger", r"\bhealth", "osteopor",
+    r"\bpatient", r"\bdoctor", "withstand",
 )
-NUMBER_WORDS: tuple[str, ...] = (
-    "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven",
-    "twelve", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety", "hundred",
-    "thousand", "half", "halved", "third", "quarter", "double", "doubled", "twice", "triple", "tripled",
-    "dozen",
+_UNITS = ("zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve",
+          "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen")
+_TENS = ("twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety")
+_SCALES = ("hundred", "thousand", "million", "billion", "trillion", "dozen")
+# Each of these also matches its plural and -fold form ("hundreds", "tenfold").
+NUMBER_WORDS: tuple[str, ...] = _UNITS + _TENS + _SCALES
+OTHER_QUANTITY_WORDS: tuple[str, ...] = (
+    "half", "halves", "halved", "third", "thirds", "quarter", "quarters", "double", "doubled", "twice",
+    "triple", "tripled", "quadruple", "quadrupled",
 )
 
-# A number is a token that does not follow a letter, digit or point, so "cm3" is not a number
-# while "15mm" is. Thousands separators ("10,000") are read as one number.
-NUMBER_RE = re.compile(r"(?<![A-Za-z0-9.])[-−]?(?:\d{1,3}(?:,\d{3})+(?!\d)|\d+)(?:\.\d+)?")
+# A number is a run of digits, optionally with a leading or inner point (".5", "17.71") and thousands
+# separators ("10,000" is one number). A digit run after letters is a number too ("x40", "15mm" reads 15),
+# except a unit exponent: the 2 or 3 of cm3, mm2, m3 (optionally cm^3).
+NUMBER_RE = re.compile(r"(?<!\d)[-−]?(?:\.\d+|(?:\d{1,3}(?:,\d{3})+(?!\d)|\d+)(?:\.\d+)?)")
+_UNIT_EXPONENT_BEFORE = re.compile(r"(?<![A-Za-z])(?:cm|mm|m)\^?$", re.IGNORECASE)
 _BLOCKED = tuple(re.compile(p, re.IGNORECASE) for p in BLOCKED_OUTPUT_PATTERNS)
-_NUMBER_WORDS = re.compile(r"\b(?:" + "|".join(sorted(NUMBER_WORDS, key=len, reverse=True)) + r")\b",
-                           re.IGNORECASE)
+_NUMBER_WORDS = re.compile(
+    r"\b(?:(?:" + "|".join(sorted(NUMBER_WORDS, key=len, reverse=True)) + r")(?:s|fold)?|"
+    + "|".join(sorted(OTHER_QUANTITY_WORDS, key=len, reverse=True)) + r")\b",
+    re.IGNORECASE)
 
 SYSTEM_PROMPT = (
     "You explain the result of one engineering computer simulation of a bone to a reader with no "
@@ -83,8 +94,9 @@ SYSTEM_PROMPT = (
     "fewer decimals. Do not calculate any new number: no ratios, differences, percentages or unit "
     "conversions. Never write a number as a word, and do not use words for quantities or multiples (such "
     "as one, two, half, twice, double). "
-    "Do not diagnose, predict, advise or recommend, and do not mention fracture, breaking, risk, chance, "
-    "treatment, surgery, therapy or cancer. No markdown, lists or headings, at most 600 characters. "
+    "Do not diagnose, predict, advise or recommend, and do not mention fracture, breaking, cracking, failure, "
+    "risk, chance, safety, danger, health, patients, doctors, what bone can withstand, treatment, surgery, "
+    "therapy or cancer. No markdown, lists or headings, at most 600 characters. "
     'Answer with JSON: {"text": "..."}.'
 )
 
@@ -191,6 +203,8 @@ def check(text: str, facts: Mapping[str, float]) -> Optional[str]:
         return f"over {MAX_CHARS} characters"
     allowed = allowed_numbers(facts)
     for match in NUMBER_RE.finditer(text):
+        if match.group(0) in ("2", "3") and _UNIT_EXPONENT_BEFORE.search(text, 0, match.start()):
+            continue
         value = _number_value(match.group(0))
         if not any(math.isclose(value, a, rel_tol=1e-12, abs_tol=1e-9) for a in allowed):
             return f"number not in input: {match.group(0)}"

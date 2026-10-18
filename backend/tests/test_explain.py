@@ -324,6 +324,38 @@ class CheckerTests(unittest.TestCase):
 
     def test_units_are_not_numbers(self):
         self.assertIsNone(check("Volume 408.09 cm3 and cm³.", self.facts))
+        self.assertIsNone(check("Volume 408.09 cm^3, an area in mm2.", self.facts))
+
+    def test_point_and_letter_prefixed_digits_are_numbers(self):
+        for text, token in [("The stress reached .5 MPa.", ".5"), ("The stress reached x40 MPa.", "40"),
+                            ("Stress was 41.98 MPa, or 41,98.", "41"), ("A 2 cm3 piece.", "2")]:
+            with self.subTest(text=text):
+                self.assertEqual(check(text, self.facts), f"number not in input: {token}")
+
+    def test_spelled_out_quantities_fail(self):
+        for text, word in [("The stress reached fifteen MPa.", "fifteen"),
+                           ("It reached sixteen megapascals, about 41.98 MPa.", "sixteen"),
+                           ("Hundreds of newtons pushed on 408.09 cm3 of bone.", "Hundreds"),
+                           ("The load was a million times the weight.", "million"),
+                           ("The stress was tenfold higher near the ends: 41.98 MPa.", "tenfold"),
+                           ("Twenty-two parts.", "Twenty"), ("Two halves.", "Two")]:
+            with self.subTest(text=text):
+                self.assertEqual(check(text, self.facts), f"spelled-out quantity: {word!r}")
+
+    def test_outcome_and_health_wording_fails(self):
+        for text, hit in [("This bone may break under 800 newtons.", "break"),
+                          ("It broke at 800 newtons.", "broke"),
+                          ("This bone could crack under 800 newtons.", "crack"),
+                          ("It could fail under 800 newtons.", "fail"),
+                          ("The bone is safe under 800 newtons.", "safe"),
+                          ("The bone is in danger at 41.98 MPa.", "danger"),
+                          ("This bone is healthy.", "health"),
+                          ("Signs of osteoporosis.", "osteopor"),
+                          ("The patient carried 800 newtons.", "patient"),
+                          ("Ask a doctor.", "doctor"),
+                          ("Well below what bone can withstand.", "withstand")]:
+            with self.subTest(text=text):
+                self.assertEqual(check(text, self.facts), f"blocked wording: {hit!r}")
 
     def test_length_limit(self):
         self.assertEqual(check("a" * (ex.MAX_CHARS + 1), self.facts), f"over {ex.MAX_CHARS} characters")
