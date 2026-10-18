@@ -22,7 +22,7 @@ flowchart TB
 
   subgraph VULTR["Back end · Vultr Compute · api.rainbone.health"]
     caddy["Caddy<br/>HTTPS reverse proxy"]
-    api["FastAPI on uvicorn<br/>POST /api/simulate<br/>POST /api/explain<br/>GET /api/history<br/>GET /health<br/>GET /api/bones, PR #3"]
+    api["FastAPI on uvicorn<br/>POST /api/simulate<br/>POST /api/explain<br/>POST /api/risk-analysis<br/>GET /api/history<br/>GET /health<br/>GET /api/bones, PR #3"]
     fea["SfePy finite-element solve<br/>services/fea_solver.py"]
     caddy --> api
     api -->|"/api/simulate"| fea
@@ -45,7 +45,7 @@ flowchart TB
   user -->|"pages and vtk.js models"| VERCEL
   user -->|"HTTPS API calls"| caddy
   user -.->|"/bones meshes via signed URLs"| vos
-  api -->|"/api/explain"| llm
+  api -->|"/api/explain, /api/risk-analysis"| llm
   api -->|"save run, /api/history"| tiger
   api -.->|"/api/bones signs URLs"| vos
   hfvalid --> bonefea
@@ -87,6 +87,10 @@ API address from `NEXT_PUBLIC_API_BASE_URL` (on `main` it is fixed to
 15 s), `POST /api/explain` with the femur's numbers for the plain-language card, and
 `GET /api/history`. `/api/explain` asks Gemini, then Groq, then falls back to an
 offline template; a checker rejects any text containing a number it was not given.
+The AI fracture risk card under Clinical metrics posts the femur's HFValid case id to
+`POST /api/risk-analysis`, which reads the dataset authors' published ARF0 and MSF from
+`frontend/public/models/hfvalid-risk.json` and words them through the same chain; its checker
+ties every number to the published fact it belongs to.
 
 `/physics-simulations` replays a precomputed hydraulic-press loading history of the
 same femur (`models/femur-press/manifest.json` and one VTP per load step). It calls
@@ -105,8 +109,8 @@ bucket without seeing any credentials.
 | `frontend/app/` | Next.js App Router pages: `/` and `/physics-simulations` |
 | `frontend/components/` | Dashboard, `BoneViewer.tsx` (femur stress map and cut-away), `physics-simulations.tsx` and `press-viewer.tsx` (press replay) |
 | `frontend/lib/` | Colour ramp, tetrahedral slicing, press model types, demo data |
-| `frontend/public/models/` | Precomputed femur FEA (`hfvalid-femur`) and press steps (`femur-press`) |
-| `backend/` | FastAPI app: `/api/simulate`, `/api/explain`, `/api/history`, `/health`. Details in [`backend/README.md`](backend/README.md) |
+| `frontend/public/models/` | Precomputed femur FEA (`hfvalid-femur`), press steps (`femur-press`) and the HFValid fracture risk table (`hfvalid-risk.json`) |
+| `backend/` | FastAPI app: `/api/simulate`, `/api/explain`, `/api/risk-analysis`, `/api/history`, `/health`. Details in [`backend/README.md`](backend/README.md) |
 | `scripts/bone_fea/` | Offline pipeline that builds `frontend/public/models/` from HFValid with 3D Slicer, TetGen and SfePy. Details in [`scripts/bone_fea/README.md`](scripts/bone_fea/README.md) |
 
 ## Run locally

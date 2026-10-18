@@ -1,0 +1,1046 @@
+{
+  "source": {
+    "citation": "Aldieri, La Mattina, Szyszko, Baruffaldi, Viceconti (2025). HFValid collection. University of Bologna.",
+    "doi": "10.6092/unibo/amsacta/8431",
+    "license": "CC BY 4.0",
+    "url": "https://amsacta.unibo.it/id/eprint/8431/",
+    "arf0_definition": "The FE model was also coupled with a multiscale falling model to estimate the Absolute Risk of Fracture at time 0 (ARF0), as reported in [Bhattacharya2019].",
+    "msf_definition": "Each FE model was simulated 28 times with different load and boundary condition orientations and, for each simulation, the critical load that would cause a fracture was calculated; the minimum critical load over the 28 orientations is referred to as the Minimum Sidefall Strength (MSF) [Altai2019].",
+    "follow_up": "Resident in the Emilia Romagna region (required to follow-up occurrence of fractures). Alive for at least 5 years after the CT scan, or fractured within 5 years. Subject’s fracture status (0: Non-ractured; 1: Fractured). Time interval (in days) between the CT scan and the fracture (only for fractured subjects)."
+  },
+  "fall_force": {
+    "low_newtons": 2900,
+    "high_newtons": 4260,
+    "citation": "van den Kroonenberg et al. 1995, PubMed 8618384"
+  },
+  "cohort": {
+    "n": 101,
+    "fractured": 4,
+    "arf0_percent": {
+      "min": 7.8,
+      "q1": 32.1,
+      "median": 44.3,
+      "q3": 55.5,
+      "max": 78.1
+    },
+    "msf_newtons": {
+      "min": 286,
+      "q1": 1339,
+      "median": 1577,
+      "q3": 1842,
+      "max": 2879
+    }
+  },
+  "subjects": {
+    "Pat001": {
+      "age": 78,
+      "height_cm": 150,
+      "weight_kg": 55,
+      "side": "R",
+      "arf0_percent": 47.10747422,
+      "msf_newtons": 1338.861427,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat002": {
+      "age": 77,
+      "height_cm": 165,
+      "weight_kg": 39,
+      "side": "R",
+      "arf0_percent": 41.5735094,
+      "msf_newtons": 1298.837108,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat003": {
+      "age": 76,
+      "height_cm": 155,
+      "weight_kg": 55,
+      "side": "R",
+      "arf0_percent": 38.19411051,
+      "msf_newtons": 1143.07774,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat004": {
+      "age": 75,
+      "height_cm": 160,
+      "weight_kg": 65,
+      "side": "L",
+      "arf0_percent": 55.65411906,
+      "msf_newtons": 1478.352416,
+      "fractured_within_followup": true,
+      "days_ct_to_fracture": 1529
+    },
+    "Pat005": {
+      "age": 76,
+      "height_cm": 168,
+      "weight_kg": 100,
+      "side": "R",
+      "arf0_percent": 76.35534268,
+      "msf_newtons": 1031.257027,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat006": {
+      "age": 62,
+      "height_cm": 155,
+      "weight_kg": 65,
+      "side": "L",
+      "arf0_percent": 29.31985739,
+      "msf_newtons": 1656.611803,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat007": {
+      "age": 75,
+      "height_cm": 168.5,
+      "weight_kg": 47,
+      "side": "L",
+      "arf0_percent": 30.34328337,
+      "msf_newtons": 1749.420935,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat008": {
+      "age": 75,
+      "height_cm": 165,
+      "weight_kg": 57,
+      "side": "L",
+      "arf0_percent": 59.58328066,
+      "msf_newtons": 969.6315817,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat009": {
+      "age": 71,
+      "height_cm": 160,
+      "weight_kg": 59,
+      "side": "L",
+      "arf0_percent": 64.23775907,
+      "msf_newtons": 1000.395272,
+      "fractured_within_followup": true,
+      "days_ct_to_fracture": 1070
+    },
+    "Pat010": {
+      "age": 76,
+      "height_cm": 154,
+      "weight_kg": 56,
+      "side": "L",
+      "arf0_percent": 32.67741728,
+      "msf_newtons": 1182.785606,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat011": {
+      "age": 77,
+      "height_cm": 155,
+      "weight_kg": 61,
+      "side": "L",
+      "arf0_percent": 30.86372096,
+      "msf_newtons": 1696.44837,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat012": {
+      "age": 73,
+      "height_cm": 165,
+      "weight_kg": 70,
+      "side": "L",
+      "arf0_percent": 28.97451359,
+      "msf_newtons": 1986.589992,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat013": {
+      "age": 84,
+      "height_cm": 150,
+      "weight_kg": 64,
+      "side": "R",
+      "arf0_percent": 32.07917637,
+      "msf_newtons": 987.4395904,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat014": {
+      "age": 73,
+      "height_cm": 159,
+      "weight_kg": 60,
+      "side": "R",
+      "arf0_percent": 63.59561155,
+      "msf_newtons": 744.1253184,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat015": {
+      "age": 81,
+      "height_cm": 152,
+      "weight_kg": 65,
+      "side": "L",
+      "arf0_percent": 78.11651573,
+      "msf_newtons": 822.1677847,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat016": {
+      "age": 83,
+      "height_cm": 160,
+      "weight_kg": 41,
+      "side": "L",
+      "arf0_percent": 39.39700492,
+      "msf_newtons": 1070.80669,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat017": {
+      "age": 77,
+      "height_cm": 150,
+      "weight_kg": 50,
+      "side": "L",
+      "arf0_percent": 50.98357789,
+      "msf_newtons": 981.2734112,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat018": {
+      "age": 67,
+      "height_cm": 160,
+      "weight_kg": 56,
+      "side": "L",
+      "arf0_percent": 60.75223998,
+      "msf_newtons": 1360.475129,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat019": {
+      "age": 77,
+      "height_cm": 134,
+      "weight_kg": 55,
+      "side": "R",
+      "arf0_percent": 7.842898798,
+      "msf_newtons": 1508.133553,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat020": {
+      "age": 82,
+      "height_cm": 165,
+      "weight_kg": 82,
+      "side": "L",
+      "arf0_percent": 57.19390533,
+      "msf_newtons": 1491.964368,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat021": {
+      "age": 65,
+      "height_cm": 160,
+      "weight_kg": 68,
+      "side": "R",
+      "arf0_percent": 49.54672433,
+      "msf_newtons": 1161.907543,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat022": {
+      "age": 84,
+      "height_cm": 160,
+      "weight_kg": 52,
+      "side": "R",
+      "arf0_percent": 53.74638262,
+      "msf_newtons": 1633.820192,
+      "fractured_within_followup": true,
+      "days_ct_to_fracture": 999
+    },
+    "Pat023": {
+      "age": 77,
+      "height_cm": 165,
+      "weight_kg": 70,
+      "side": "L",
+      "arf0_percent": 47.58655043,
+      "msf_newtons": 1408.242109,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat024": {
+      "age": 78,
+      "height_cm": 172,
+      "weight_kg": 83,
+      "side": "L",
+      "arf0_percent": 63.80842964,
+      "msf_newtons": 1694.547596,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat025": {
+      "age": 77,
+      "height_cm": 168,
+      "weight_kg": 60,
+      "side": "L",
+      "arf0_percent": 51.53807824,
+      "msf_newtons": 2043.226982,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat026": {
+      "age": 79,
+      "height_cm": 167,
+      "weight_kg": 75,
+      "side": "R",
+      "arf0_percent": 58.65714977,
+      "msf_newtons": 939.1630636,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat027": {
+      "age": 80,
+      "height_cm": 158,
+      "weight_kg": 56,
+      "side": "R",
+      "arf0_percent": 40.91055765,
+      "msf_newtons": 1242.74017,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat028": {
+      "age": 56,
+      "height_cm": 158,
+      "weight_kg": 62,
+      "side": "L",
+      "arf0_percent": 17.96817965,
+      "msf_newtons": 2523.692886,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat029": {
+      "age": 82,
+      "height_cm": 165,
+      "weight_kg": 68,
+      "side": "R",
+      "arf0_percent": 73.22464981,
+      "msf_newtons": 1243.491579,
+      "fractured_within_followup": true,
+      "days_ct_to_fracture": 1325
+    },
+    "Pat030": {
+      "age": 59,
+      "height_cm": 158,
+      "weight_kg": 59,
+      "side": "R",
+      "arf0_percent": 39.73097286,
+      "msf_newtons": 1531.120622,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat031": {
+      "age": 60,
+      "height_cm": 167,
+      "weight_kg": 63,
+      "side": "R",
+      "arf0_percent": 38.97546912,
+      "msf_newtons": 1975.122094,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat032": {
+      "age": 76,
+      "height_cm": 150,
+      "weight_kg": 67,
+      "side": "L",
+      "arf0_percent": 50.36405494,
+      "msf_newtons": 286.0628558,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat033": {
+      "age": 66,
+      "height_cm": 159,
+      "weight_kg": 47,
+      "side": "R",
+      "arf0_percent": 23.01800198,
+      "msf_newtons": 1966.788507,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat034": {
+      "age": 61,
+      "height_cm": 165,
+      "weight_kg": 78,
+      "side": "L",
+      "arf0_percent": 60.57893514,
+      "msf_newtons": 1323.277536,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat035": {
+      "age": 67,
+      "height_cm": 154,
+      "weight_kg": 73,
+      "side": "L",
+      "arf0_percent": 31.93385189,
+      "msf_newtons": 1554.311637,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat036": {
+      "age": 67,
+      "height_cm": 160,
+      "weight_kg": 59,
+      "side": "R",
+      "arf0_percent": 30.03743612,
+      "msf_newtons": 1942.761876,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat037": {
+      "age": 64,
+      "height_cm": 152,
+      "weight_kg": 45,
+      "side": "L",
+      "arf0_percent": 31.8144323,
+      "msf_newtons": 1377.054176,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat038": {
+      "age": 59,
+      "height_cm": 154,
+      "weight_kg": 53,
+      "side": "L",
+      "arf0_percent": 60.50714219,
+      "msf_newtons": 1369.798579,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat039": {
+      "age": 75,
+      "height_cm": 160,
+      "weight_kg": 70,
+      "side": "R",
+      "arf0_percent": 50.307598,
+      "msf_newtons": 1624.975464,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat040": {
+      "age": 61,
+      "height_cm": 167,
+      "weight_kg": 69,
+      "side": "L",
+      "arf0_percent": 50.07816706,
+      "msf_newtons": 1906.62609,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat041": {
+      "age": 58,
+      "height_cm": 180,
+      "weight_kg": 88,
+      "side": "R",
+      "arf0_percent": 43.60155351,
+      "msf_newtons": 2195.406579,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat042": {
+      "age": 61,
+      "height_cm": 143,
+      "weight_kg": 68,
+      "side": "R",
+      "arf0_percent": 7.923130226,
+      "msf_newtons": 2175.106495,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat043": {
+      "age": 64,
+      "height_cm": 165,
+      "weight_kg": 73,
+      "side": "L",
+      "arf0_percent": 52.44114579,
+      "msf_newtons": 1583.992054,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat044": {
+      "age": 66,
+      "height_cm": 165,
+      "weight_kg": 82,
+      "side": "L",
+      "arf0_percent": 34.34113111,
+      "msf_newtons": 2070.731922,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat045": {
+      "age": 57,
+      "height_cm": 157,
+      "weight_kg": 80,
+      "side": "L",
+      "arf0_percent": 26.9044372,
+      "msf_newtons": 2234.222015,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat046": {
+      "age": 56,
+      "height_cm": 160,
+      "weight_kg": 78,
+      "side": "L",
+      "arf0_percent": 49.72930461,
+      "msf_newtons": 1634.783296,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat047": {
+      "age": 71,
+      "height_cm": 158,
+      "weight_kg": 70,
+      "side": "R",
+      "arf0_percent": 18.37700206,
+      "msf_newtons": 1745.715189,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat048": {
+      "age": 71,
+      "height_cm": 164,
+      "weight_kg": 80,
+      "side": "L",
+      "arf0_percent": 38.2463003,
+      "msf_newtons": 1908.207687,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat049": {
+      "age": 56,
+      "height_cm": 162,
+      "weight_kg": 69,
+      "side": "R",
+      "arf0_percent": 36.37063731,
+      "msf_newtons": 1999.816286,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat050": {
+      "age": 60,
+      "height_cm": 157,
+      "weight_kg": 62,
+      "side": "R",
+      "arf0_percent": 25.30769113,
+      "msf_newtons": 1652.449977,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat051": {
+      "age": 75,
+      "height_cm": 160,
+      "weight_kg": 64,
+      "side": "L",
+      "arf0_percent": 40.82550541,
+      "msf_newtons": 1835.358715,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat052": {
+      "age": 76,
+      "height_cm": 162,
+      "weight_kg": 60,
+      "side": "R",
+      "arf0_percent": 53.4984048,
+      "msf_newtons": 1549.87199,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat053": {
+      "age": 77,
+      "height_cm": 150,
+      "weight_kg": 51,
+      "side": "L",
+      "arf0_percent": 21.01088634,
+      "msf_newtons": 2033.43963,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat054": {
+      "age": 70,
+      "height_cm": 163.5,
+      "weight_kg": 55,
+      "side": "L",
+      "arf0_percent": 55.81670544,
+      "msf_newtons": 1261.331003,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat055": {
+      "age": 86,
+      "height_cm": 165,
+      "weight_kg": 72,
+      "side": "L",
+      "arf0_percent": 40.07390656,
+      "msf_newtons": 1746.715298,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat056": {
+      "age": 74,
+      "height_cm": 160,
+      "weight_kg": 56,
+      "side": "L",
+      "arf0_percent": 21.41668892,
+      "msf_newtons": 2030.979894,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat057": {
+      "age": 56,
+      "height_cm": 160,
+      "weight_kg": 61,
+      "side": "L",
+      "arf0_percent": 24.45133559,
+      "msf_newtons": 2011.819404,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat058": {
+      "age": 59,
+      "height_cm": 164,
+      "weight_kg": 83,
+      "side": "L",
+      "arf0_percent": 50.52758579,
+      "msf_newtons": 1524.190203,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat059": {
+      "age": 65,
+      "height_cm": 160,
+      "weight_kg": 70,
+      "side": "L",
+      "arf0_percent": 29.30694268,
+      "msf_newtons": 1768.389504,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat060": {
+      "age": 65,
+      "height_cm": 156,
+      "weight_kg": 72,
+      "side": "R",
+      "arf0_percent": 32.75931745,
+      "msf_newtons": 1564.235206,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat061": {
+      "age": 77,
+      "height_cm": 160,
+      "weight_kg": 85,
+      "side": "L",
+      "arf0_percent": 22.0811621,
+      "msf_newtons": 2209.518478,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat062": {
+      "age": 64,
+      "height_cm": 140,
+      "weight_kg": 45,
+      "side": "L",
+      "arf0_percent": 37.33259861,
+      "msf_newtons": 1377.805291,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat063": {
+      "age": 77,
+      "height_cm": 168,
+      "weight_kg": 59,
+      "side": "L",
+      "arf0_percent": 59.8082319,
+      "msf_newtons": 1448.600842,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat064": {
+      "age": 58,
+      "height_cm": 155,
+      "weight_kg": 58,
+      "side": "R",
+      "arf0_percent": 23.78462303,
+      "msf_newtons": 1356.824417,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat065": {
+      "age": 59,
+      "height_cm": 170,
+      "weight_kg": 81,
+      "side": "L",
+      "arf0_percent": 25.49109932,
+      "msf_newtons": 2879.101942,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat066": {
+      "age": 58,
+      "height_cm": 174,
+      "weight_kg": 77,
+      "side": "R",
+      "arf0_percent": 50.9732039,
+      "msf_newtons": 1674.714228,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat067": {
+      "age": 78,
+      "height_cm": 160,
+      "weight_kg": 83,
+      "side": "L",
+      "arf0_percent": 41.5748116,
+      "msf_newtons": 1690.466602,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat068": {
+      "age": 64,
+      "height_cm": 176,
+      "weight_kg": 80,
+      "side": "L",
+      "arf0_percent": 35.74964075,
+      "msf_newtons": 1797.368972,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat069": {
+      "age": 80,
+      "height_cm": 163,
+      "weight_kg": 80,
+      "side": "L",
+      "arf0_percent": 55.88779833,
+      "msf_newtons": 1170.647929,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat070": {
+      "age": 63,
+      "height_cm": 160,
+      "weight_kg": 60,
+      "side": "L",
+      "arf0_percent": 58.68547123,
+      "msf_newtons": 1651.499601,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat071": {
+      "age": 68,
+      "height_cm": 166,
+      "weight_kg": 66,
+      "side": "R",
+      "arf0_percent": 60.00535968,
+      "msf_newtons": 724.6201665,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat072": {
+      "age": 68,
+      "height_cm": 160,
+      "weight_kg": 69,
+      "side": "R",
+      "arf0_percent": 43.56584798,
+      "msf_newtons": 1424.630733,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat073": {
+      "age": 57,
+      "height_cm": 164,
+      "weight_kg": 50,
+      "side": "L",
+      "arf0_percent": 19.90033734,
+      "msf_newtons": 2276.728781,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat074": {
+      "age": 59,
+      "height_cm": 169,
+      "weight_kg": 62,
+      "side": "L",
+      "arf0_percent": 53.43715752,
+      "msf_newtons": 1543.598189,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat075": {
+      "age": 72,
+      "height_cm": 166,
+      "weight_kg": 68,
+      "side": "L",
+      "arf0_percent": 31.84473109,
+      "msf_newtons": 2082.315326,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat076": {
+      "age": 76,
+      "height_cm": 160,
+      "weight_kg": 71,
+      "side": "L",
+      "arf0_percent": 62.43724745,
+      "msf_newtons": 479.7951201,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat077": {
+      "age": 56,
+      "height_cm": 160,
+      "weight_kg": 46,
+      "side": "L",
+      "arf0_percent": 44.25534579,
+      "msf_newtons": 1377.18816,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat078": {
+      "age": 66,
+      "height_cm": 164,
+      "weight_kg": 86,
+      "side": "L",
+      "arf0_percent": 44.55295402,
+      "msf_newtons": 1493.555709,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat079": {
+      "age": 61,
+      "height_cm": 160,
+      "weight_kg": 72,
+      "side": "L",
+      "arf0_percent": 22.1946385,
+      "msf_newtons": 1651.953839,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat080": {
+      "age": 56,
+      "height_cm": 155,
+      "weight_kg": 67,
+      "side": "R",
+      "arf0_percent": 55.46684343,
+      "msf_newtons": 1196.234258,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat081": {
+      "age": 59,
+      "height_cm": 174,
+      "weight_kg": 63,
+      "side": "L",
+      "arf0_percent": 39.57038148,
+      "msf_newtons": 2170.990284,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat082": {
+      "age": 57,
+      "height_cm": 152,
+      "weight_kg": 76,
+      "side": "L",
+      "arf0_percent": 34.29149101,
+      "msf_newtons": 2113.471005,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat083": {
+      "age": 77,
+      "height_cm": 157,
+      "weight_kg": 56,
+      "side": "R",
+      "arf0_percent": 60.77693987,
+      "msf_newtons": 1576.602187,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat084": {
+      "age": 67,
+      "height_cm": 153,
+      "weight_kg": 62,
+      "side": "R",
+      "arf0_percent": 49.27733433,
+      "msf_newtons": 1813.944608,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat085": {
+      "age": 86,
+      "height_cm": 155,
+      "weight_kg": 70,
+      "side": "L",
+      "arf0_percent": 45.95281276,
+      "msf_newtons": 1590.73622,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat086": {
+      "age": 62,
+      "height_cm": 158,
+      "weight_kg": 58,
+      "side": "L",
+      "arf0_percent": 52.76154631,
+      "msf_newtons": 1788.313543,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat087": {
+      "age": 57,
+      "height_cm": 158,
+      "weight_kg": 70,
+      "side": "R",
+      "arf0_percent": 45.28287525,
+      "msf_newtons": 1703.619874,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat088": {
+      "age": 61,
+      "height_cm": 164,
+      "weight_kg": 65,
+      "side": "L",
+      "arf0_percent": 70.69302725,
+      "msf_newtons": 1187.945268,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat089": {
+      "age": 60,
+      "height_cm": 158,
+      "weight_kg": 85,
+      "side": "L",
+      "arf0_percent": 45.13825932,
+      "msf_newtons": 1839.257637,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat090": {
+      "age": 69,
+      "height_cm": 160,
+      "weight_kg": 71,
+      "side": "L",
+      "arf0_percent": 62.60358484,
+      "msf_newtons": 978.5074048,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat091": {
+      "age": 66,
+      "height_cm": 156,
+      "weight_kg": 52,
+      "side": "L",
+      "arf0_percent": 64.9540959,
+      "msf_newtons": 1427.893506,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat092": {
+      "age": 62,
+      "height_cm": 155,
+      "weight_kg": 53,
+      "side": "L",
+      "arf0_percent": 58.1053425,
+      "msf_newtons": 1204.755029,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat093": {
+      "age": 65,
+      "height_cm": 165,
+      "weight_kg": 57,
+      "side": "L",
+      "arf0_percent": 43.53173758,
+      "msf_newtons": 2090.93408,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat094": {
+      "age": 68,
+      "height_cm": 160,
+      "weight_kg": 63,
+      "side": "R",
+      "arf0_percent": 44.32955179,
+      "msf_newtons": 1378.676136,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat095": {
+      "age": 82,
+      "height_cm": 165,
+      "weight_kg": 70,
+      "side": "R",
+      "arf0_percent": 55.40695891,
+      "msf_newtons": 2024.959613,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat096": {
+      "age": 59,
+      "height_cm": 160,
+      "weight_kg": 73,
+      "side": "L",
+      "arf0_percent": 36.35303863,
+      "msf_newtons": 1703.046016,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat097": {
+      "age": 79,
+      "height_cm": 167,
+      "weight_kg": 53,
+      "side": "R",
+      "arf0_percent": 50.33863905,
+      "msf_newtons": 1557.665264,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat098": {
+      "age": 72,
+      "height_cm": 154,
+      "weight_kg": 90,
+      "side": "R",
+      "arf0_percent": 37.26362356,
+      "msf_newtons": 1479.309026,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat099": {
+      "age": 60,
+      "height_cm": 155,
+      "weight_kg": 54,
+      "side": "R",
+      "arf0_percent": 37.63829988,
+      "msf_newtons": 1485.809453,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat100": {
+      "age": 57,
+      "height_cm": 170,
+      "weight_kg": 75,
+      "side": "L",
+      "arf0_percent": 70.43450673,
+      "msf_newtons": 1842.322687,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    },
+    "Pat101": {
+      "age": 57,
+      "height_cm": 165,
+      "weight_kg": 57,
+      "side": "L",
+      "arf0_percent": 28.68530515,
+      "msf_newtons": 1920.981432,
+      "fractured_within_followup": false,
+      "days_ct_to_fracture": null
+    }
+  }
+}

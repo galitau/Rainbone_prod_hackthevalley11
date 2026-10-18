@@ -19,7 +19,8 @@ import { StressChart } from "@/components/stress-chart";
 import { BoneViewer } from "@/components/BoneViewer";
 import { LiveRun, ALL_NUMBERS_ID } from "@/components/live-run";
 import { PlainExplanation } from "@/components/plain-explanation";
-import { API_BASE_URL, type ExplanationState, type HistoryState, type SimulationResult } from "@/lib/api";
+import { FractureRiskAnalysis } from "@/components/risk-analysis";
+import { API_BASE_URL, type ExplanationState, type HistoryState, type RiskAnalysisState, type SimulationResult } from "@/lib/api";
 import { FEMUR_AUTHORS, FEMUR_INSTITUTION, FEMUR_MODEL } from "@/lib/model";
 const PhysicsSimulations = dynamic(() => import("@/components/physics-simulations").then(module => module.PhysicsSimulations));
 
@@ -34,6 +35,7 @@ type OverviewProps = {
   view?: "overview";
   run: RunState;
   explanation: ExplanationState;
+  risk: RiskAnalysisState;
   history: HistoryState;
   health: ApiHealth;
   onRunSample: () => void;
@@ -92,7 +94,7 @@ export function Dashboard(props: DashboardProps) {
   );
 }
 
-function Overview({ run, explanation, history, onRunSample, onUpload }: OverviewProps) {
+function Overview({ run, explanation, risk, history, onRunSample, onUpload }: OverviewProps) {
   // Saved runs of the same input as the live run, so the chart never mixes different scans.
   const runs = history.status === "ready" ? history.runs.filter((saved) => saved.source_filename === run.input.name) : [];
 
@@ -116,6 +118,7 @@ function Overview({ run, explanation, history, onRunSample, onUpload }: Overview
         </div>
         <div className="min-w-0 space-y-6">
           <ClinicalMetrics />
+          <FractureRiskAnalysis state={risk} />
           <PlainExplanation state={explanation} />
           <LiveRun run={run} history={history} onRunSample={onRunSample} onUpload={onUpload} />
         </div>

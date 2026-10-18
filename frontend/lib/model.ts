@@ -41,6 +41,13 @@ export const FEMUR_EXPLAIN_REQUEST = {
   fracture_risk_index_percent: FEMUR_INDEX_PERCENT,
 };
 
+// The femur's own solve in the shape POST /api/risk-analysis accepts next to its HFValid case id.
+export const FEMUR_RISK_FE = {
+  peak_stress_mpa: FEMUR_MODEL.shownStressMpa,
+  load_newtons: FEMUR_MODEL.loadNewtons,
+  stress_index_percent: FEMUR_INDEX_PERCENT,
+};
+
 // "Aldieri, La Mattina, … (2025). HFValid collection. University of Bologna. DOI:…"
 //   → FEMUR_AUTHORS "Aldieri et al. (2025)", FEMUR_INSTITUTION "University of Bologna"
 const authors = FEMUR_MODEL.attribution.split("(")[0].split(",").map((name) => name.trim()).filter(Boolean);

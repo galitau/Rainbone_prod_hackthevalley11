@@ -168,6 +168,25 @@ Changes: Slicer import/export, surface reduction, tetrahedral meshing, new
 illustrative FEA, and browser visualization. Original source hashes and the
 processing settings are included in the manifest.
 
+## HFValid fracture risk table
+
+`POST /api/risk-analysis` reads `frontend/public/models/hfvalid-risk.json`: for each of
+the 101 HFValid subjects, the age, height, weight, modelled side, the recorded
+fracture follow-up, and the dataset authors' ARF0 (Absolute Risk of Fracture at
+time 0) and MSF (Minimum Sidefall Strength), at the CSV's own precision. No
+scanner or calibration column is kept. Rebuild it from `HFValid_Metadata.csv`,
+which comes with the HFValid collection, and check it:
+
+```powershell
+python scripts/bone_fea/build_risk_table.py --csv HFValid_Metadata.csv --output frontend/public/models/hfvalid-risk.json
+$env:HFVALID_METADATA_CSV = 'HFValid_Metadata.csv'
+python scripts/bone_fea/test_risk_table.py
+```
+
+Without `HFVALID_METADATA_CSV` the test checks the committed table and the CSV
+parser; with it, it also checks that a rebuild reproduces the file byte for byte.
+Like the other tests here, run it as a script, not through `python -m unittest`.
+
 ## Hydraulic press demonstration
 
 The `/physics-simulations` route uses its own displacement-controlled solve;
