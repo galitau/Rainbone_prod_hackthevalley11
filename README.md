@@ -37,7 +37,7 @@ See [The AI layer](#the-ai-layer) and
 | **Tiger Data** | TimescaleDB stores completed simulation runs (hypertable plus an hourly continuous aggregate) and the provenance of each new AI generation, including the evidence tools Ask Rainbone's agent pipeline ran; a cached or saved answer adds no row | History chart, Secure datasets → Recent AI answers, `/api/ai-log` |
 | **GoDaddy Registry** | The `.health` domain | <https://rainbone.health> |
 
-**AI agents at a glance.** Ask Rainbone answers through five stages orchestrated with LangGraph
+**AI agents at a glance.** Ask Rainbone is an agentic AI pipeline: it answers through five stages orchestrated with LangGraph
 ([details](#ask-rainbone-the-agent-pipeline-orchestrated-with-langgraph)):
 
 ```mermaid
