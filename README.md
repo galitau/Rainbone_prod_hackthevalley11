@@ -15,10 +15,10 @@ directors, doctors and admin staff.
 Rainbone combines CT-derived 3D models, physics simulations and checked AI to help the care
 team see bone weakness early, before a fall becomes an emergency.
 
-101 women had their thighbones CT-scanned. Four had a recorded fracture during follow-up.
-Rainbone shows, in 3D and in colour, where a real femur takes the most strain under
-load. Then Gemini explains in plain words, for the care team, where she stands among
-those 101 women. Try it: <https://rainbone.health>
+Rainbone starts from real research CT scans of the thighbone, each with a recorded follow-up.
+It shows, in 3D and in colour, where a real femur takes the most strain under load. Then
+Gemini explains in plain words, for the care team, how that femur compares with the published
+research cohort. Try it: <https://rainbone.health>
 
 **The AI, in one line:** code computes and the Gemini API only puts the results into words. Every
 number it writes is checked against the data before it's shown, its facts are read from
@@ -637,7 +637,7 @@ optional FSL bone segmentation.
 
 - **A research prototype, not a medical device.** The fracture-risk figure it surfaces early
   (ARF0) is the HFValid authors' published model estimate for this femur, shown so a care team
-  can see where she stands among 101 women before a fall. Rainbone makes no forecast of its own
+  can see how this femur compares with the research cohort before a fall. Rainbone makes no forecast of its own
   and no diagnosis, and nothing in it has been validated for clinical use.
 - **The fall numbers are published, not computed from a scan.** ARF0 and MSF are the
   HFValid authors' results for one case, Pat001. Importing a CT runs our standing-load
