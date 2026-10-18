@@ -1,8 +1,13 @@
 import type { Metadata } from "next";
-import { IBM_Plex_Mono, Inter } from "next/font/google";
+import { IBM_Plex_Mono, Inter, Source_Serif_4 } from "next/font/google";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
+const sourceSerif = Source_Serif_4({
+  subsets: ["latin"],
+  weight: ["500", "600"],
+  variable: "--font-source-serif",
+});
 const plexMono = IBM_Plex_Mono({
   subsets: ["latin"],
   weight: ["400", "500"],
@@ -10,8 +15,8 @@ const plexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "RainbowBone | Clinical Biomechanics",
-  description: "A clinical dashboard for bone mechanics and fracture risk analysis.",
+  title: "Rainbone | Clinical Biomechanics",
+  description: "Patient-specific bone mechanics and finite element analysis for clinical review.",
 };
 
 export default function RootLayout({
@@ -19,7 +24,7 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <body suppressHydrationWarning className={`${inter.variable} ${plexMono.variable}`}>
+      <body suppressHydrationWarning className={`${inter.variable} ${sourceSerif.variable} ${plexMono.variable} font-sans`}>
         {children}
       </body>
     </html>
