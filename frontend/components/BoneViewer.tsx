@@ -289,7 +289,7 @@ export function BoneViewer() {
           <p className="pointer-events-none absolute inset-x-3 bottom-3 text-center text-[11px] text-viewport-ink/70">Drag to rotate · Scroll or pinch to zoom · Shift + drag to pan</p>
         </>}
         {status === "loading" && <div role="status" className="absolute inset-0 flex items-center justify-center text-[13px] text-viewport-ink"><span className="spectrum-line mr-3 h-1 w-10 animate-pulse rounded-full" aria-hidden />Loading solved bone mesh…</div>}
-        {status === "error" && <div role="alert" className="absolute inset-0 flex flex-col items-center justify-center gap-4 p-8 text-center"><p className="max-w-sm text-[13px] text-white">{error}</p><button className="rounded-lg bg-white px-4 py-2 text-[13px] font-medium text-ink" onClick={() => setAttempt(value => value + 1)}>Retry model</button></div>}
+        {status === "error" && <div role="alert" className="absolute inset-0 flex flex-col items-center justify-center gap-4 p-8 text-center"><p className="max-w-sm text-[13px] text-white">{error}</p><button className="rounded-lg bg-surface px-4 py-2 text-[13px] font-medium text-ink" onClick={() => setAttempt(value => value + 1)}>Retry model</button></div>}
       </div>
       <div className="flex flex-wrap items-center gap-x-5 gap-y-3 px-5 py-3.5">
         <Toggle checked={cut} disabled={status !== "ready"} onChange={setCut} label="Cut-away" />

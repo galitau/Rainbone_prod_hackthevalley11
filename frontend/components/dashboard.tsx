@@ -84,10 +84,11 @@ export function Dashboard(props: DashboardProps) {
 
   return (
     <main className={`min-h-screen bg-canvas text-ink${fit ? " lg:flex lg:h-dvh lg:min-h-[640px] lg:flex-col lg:overflow-hidden" : ""}`}>
+      {view === "preferences" && <a href="#preferences-content" className="skip-preferences">Skip to preferences</a>}
       <div className={`flex min-h-screen${fit ? " lg:min-h-0 lg:flex-1" : ""}`}>
         <aside className="sticky top-0 hidden h-screen w-[256px] shrink-0 flex-col bg-nav lg:flex">
           <div className="spectrum-line h-[3px]" aria-hidden />
-          <div className="px-5 pb-2 pt-6"><Link href="/" aria-label="Rainbone home" className="inline-block rounded-lg"><RainboneLogo /></Link></div>
+          <div className="px-5 pb-2 pt-6"><Link href="/" aria-label="Rainbone home" className="inline-block rounded-lg"><RainboneLogo size="lg" /></Link></div>
           <nav aria-label="Workspace" className="mt-8 space-y-1 px-3">
             <p className="px-3 pb-2 text-[11px] font-medium uppercase tracking-[0.08em] text-nav-muted">Analysis</p>
             <NavItem active={view === "overview"} href="/dashboard" icon={<LayoutDashboard size={17} />} label="Patient overview" />

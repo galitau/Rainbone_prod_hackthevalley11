@@ -7,6 +7,7 @@ Run from backend/:  python -m unittest discover -s tests -v
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import json
 import logging
 import random
@@ -23,7 +24,7 @@ from fastapi.testclient import TestClient
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from routes_risk import router  # noqa: E402
-from services import llm_providers  # noqa: E402
+from services import clinical_store, llm_providers  # noqa: E402
 from services import risk as rk  # noqa: E402
 from services.risk import FeInput, RiskRequest, analyse, build_facts, check, template_text  # noqa: E402
 from services.settings import runtime_env  # noqa: E402
@@ -33,7 +34,7 @@ DATA = json.loads(rk.DATA_PATH.read_text(encoding="utf-8"))
 FE = {"peak_stress_mpa": 15.83, "load_newtons": 800, "stress_index_percent": 10.553333}
 GOOD = ("A sideways fall would load this femur 2.17 to 3.18 times its strength in the study authors' model, as it "
         "would every femur in the study, and 75 of the 101 women had a stronger femur. Its ARF0 of 47.1% is higher "
-        "than 56 of the 101 women. No hip fracture was recorded for this 78-year-old woman during the follow-up.")
+        "than 56 of the 101 women. No fracture was recorded for this 78-year-old woman during the follow-up.")
 
 
 def run(fields, env, mock=None):
@@ -181,8 +182,8 @@ class CheckerTests(unittest.TestCase):
     def test_facts_with_a_time_unit_pass(self):
         self.assertIsNone(check("This 78-year-old woman, aged 78 years.", self.facts))
         self.assertIsNone(check("A woman 78 years old, at the age of 78 years.", self.facts))
-        self.assertIsNone(check("A hip fracture 1,529 days after the CT scan of this 75-year-old.", self.fractured))
-        self.assertEqual(check("A hip fracture 1,529 years after the CT.", self.fractured),
+        self.assertIsNone(check("A fracture 1,529 days after the CT scan of this 75-year-old.", self.fractured))
+        self.assertEqual(check("A fracture 1,529 years after the CT.", self.fractured),
                          "time prediction: '1,529 years'")
 
     def test_advice_diagnosis_and_probability_fail(self):
@@ -194,6 +195,14 @@ class CheckerTests(unittest.TestCase):
                           ("We recommend care.", "recommend"), ("Calcium helps.", "Calcium")]:
             with self.subTest(text=text):
                 self.assertEqual(check(text, self.facts), f"blocked wording: {hit!r}")
+
+    def test_hip_fracture_claims_fail(self):
+        # HFValid records that a woman fractured, not where, so "hip fracture" is not a fact.
+        for text in ["Four of the 101 women had a hip fracture.", "Four women in the study broke a hip.",
+                     "Her hip was broken during the follow-up.", "Four women had hip fractures."]:
+            with self.subTest(text=text):
+                self.assertRegex(check(text, self.facts) or "", r"^blocked wording: ")
+        self.assertIsNone(check("Four of the 101 women had a fracture during the follow-up.", self.facts))
 
     def test_referrals_screening_drugs_and_prevention_fail(self):
         for text in ["She needs to see a GP.", "She needs a bone density scan.", "A DXA scan is the next step.",
@@ -240,19 +249,19 @@ class CheckerTests(unittest.TestCase):
 
     def test_a_number_word_passes_only_as_a_count_of_women_that_is_a_fact(self):
         # cohort_fractured is 4: "four" passes where it counts women, and is a spelled-out quantity anywhere else.
-        for text in ["Four of the 101 women had a hip fracture.", "The four women who fractured had 53.7% to 73.2%.",
+        for text in ["Four of the 101 women had a fracture.", "The four women who fractured had 53.7% to 73.2%.",
                      "Four women fractured during the follow-up."]:
             with self.subTest(text=text):
                 self.assertIsNone(check(text, self.facts))
         for text, word in [("Its ARF0 is four percent.", "four"), ("It may break within four years.", "four"),
-                           ("Only three women in the study broke a hip.", "three")]:
+                           ("Only three women in the study had a fracture.", "three")]:
             with self.subTest(text=text):
                 self.assertEqual(check(text, self.facts), f"spelled-out quantity: {word!r}")
 
     def test_a_rounded_fact_does_not_let_a_number_word_through(self):
         # round(2.17) = 2 and round(3.18) = 3 are facts; as words they would invent falls, places, counts and multiples.
         for text, word in [("This woman had fallen three times before her CT scan.", "three"),
-                           ("Only three in the study broke a hip.", "three"),
+                           ("Only three in the study had a fracture.", "three"),
                            ("Her femur would crack in two places in a sideways fall.", "two"),
                            ("This femur is two times as likely to break as an average femur.", "two"),
                            ("A sideways fall makes this femur three times more likely to break than the median woman.",
@@ -373,9 +382,9 @@ class TemplateTests(unittest.TestCase):
         self.assertEqual(text, "A sideways fall would load this femur 2.17 to 3.18 times its minimum sidefall strength "
                                "(MSF, 1,339 N) in the study authors' model. Such a fall would exceed the MSF of every "
                                "femur in the study; 75 of the 101 women had a stronger femur. Its published absolute "
-                               "risk of fracture at time 0 (ARF0) is 47.1%, higher than 56 of the 101 women. No hip "
+                               "risk of fracture at time 0 (ARF0) is 47.1%, higher than 56 of the 101 women. No "
                                "fracture was recorded for this woman during the study's follow-up.")
-        self.assertIn("hip fracture 1,529 days after this CT scan", template_text(build_facts(DATA, "Pat004")))
+        self.assertIn("recorded a fracture 1,529 days after this CT scan", template_text(build_facts(DATA, "Pat004")))
 
     def test_template_says_every_femur_only_when_it_is_true(self):
         # The cohort's strongest MSF is 2,879 N, below the 2,900 N fall force, so every factor of risk is above 1.
@@ -421,16 +430,23 @@ class RouteTests(RiskTestCase):
         app = FastAPI()
         app.include_router(router)
         app.dependency_overrides[runtime_env] = lambda: env
-        patcher = umock.patch.object(rk, "DATA_PATH", data_path)
+        # The bundled copy services.clinical_store falls back to (no VULTR_S3_* in these envs).
+        entry = dataclasses.replace(clinical_store.CATALOGUE["hfvalid-risk"], local=data_path)
+        patcher = umock.patch.dict(clinical_store.CATALOGUE, {"hfvalid-risk": entry})
         patcher.start()
         self.addCleanup(patcher.stop)
+        clinical_store.reset_cache()
+        self.addCleanup(clinical_store.reset_cache)
         return TestClient(app)
 
     def test_contract_shape(self):
         response = self.client({}).post("/api/risk-analysis", json={"case_id": "Pat001", "fe": FE})
         self.assertEqual(response.status_code, 200)
         body = response.json()
-        self.assertEqual(set(body), {"case_id", "facts", "text", "provider", "model", "fallbacks", "source"})
+        self.assertEqual(set(body), {"case_id", "facts", "text", "provider", "model", "fallbacks", "source",
+                                     "grounding", "logged"})
+        self.assertEqual(body["grounding"]["store"], "local-backup")  # no VULTR_S3_* in this env
+        self.assertIsNone(body["logged"])  # no DATABASE_URL
         self.assertEqual(set(body["facts"]), {
             "age", "arf0_percent", "arf0_higher_than", "cohort_n", "cohort_median_arf0_percent", "cohort_fractured",
             "fractured_arf0_min_percent", "fractured_arf0_max_percent", "msf_newtons", "msf_lower_than",
