@@ -1,6 +1,6 @@
 # Complete femur with computed FEA
 
-The dashboard viewer loads the static model in `public/models/hfvalid-femur`.
+The dashboard viewer loads the static model in `frontend/public/models/hfvalid-femur`.
 Only the visualization and its offline asset pipeline are changed. Existing
 API endpoints, dashboard metrics, study heading, and history remain demo data.
 
@@ -30,12 +30,13 @@ the executable paths with your installations:
 ```powershell
 python scripts/bone_fea/fetch_case.py --output C:/data/hfvalid
 $env:RAINBOWBONE_INPUT = 'C:/data/hfvalid'
-$env:RAINBOWBONE_OUTPUT = (Resolve-Path 'public/models/hfvalid-femur').Path
+$env:RAINBOWBONE_OUTPUT = (Resolve-Path 'frontend/public/models/hfvalid-femur').Path
 & 'C:/tools/Slicer/Slicer.exe' --no-splash --no-main-window --python-script scripts/bone_fea/import_femur_in_slicer.py
 & 'C:/tools/Slicer/Slicer.exe' --no-splash --no-main-window --python-script scripts/bone_fea/prepare_femur_in_slicer.py
-& 'C:/tools/tetgen.exe' '-pYq1.4a80z' public/models/hfvalid-femur/bone-surface.poly
+& 'C:/tools/tetgen.exe' '-pYq1.4a80z' frontend/public/models/hfvalid-femur/bone-surface.poly
 python scripts/bone_fea/test_solve.py
-python scripts/bone_fea/build_model.py --mesh public/models/hfvalid-femur/bone-surface.1.node
+python scripts/bone_fea/build_model.py --mesh frontend/public/models/hfvalid-femur/bone-surface.1.node
+cd frontend
 npm run build
 ```
 
@@ -47,6 +48,78 @@ switches in PowerShell; otherwise decimal arguments can be split.
 
 Only the generated VTP, VTU, segmentation, provenance and manifests need to be
 served. The full CT and TetGen intermediate files need not be committed.
+
+## STL for 3D printing
+
+The dashboard viewer provides **3D print bone · STL**. The download converts the intact,
+full-resolution `slicer-surface.vtp` to binary STL, retaining all 143,016 triangles
+and the original millimeter scale (84.1 × 64.4 × 397.0 mm). It is independent of
+the cut-away, FEA frame, and display magnification. A translation centers XY and
+puts minimum Z at zero without rotating, scaling, smoothing, or decimating.
+STL contains geometry only; import the coordinates as millimeters.
+
+Regenerate the STL and its report with Python, VTK and NumPy, or Slicer's Python:
+
+```powershell
+& 'C:/tools/Slicer/bin/PythonSlicer.exe' scripts/bone_fea/export_print_mesh.py
+```
+
+The exporter checks finite coordinates, nonzero triangle areas, closed and
+manifold edges, consistent outward winding, one connected component, and
+positive volume. It reads the STL back and verifies triangle count, dimensions,
+and volume. `bone-print.json` records the checks, source/output hashes, and the
+HFValid CC BY 4.0 attribution. Include both generated print files when deploying.
+
+Open the STL in Bambu Studio or another compatible slicer, select the printer,
+and scale or split it to fit. At 50% uniform scale the height is 198.5 mm. Choose
+orientation and supports, then slice and inspect the preview before printing.
+
+## Printable reconstruction of simulated missing material
+
+The Physics Simulations side panel provides **Print missing region** for the
+selected compression step. It is outside the fullscreen press viewer. Steps
+before visible element erosion have no missing-region export. The interactive
+preview uses the exported STLs themselves; cyan shows the insert, with an
+optional view inside its matching remaining femur.
+
+```powershell
+& 'C:/tools/Slicer/bin/PythonSlicer.exe' scripts/bone_fea/test_reconstruction.py
+& 'C:/tools/Slicer/bin/PythonSlicer.exe' scripts/bone_fea/export_reconstruction.py
+```
+
+The exporter requires VTK, NumPy and SciPy. It checks the simulation's source
+mesh hash, matches each saved frame's original Float32 coordinates and owning
+element IDs to the tetrahedral mesh, then floods the element adjacency graph
+without crossing the saved boundary. The complement is the removed region.
+It verifies the **entire** recovered boundary and the reported eroded volume
+for every step, including steps with no erosion, and checks irreversible
+removal through the saved history. No additional FEA solve or threshold based
+on surface colors is used.
+
+Raw element erosion produces pinched edges/vertices and very small loose
+fragments. For printing only, the exporter absorbs nearby tetrahedral slivers
+into the insert until each part is manifold. Around pinches it retains the
+largest remaining fan or connects missing fans through a minimum-volume local
+path. Remaining fragments below 5 mm³ are also absorbed into the insert.
+Every added element ID and volume is recorded; the UI displays the added
+percentage. This adjustment can be substantial in early break steps and is
+not a recalculated damage prediction. The simulation files remain unchanged.
+
+The adjusted missing and remaining element sets are complementary: they fill
+the original FEA mesh without volume overlap. Their shared interface uses
+identical triangles with opposite winding. Each face-connected component is
+exported separately. No vertex is smoothed, displaced or scaled. All parts
+share one translation in millimeters. The existing intact anatomy STL uses a
+different surface resolution; use the **matching reconstruction ZIP** to
+assemble the printed demonstration.
+
+Validation checks finite coordinates, nonzero triangles, closed edges, face
+winding, nonmanifold vertices, connected surfaces, positive volume, agreement
+with tetrahedral volume, STL round trips and total reconstructed volume. The
+ZIP contains all matching STLs, their report and printing instructions. No fit
+clearance is applied. Scale all parts uniformly together; inspect thin features,
+support requirements and assembly access in the slicer, then test physical fit.
+This represents simulated element erosion, not measured tissue loss or an implant.
 
 ## Finite-element calculation
 
@@ -128,7 +201,7 @@ force-balance checks (relative tolerance 1e-6). The first assumed strain limit
 sets the stroke schedule; it is not a clinical fracture-load estimate.
 Each run allows up to 200 damage iterations per step and refuses to write a
 completed manifest if convergence fails. An optional `--checkpoint` path outside
-`public/` preserves progress; it is valid only for the exact same mesh and scripts.
+`frontend/public/` preserves progress; it is valid only for the exact same mesh and scripts.
 
 For the failure preview, elements with damage at least 0.95 are removed only
 from the rendered surface. Newly exposed tetrahedral faces come from that

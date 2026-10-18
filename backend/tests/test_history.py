@@ -19,7 +19,7 @@ from fastapi.testclient import TestClient
 import main
 from services import history, settings
 
-SAMPLE_SCAN = Path(__file__).resolve().parents[2] / "public" / "sample_bone.nii.gz"
+SAMPLE_SCAN = Path(__file__).resolve().parents[2] / "frontend" / "public" / "sample_bone.nii.gz"
 FAKE_URL = "postgresql://user:not-a-real-password@127.0.0.1:1/history"
 REAL_CONNECT = history._connect
 

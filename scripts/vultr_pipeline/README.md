@@ -1,11 +1,11 @@
 # Pelvic bones from CTPelvic1K to Vultr Object Storage
 
 `pipeline.py` publishes CTPelvic1K pelvic bone masks and meshes to a private Vultr
-Object Storage bucket (S3-compatible) instead of the Next.js `public/` folder. The
+Object Storage bucket (S3-compatible) instead of the Next.js `frontend/public/` folder. The
 backend's `GET /api/bones` hands out short-lived pre-signed URLs, and the front end's
 `/bones` page downloads the meshes from the bucket through them. The existing femur
-FEA model (`public/models/hfvalid-femur`) and `public/sample_bone.nii.gz` are still
-served from `public/`; moving them is not part of this change.
+FEA model (`frontend/public/models/hfvalid-femur`) and `frontend/public/sample_bone.nii.gz` are still
+served from `frontend/public/`; moving them is not part of this change.
 
 For each CT case the pipeline:
 
@@ -295,7 +295,7 @@ front end's origin (`pipeline.py --cors-origin <origin>`).
 
 ## Front end: `/bones`
 
-`app/bones/page.tsx` (`components/CloudBones.tsx`) calls `GET /api/bones` at
+`frontend/app/bones/page.tsx` (`frontend/components/CloudBones.tsx`) calls `GET /api/bones` at
 `NEXT_PUBLIC_API_BASE_URL` (default `http://127.0.0.1:8000`, the same variable the
 rest of the front end uses), lets you pick a case, downloads that case's `.vtp`
 meshes through their pre-signed URLs, checks each file's sha256 against the
@@ -305,7 +305,7 @@ the dataset and tool attribution are shown beside the viewer. When the links are
 about to expire the page asks the API for new ones.
 
 ```bash
-npm run dev            # then open http://localhost:3000/bones
+cd frontend && npm run dev   # then open http://localhost:3000/bones
 ```
 
 The backend's CORS list (`backend/main.py`) allows `http://localhost:3000`, and the

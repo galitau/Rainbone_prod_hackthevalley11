@@ -476,12 +476,12 @@ class CommandLineTests(TempDirTest):
 
     def test_work_dir_inside_the_repository_is_refused(self):
         with contextlib.redirect_stderr(io.StringIO()) as err:
-            code = pipeline.main(["--work-dir", str(pipeline.REPO_ROOT / "public" / "scans"), "--skip-upload"])
+            code = pipeline.main(["--work-dir", str(pipeline.REPO_ROOT / "frontend" / "public" / "scans"), "--skip-upload"])
         self.assertEqual(code, 2)
         self.assertIn("inside the repository", err.getvalue())
 
     def test_case_variant_of_the_repository_path_is_refused(self):
-        variant = Path(str(pipeline.REPO_ROOT / "public" / "scans").swapcase())
+        variant = Path(str(pipeline.REPO_ROOT / "frontend" / "public" / "scans").swapcase())
         if not variant.parent.exists():
             self.skipTest("case-sensitive file system: the case variant is a different folder")
         self.assertTrue(pipeline._inside_repo(variant))
