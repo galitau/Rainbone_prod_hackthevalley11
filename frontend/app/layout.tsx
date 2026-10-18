@@ -18,6 +18,7 @@ const description =
   "For senior-living care teams: turns a resident's existing hip CT into a fall-fracture check before a fall becomes an emergency. Research prototype built at Hack the Valley 11, not a medical device.";
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://rainbone.health"),
   title: "Rainbone | Fall-fracture check for senior-living care teams",
   description,
   openGraph: {
