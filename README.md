@@ -275,11 +275,8 @@ How the orchestration works:
 
 ### Ask Rainbone: source statements and navigation
 
-Ask Rainbone runs a five-stage **LangGraph StateGraph**: triage → evidence → writer → critic → audit.
-The critic conditionally returns to the writer for the existing bounded rewrite/provider fallback.
-If the framework is unavailable or fails, a built-in runner continues from the same committed stage
-without repeating completed model calls or audit writes. The trace names the runner used; no
-checkpointer is configured and external LangSmith tracing is disabled.
+Its five stages and their LangGraph orchestration are described
+[above](#ask-rainbone-the-agent-pipeline-orchestrated-with-langgraph).
 
 The header launcher (or `/` outside an input) opens a keyboard-operable overlay on every
 workspace page. Both existing AI cards offer a prefilled follow-up. `POST /api/ask` accepts
