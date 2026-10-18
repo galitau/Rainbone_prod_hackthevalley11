@@ -5,6 +5,7 @@ import { Box, Download, Maximize2, RotateCcw } from "lucide-react";
 import type vtkPolyData from "@kitware/vtk.js/Common/DataModel/PolyData";
 import { BONE, DATA_RAMP, VIEWPORT_BACKGROUND } from "@/lib/spectrum";
 import { parseTetMesh, sliceTets, type TetMesh } from "@/lib/vtu-cut";
+import { createVtkViewDisposer } from "@/lib/dispose-vtk-view";
 import { BonePrintExport } from "@/components/bone-print-export";
 
 type Field = "stress" | "displacement" | "anatomy";
@@ -75,38 +76,54 @@ export function BoneViewer() {
         const info = await infoResponse.json() as ModelInfo;
         const meshBuffer = await meshResponse.arrayBuffer();
         if (disposed || !containerRef.current) return;
+        const parts: { delete: () => void }[] = [];
+        let disposeView: (() => void) | undefined;
+        let observer: ResizeObserver | undefined;
+        let endInteraction: { unsubscribe: () => void } | undefined;
+        let released = false;
+        let aimToken = 0;
+        cleanup = () => {
+          if (released) return;
+          released = true;
+          ++aimToken;
+          observer?.disconnect();
+          endInteraction?.unsubscribe();
+          disposeView?.();
+          parts.splice(0).reverse().forEach(part => part.delete());
+        };
         const reader = Reader.newInstance();
+        parts.push(reader);
         reader.parseAsArrayBuffer(meshBuffer);
         const data = reader.getOutputData(0) as vtkPolyData;
         if (!data?.getNumberOfPoints() || !data.getPointData().getArrayByName("von_mises_nodal_mpa") || !data.getPointData().getArrayByName("displacement_mm")) {
-          reader.delete();
           throw new Error("The model is missing its solved stress or displacement field.");
         }
         const view = GenericRenderWindow.newInstance({ background: VIEWPORT_BACKGROUND, listenWindowResize: false });
+        disposeView = createVtkViewDisposer(view);
         const actor = Actor.newInstance();
+        parts.push(actor);
         const mapper = Mapper.newInstance();
+        parts.push(mapper);
         const colors = ColorTransferFunction.newInstance();
+        parts.push(colors);
         const plane = Plane.newInstance({ normal: [0, 1, 0] });
+        parts.push(plane);
         const capActor = Actor.newInstance();
+        parts.push(capActor);
         const capMapper = Mapper.newInstance();
+        parts.push(capMapper);
         const capData = PolyData.newInstance();
+        parts.push(capData);
         let tetMesh: Promise<TetMesh> | null = null;
-        let aimToken = 0;
         let currentField: Field = "anatomy";
-        let endInteraction: { unsubscribe: () => void } | undefined;
-        const observer = new ResizeObserver(() => {
+        observer = new ResizeObserver(() => {
+          if (released) return;
           view.resize();
           // Refit to the new aspect ratio while preserving the viewing angle.
           renderer.resetCamera();
           renderer.resetCameraClippingRange();
           view.getRenderWindow().render();
         });
-        cleanup = () => {
-          observer.disconnect();
-          endInteraction?.unsubscribe();
-          view.delete(); actor.delete(); mapper.delete(); colors.delete(); plane.delete(); reader.delete();
-          capActor.delete(); capMapper.delete(); capData.delete();
-        };
         view.setContainer(containerRef.current);
         mapper.setInputData(data);
         mapper.setLookupTable(colors);
@@ -165,7 +182,7 @@ export function BoneViewer() {
           const extent = Math.abs(normal[0]) * half[0] + Math.abs(normal[1]) * half[1] + Math.abs(normal[2]) * half[2];
           const origin = [0, 1, 2].map(i => center[i] + normal[i] * extent * nextDepth / 100);
           const mesh = await loadTets();
-          if (disposed || token !== aimToken) return;
+          if (disposed || released || token !== aimToken) return;
           plane.setNormal(normal[0], normal[1], normal[2]);
           plane.setOrigin(origin[0], origin[1], origin[2]);
           mapper.removeAllClippingPlanes();

@@ -6,8 +6,9 @@ import { ChevronDown, CircleAlert, LoaderCircle, RotateCw, Upload } from "lucide
 import type { RunState } from "@/components/dashboard";
 import { API_BASE_URL, API_HOST, type HistoryState } from "@/lib/api";
 import { formatNumber } from "@/lib/format";
+import { matchingSimulationRuns } from "@/lib/simulation-history";
 
-// The dashboard opens this panel after "Import scan", so the uploaded file's numbers are in view.
+// Advanced engine details; uploaded results also have a dedicated visible card.
 export const ALL_NUMBERS_ID = "all-numbers";
 
 type Props = {
@@ -37,16 +38,16 @@ export function LiveRun({ run, history, onRunSample, onUpload }: Props) {
               The automatic check is off in{" "}
               <Link href="/preferences" className="text-link hover:underline">Preferences</Link>. &ldquo;Run the sample&rdquo; sends{" "}
               <span className="font-mono text-ink">{run.input.name}</span>, a small synthetic test volume (not the femur), to the
-              RainbowBone API and shows what comes back.
+              Rainbone engine and shows what comes back.
             </>
           ) : sample ? (
             <>
-              On each visit this page sends <span className="font-mono text-ink">{run.input.name}</span>, a small synthetic test volume (not
-              the femur), to the RainbowBone API and shows what comes back.
+              Engine self-test: <span className="font-mono text-ink">{run.input.name}</span> is a small synthetic test volume, not
+              the reference femur. These are the Rainbone engine's results for that input.
             </>
           ) : (
             <>
-              Your file <span className="break-all font-mono text-ink">{run.input.name}</span>, sent to the RainbowBone API.
+              Your file <span className="break-all font-mono text-ink">{run.input.name}</span>, sent to the Rainbone engine. The reference femur and its AI cards remain HFValid Pat001.
             </>
           )}
         </p>
@@ -113,10 +114,7 @@ function AllNumbers({ run, history }: { run: RunState; history: HistoryState }) 
   if (run.status === "ready") rows.push(["Round trip", `${formatNumber(run.ms / 1000, 2)} s`]);
   if (result?.reused) rows.push(["Solve", "reused earlier"]);
   rows.push(["Input file", run.input.name, true], ["API", API_HOST, true]);
-  rows.push([
-    "Saved runs",
-    history.status === "ready" ? `${history.runs.length} returned` : history.status === "loading" ? "checking…" : `none (${history.reason})`,
-  ]);
+  rows.push(["History", historyMessage(run, history)]);
   return (
     <dl className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 gap-y-2 text-[12.5px]">
       {rows.map(([label, value, mono]) => (
@@ -129,6 +127,37 @@ function AllNumbers({ run, history }: { run: RunState; history: HistoryState }) 
       ))}
     </dl>
   );
+}
+
+export function historyMessage(run: RunState, history: HistoryState): string {
+  if (run.status !== "ready") return "Awaiting a completed result";
+  if (history.status === "loading") return "Checking saved record…";
+  if (history.status === "unavailable") return "Save not confirmed";
+  const matching = matchingSimulationRuns(history, run.result, run.input.name);
+  if (run.result.run_id) return matching.length ? "Exact run read back from Tiger" : history.persistence === "unavailable" ? "Save not confirmed" : "Save not yet confirmed";
+  return `${matching.length} filename matches; exact save not confirmed`;
+}
+
+export function UploadedResult({ run, history }: { run: RunState; history: HistoryState }) {
+  const result = run.status === "ready" ? run.result : undefined;
+  return <section id="uploaded-scan-result" aria-labelledby="uploaded-result-title" className="shrink-0 rounded-2xl border-2 border-link bg-surface p-5 shadow-card">
+    <p className="text-xs font-medium uppercase tracking-widest text-link">Your upload</p>
+    <h2 id="uploaded-result-title" tabIndex={-1} className="mt-2 break-all text-lg font-semibold text-ink">{run.input.name}</h2>
+    <p className="mt-2 text-xs leading-5 text-body">Results below belong to this file. The 3D reference femur, published risk and AI explanations still describe HFValid Pat001.</p>
+    <p role="status" aria-live="polite" className="mt-4 text-sm font-medium text-ink">{run.status === "loading" ? "Solving your uploaded volume…" : run.status === "error" ? "This file could not be solved." : result ? result.reused ? "Reused the result for identical file contents." : "Your simulation is complete." : "Waiting for a simulation."}</p>
+    {run.status === "error" && <p className="mt-2 text-sm text-caution">{run.message}</p>}
+    {result && <>
+      <dl className="mt-4 grid grid-cols-2 gap-4 text-sm">
+        {[["Peak stress", `${formatNumber(result.max_von_mises_stress_mpa, 2)} MPa`], ["Bone volume", `${formatNumber(result.bone_volume_cm3, 2)} cm³`], ["Average stiffness", `${formatNumber(result.average_youngs_modulus_gpa, 2)} GPa`], ["Stress / assumed strength", `${formatNumber(result.fracture_risk_index_percent, 2)}%`]].map(([label, value]) => <div key={label}><dt className="text-xs leading-5 text-body">{label}</dt><dd className="mt-1 break-words font-mono font-medium text-ink">{value}</dd></div>)}
+      </dl>
+      <p className="mt-4 text-xs leading-5 text-body">The ratio uses an assumed 150 MPa strength and is capped at 100%. It is not a fracture probability. Supports, loads and material mapping are simplified; this is a research simulation.</p>
+      <div className="mt-4 border-t border-line pt-3 text-xs leading-5">
+        <p role="status" className="font-medium text-ink">{historyMessage(run, history)}</p>
+        {result.reused && <p className="mt-1 text-body">No new solve or history row was created. Original execution input: <span className="break-all font-mono">{result.original_source_filename ?? "not reported by the API"}</span>.</p>}
+        {result.run_id && <details className="mt-2"><summary className="cursor-pointer text-link">Run identity</summary><dl className="mt-2 space-y-2 text-body"><div><dt>Run ID</dt><dd className="break-all font-mono">{result.run_id}</dd></div>{result.input_sha256 && <div><dt>Input SHA-256</dt><dd className="break-all font-mono">{result.input_sha256}</dd></div>}</dl></details>}
+      </div>
+    </>}
+  </section>;
 }
 
 function UploadButton({ disabled, onUpload }: { disabled: boolean; onUpload: (file: File) => void }) {

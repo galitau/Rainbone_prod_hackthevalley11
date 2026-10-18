@@ -137,7 +137,8 @@ class TimescaleHistoryTests(unittest.TestCase):
     def test_simulate_saves_and_history_serves_the_saved_run(self):
         before = self.query("SELECT count(*) FROM simulation_runs")[0][0]
         response = self.post_scan()
-        self.assertEqual((response.status_code, response.json()), (200, RESULT))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual({name: response.json()[name] for name in RESULT}, RESULT)
         self.assertEqual(self.query("SELECT count(*) FROM simulation_runs")[0][0], before + 1)
 
         history_response = self.client.get("/api/history", params={"limit": 3})
@@ -148,7 +149,12 @@ class TimescaleHistoryTests(unittest.TestCase):
         latest = body["runs"][-1]
         self.assertEqual({name: latest[name] for name in RESULT}, RESULT)
         self.assertEqual(latest["solver"], "services.fea_solver.simulate_fea")
-        self.assertEqual(set(latest["solver_versions"]), {*history.SOLVER_PACKAGES, "segmentation"})
+        self.assertEqual(latest["run_id"], response.json()["run_id"])
+        self.assertEqual(latest["input_sha256"], response.json()["input_sha256"])
+        exact = self.client.get("/api/history", params={"run_id": response.json()["run_id"]}).json()
+        self.assertEqual(exact["persistence"], "saved")
+        self.assertEqual(len(exact["runs"]), 1)
+        self.assertEqual(set(latest["solver_versions"]), {*history.SOLVER_PACKAGES, "segmentation", "input_sha256"})
         self.assertGreaterEqual(latest["solve_ms"], 0.0)
 
         (bucket, runs, avg_stress, max_stress), = self.query(
@@ -180,7 +186,8 @@ class TimescaleHistoryTests(unittest.TestCase):
         self.assertIn("python -m services.history migrate", response.json()["detail"])
         with self.assertLogs("rainbowbone.history", "WARNING"):
             simulated = self.post_scan()
-        self.assertEqual((simulated.status_code, simulated.json()), (200, RESULT))
+        self.assertEqual(simulated.status_code, 200)
+        self.assertEqual({name: simulated.json()[name] for name in RESULT}, RESULT)
 
     def test_unreachable_database_gives_503_and_simulate_still_succeeds(self):
         os.environ[history.DATABASE_URL_ENV] = f"postgresql://postgres@127.0.0.1:{_free_port()}/postgres"
@@ -189,7 +196,8 @@ class TimescaleHistoryTests(unittest.TestCase):
         self.assertEqual(response.status_code, 503)
         with self.assertLogs("rainbowbone.history", "WARNING"):
             simulated = self.post_scan()
-        self.assertEqual((simulated.status_code, simulated.json()), (200, RESULT))
+        self.assertEqual(simulated.status_code, 200)
+        self.assertEqual({name: simulated.json()[name] for name in RESULT}, RESULT)
 
 
 if __name__ == "__main__":

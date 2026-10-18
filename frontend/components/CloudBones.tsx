@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Cloud, RotateCcw, ShieldAlert, ShieldCheck } from "lucide-react";
+import { createVtkViewDisposer } from "@/lib/dispose-vtk-view";
 import { API_BASE_URL } from "@/lib/api";
 import type vtkActor from "@kitware/vtk.js/Rendering/Core/Actor";
 import type vtkPolyData from "@kitware/vtk.js/Common/DataModel/PolyData";
@@ -165,19 +166,37 @@ export function CloudBones() {
         if (disposed || !containerRef.current) return;
 
         const view = GenericRenderWindow.newInstance({ background: [0.04, 0.07, 0.11], listenWindowResize: false });
+        const disposeView = createVtkViewDisposer(view);
+        const parts: { delete: () => void }[] = [];
+        let observer: ResizeObserver | undefined;
+        let released = false;
+        // Register cleanup before attaching the view or parsing any mesh: a
+        // malformed later surface must also release already-created resources.
+        cleanup = () => {
+          if (released) return;
+          released = true;
+          observer?.disconnect();
+          actorsRef.current = new Map();
+          renderRef.current = null;
+          resetRef.current = null;
+          disposeView();
+          parts.splice(0).reverse().forEach(part => part.delete());
+        };
         view.setContainer(containerRef.current);
         const renderer = view.getRenderer();
-        const parts: { delete: () => void }[] = [];
         const actors = new Map<string, vtkActor>();
         const summary: LoadedBone[] = [];
         for (const { file, buffer, integrity } of buffers) {
           const reader = Reader.newInstance();
+          parts.push(reader);
           reader.parseAsArrayBuffer(buffer);
           const poly = reader.getOutputData(0) as vtkPolyData;
-          if (!poly?.getNumberOfPoints()) { reader.delete(); throw new Error(`${file.path} holds no surface.`); }
+          if (!poly?.getNumberOfPoints()) { throw new Error(`${file.path} holds no surface.`); }
           const mapper = Mapper.newInstance();
+          parts.push(mapper);
           mapper.setInputData(poly);
           const actor = Actor.newInstance();
+          parts.push(actor);
           actor.setMapper(mapper);
           const property = actor.getProperty();
           const [r, g, b] = rgb(BONE_STYLE[file.bone!]?.color ?? FALLBACK_COLOR);
@@ -189,7 +208,6 @@ export function CloudBones() {
           property.setInterpolationToPhong();
           renderer.addActor(actor);
           actors.set(file.bone!, actor);
-          parts.push(reader, mapper, actor);
           summary.push({ name: file.bone!, triangles: poly.getNumberOfPolys(), bytes: buffer.byteLength, integrity });
         }
         const render = () => view.getRenderWindow().render();
@@ -205,16 +223,8 @@ export function CloudBones() {
           renderer.resetCameraClippingRange();
           render();
         };
-        const observer = new ResizeObserver(() => { view.resize(); render(); });
+        observer = new ResizeObserver(() => { if (!released) { view.resize(); render(); } });
         observer.observe(containerRef.current);
-        cleanup = () => {
-          observer.disconnect();
-          parts.forEach(part => part.delete());
-          view.delete();
-          actorsRef.current = new Map();
-          renderRef.current = null;
-          resetRef.current = null;
-        };
         actorsRef.current = actors;
         renderRef.current = render;
         resetRef.current = reset;
