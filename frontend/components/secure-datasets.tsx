@@ -191,7 +191,7 @@ function UploadCard() {
         The API reads the file into memory and parses it there; its code does not save the upload to the bucket or the database, and writes it to disk only as described next. The web framework (Starlette) buffers uploads larger than 1 MB in a temporary file that is deleted when the request ends. When FSL is installed, the CT volume is written to a temporary folder for two FSL commands and the folder is deleted straight after.
       </Row>
       <Row icon={<History size={14} />} label="Kept afterwards">
-        The result numbers and the file name, as a row in the simulation history (when configured). The solver also emits an info-level log record with the file name and solve details; uvicorn&apos;s default logging, which the README&apos;s run command uses, does not print it. The scan is not kept.
+        The result numbers and the file name, as a row in the simulation history (when configured). The solver also emits an info-level log record with the file name and solve details; uvicorn&apos;s default logging, which the README&apos;s run command uses, does not print it. When Gemini words the explanation, the result numbers and Gemini&apos;s text are also saved in the API&apos;s answer file (AI_ANSWER_STORE, up to 500 answers), so that when Gemini is unavailable a request with the same numbers gets that Gemini answer back, marked as saved. The scan is not kept.
       </Row>
     </Card>
   );
@@ -217,7 +217,7 @@ function KeysCard() {
         In production the site is served over HTTPS by Vercel, and the API sits behind a Caddy HTTPS reverse proxy on Vultr Compute.
       </Row>
       <Row icon={<Sparkles size={14} />} label="AI text">
-        Gemini, then Groq, then a built-in template word the explanations. They receive numbers only: the femur&apos;s solved values and {FEMUR_MODEL.caseId}&apos;s published HFValid figures. The API checks every number in their text against those facts.
+        Gemini, then a Gemini answer saved earlier for exactly the same numbers (labelled as saved), then Groq, then a built-in template word the explanations. They receive numbers only: the femur&apos;s solved values and {FEMUR_MODEL.caseId}&apos;s published HFValid figures. The API checks every number in their text against those facts.
       </Row>
     </Card>
   );

@@ -1,16 +1,15 @@
 import { ArrowDownToLine, Gauge, Info, Shield, Sparkles } from "lucide-react";
+import { aiAnswerLabel } from "@/lib/ai-label";
 import type { RiskAnalysis, RiskAnalysisState, RiskFacts } from "@/lib/api";
 import { formatNumber } from "@/lib/format";
 import { GroundingLine } from "@/components/grounding-line";
 import { ASSUMED_STRENGTH_MPA, FEMUR_AUTHORS, FEMUR_FALL_RISK, FEMUR_INDEX_PERCENT, FEMUR_MODEL } from "@/lib/model";
 
-const PROVIDER_LABELS: Record<string, string> = { gemini: "Gemini", groq: "Groq" };
 // van den Kroonenberg et al. 1995: peak trochanter impact force of a sideways fall, 5th to 95th percentile woman.
 const FALL_FORCE_SOURCE = "https://pubmed.ncbi.nlm.nih.gov/8618384/";
 
-function providerLabel({ provider, model }: RiskAnalysis) {
-  if (provider === "template") return "Written by the built-in template";
-  return `Analysed by ${PROVIDER_LABELS[provider] ?? provider}${model ? ` · ${model}` : ""}`;
+function providerLabel(analysis: RiskAnalysis) {
+  return aiAnswerLabel(analysis);
 }
 
 // A doi.org link whether the API sends "10.6092/…", "DOI:10.6092/…" or a doi.org URL.

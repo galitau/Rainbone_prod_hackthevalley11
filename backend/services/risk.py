@@ -23,7 +23,8 @@ store, facts and chain (a Gemini answer for 1 h, a Groq or template answer for
 60 s), so a reload does not spend another model call. Each answer the chain
 produces is logged once in Tiger Cloud (services.ai_log); a kept answer is not
 logged again and keeps the `logged` id of its row, and one whose row was not
-written is kept for at most 60 s.
+written is kept for at most 60 s. A saved Gemini answer (served="saved") is not
+logged, since no model was called for it.
 
 The chain order, providers, timeouts and fallback reasons are the ones
 POST /api/explain uses (AI_CHAIN, AI_OFFLINE, GEMINI_*, GROQ_*).
@@ -49,7 +50,7 @@ from services.ai_log import Logged
 from services.clinical_store import CATALOGUE, ClinicalDataUnavailable, Grounding, get_clinical_json
 from services.explain import (_NUMBER_WORDS, _TENS, _UNITS, _WORD_VALUES, NUMBER_RE, Fallback, _number_value,
                               build_providers, chain_order)
-from services.llm_providers import AnswerCache, answer_ttl, attempt, chain_signature
+from services.llm_providers import AnswerCache, answer_ttl, ask_models, chain_signature
 from services.llm_providers import reset_cooldowns as reset_provider_cooldowns
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -236,6 +237,11 @@ class RiskResponse(BaseModel):
     text: str
     provider: Literal["gemini", "groq", "template"]
     model: Optional[str]
+    served: Literal["live", "cached", "saved"] = Field(
+        default="live", description="live: written for this request; cached: kept in memory from an earlier one; "
+                                    "saved: no Gemini model answered, so this is the Gemini answer saved earlier for "
+                                    "the same facts, written by `model` at `saved_at`.")
+    saved_at: Optional[str] = Field(default=None, description="When a saved answer was written (ISO 8601, UTC).")
     fallbacks: list[Fallback]
     source: RiskSource
     grounding: Optional[Grounding] = Field(default=None, description="Where the HFValid table was read from.")
@@ -542,8 +548,9 @@ async def analyse(request: RiskRequest, env: Optional[Mapping[str, str]] = None,
 
     async def produce() -> RiskResponse:
         answer = await _run_chain(request.case_id, order, facts, source, tiers)
-        logged = await ai_log.log_answer(e, "risk-analysis", request.case_id, answer, facts_json(facts), started,
-                                         grounding)
+        # A saved Gemini answer was produced earlier, not now: the log records model answers and template answers.
+        logged = None if answer.served == "saved" else await ai_log.log_answer(
+            e, "risk-analysis", request.case_id, answer, facts_json(facts), started, grounding)
         return answer.model_copy(update={"grounding": grounding, "logged": logged})
 
     # Kept per store too, so the ai_analyses row an answer points to records where its facts came from.
@@ -556,9 +563,10 @@ async def analyse(request: RiskRequest, env: Optional[Mapping[str, str]] = None,
 
 async def _run_chain(case_id: str, order: tuple[str, ...], facts: RiskFacts, source: RiskSource,
                      tiers: Mapping[str, list]) -> RiskResponse:
-    def done(text: str, provider: str, model: Optional[str], fallbacks: list[Fallback]) -> RiskResponse:
+    def done(text: str, provider: str, model: Optional[str], fallbacks: list[Fallback], served: str = "live",
+             saved_at: Optional[str] = None) -> RiskResponse:
         return RiskResponse(case_id=case_id, facts=facts, text=_with_note(text), provider=provider,
-                            model=model, fallbacks=fallbacks, source=source)
+                            model=model, served=served, saved_at=saved_at, fallbacks=fallbacks, source=source)
 
     fallbacks: list[Fallback] = []
     for name in order:
@@ -568,17 +576,14 @@ async def _run_chain(case_id: str, order: tuple[str, ...], facts: RiskFacts, sou
             if reason:  # correct by construction; a failure here is a bug in template_text
                 raise RuntimeError(f"template failed the checker: {reason}")
             return done(text, "template", None, fallbacks)
-        models = tiers[name]
-        if not models[0].configured:
-            fallbacks.append(Fallback(provider=name, reason=f"{models[0].key_name} not set"))
-            continue
-        for provider in models:
-            text, reason, try_next = await attempt(provider, system_prompt(), model_input(facts),
-                                                   lambda t: check(t, facts))
-            if text is not None:
-                return done(text, name, provider.model, fallbacks)
-            log.warning("risk: %s %s fell through: %s", name, provider.model, reason)
-            fallbacks.append(Fallback(provider=name, reason=f"{provider.model}: {reason}"))
-            if not try_next:
-                break
+
+        def fell_through(model: Optional[str], reason: str, name: str = name) -> None:
+            if model is not None:
+                log.warning("risk: %s %s fell through: %s", name, model, reason)
+            fallbacks.append(Fallback(provider=name, reason=reason if model is None else f"{model}: {reason}"))
+
+        answer = await ask_models(tiers[name], system_prompt(), model_input(facts), lambda t: check(t, facts),
+                                  fell_through, kind="risk-analysis", facts=f"{case_id}:{facts_json(facts)}")
+        if answer is not None:
+            return done(answer.text, name, answer.model, fallbacks, answer.served, answer.saved_at)
     raise RuntimeError("chain ended without the template")  # chain_order always appends it
