@@ -1,10 +1,14 @@
 # RainbowBone FEA backend
 
+`GET /api/bones` (CTPelvic1K bone meshes and masks from Vultr Object Storage, `routes_bones.py`)
+is documented in [`scripts/vultr_pipeline/README.md`](../scripts/vultr_pipeline/README.md#get-apibones).
+
 ## Run locally
 
 ```bash
 cd backend
 python -m pip install -r requirements.txt
+python -m pip install -r requirements-dev.txt   # only to run the tests (moto)
 uvicorn main:app --reload
 ```
 

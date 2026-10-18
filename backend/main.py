@@ -10,6 +10,7 @@ import anyio.to_thread
 from fastapi import BackgroundTasks, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+from routes_bones import router as bones_router
 
 from routes_explain import router as explain_router
 from routes_history import router as history_router
@@ -41,6 +42,7 @@ app = FastAPI(
     version="0.1.0",
     description="NIfTI bone segmentation and finite-element biomechanics API.",
 )
+app.include_router(bones_router)
 
 app.add_middleware(
     CORSMiddleware,

@@ -1,0 +1,3 @@
+# Test-only dependencies, on top of requirements.txt:
+#   python -m pip install -r requirements.txt -r requirements-dev.txt
+moto[s3]>=5,<6
