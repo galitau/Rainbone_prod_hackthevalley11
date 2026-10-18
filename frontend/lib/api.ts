@@ -31,6 +31,9 @@ export type SimulationResult = {
   mesh_vertices?: number;
   mesh_faces?: number;
   source_filename?: string;
+  // Not in the JSON body: set from the X-Simulate-Reused header, true when the API had already solved these exact bytes
+  // and returned that result instead of solving again.
+  reused?: boolean;
 };
 
 export type SimulationOutcome =
@@ -63,6 +66,7 @@ export async function runSimulation(file: File): Promise<SimulationOutcome> {
   try {
     const result = (await response.json()) as SimulationResult;
     if (typeof result.max_von_mises_stress_mpa === "number" && typeof result.fracture_risk_index_percent === "number") {
+      result.reused = response.headers.get("X-Simulate-Reused") === "1";
       return { ok: true, result, ms: performance.now() - started };
     }
   } catch {

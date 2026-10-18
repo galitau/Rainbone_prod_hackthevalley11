@@ -9,7 +9,7 @@ from typing import Annotated, Any
 
 import anyio
 import anyio.to_thread
-from fastapi import BackgroundTasks, FastAPI, File, HTTPException, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, HTTPException, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from routes_bones import router as bones_router
@@ -32,6 +32,9 @@ SOLVE_LIMITER = anyio.CapacityLimiter(1)
 # solve reuse its result. Only source_filename comes from each request. Failed solves are not kept. A reused result
 # saves no history row: simulation history records solves that ran, never a repeat of one.
 SIMULATE_CACHE_MAX = 64
+# "1" on an answer that is a kept result rather than a solve of this request, else "0". Exposed to the page through CORS
+# so the dashboard can say the result was reused instead of showing a near-zero round trip as a live solve.
+REUSED_HEADER = "X-Simulate-Reused"
 _simulate_results: "OrderedDict[str, dict[str, Any]]" = OrderedDict()
 _simulate_results_lock = threading.Lock()
 
@@ -79,6 +82,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["POST", "GET"],
     allow_headers=["*"],
+    expose_headers=[REUSED_HEADER],
 )
 app.include_router(explain_router)
 app.include_router(history_router)
@@ -114,7 +118,8 @@ def health() -> dict[str, str]:
 
 
 @app.post("/api/simulate", response_model=SimulationResponse)
-async def simulate(file: Annotated[UploadFile, File(description="NIfTI .nii or .nii.gz volume")], background_tasks: BackgroundTasks) -> SimulationResponse:
+async def simulate(file: Annotated[UploadFile, File(description="NIfTI .nii or .nii.gz volume")], background_tasks: BackgroundTasks,
+                   response: Response) -> SimulationResponse:
     if not file.filename or not file.filename.lower().endswith((".nii", ".nii.gz")):
         raise HTTPException(status_code=400, detail="Upload a .nii or .nii.gz NIfTI file.")
 
@@ -127,6 +132,7 @@ async def simulate(file: Annotated[UploadFile, File(description="NIfTI .nii or .
     filename = file.filename
     digest = await anyio.to_thread.run_sync(lambda: hashlib.sha256(payload).hexdigest())
     result = _kept_result(digest)
+    reused = result is not None
     if result is None:
         started = time.perf_counter()
 
@@ -138,8 +144,10 @@ async def simulate(file: Annotated[UploadFile, File(description="NIfTI .nii or .
             result, solved = await anyio.to_thread.run_sync(solve_unless_kept, limiter=SOLVE_LIMITER)
         except FEASolverError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
+        reused = not solved
         if solved:
             _keep_result(digest, result)
             # Saved after the response is sent; a failed save is logged and never fails the simulation.
             background_tasks.add_task(save_simulation_run, result, solve_ms=(time.perf_counter() - started) * 1000.0)
+    response.headers[REUSED_HEADER] = "1" if reused else "0"
     return SimulationResponse(**{**result, "source_filename": filename})

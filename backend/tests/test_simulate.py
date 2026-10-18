@@ -103,6 +103,7 @@ class SimulateCacheTests(unittest.TestCase):
         self.assertEqual((first.status_code, second.status_code), (200, 200))
         self.assertEqual(self.solved, [b"abc"])
         self.assertEqual(second.json(), {**first.json(), "source_filename": "second.nii"})
+        self.assertEqual((first.headers[main.REUSED_HEADER], second.headers[main.REUSED_HEADER]), ("0", "1"))
         self.assertEqual(set(second.json()), set(SimulationResponse.model_fields))
         # History records the solve that ran, under its own name, and nothing for the repeat.
         self.assertEqual(self.saved.call_count, 1)

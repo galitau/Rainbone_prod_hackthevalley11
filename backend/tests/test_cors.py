@@ -49,6 +49,10 @@ class CorsTest(unittest.TestCase):
         self.assertEqual(cors["allow_headers"], ["*"])
         self.assertIs(cors["allow_credentials"], True)
 
+    def test_the_reused_header_is_readable_by_the_page(self):
+        # Without expose_headers a cross-origin fetch cannot read X-Simulate-Reused.
+        self.assertEqual(_main_cors()["expose_headers"], [main.REUSED_HEADER])
+
     def test_defaults_allow_local_dev_and_the_production_site(self):
         self.assertEqual(main.cors_origins({}), main.cors_origins({"CORS_ALLOW_ORIGINS": " ", "CORS_ALLOW_ORIGIN_REGEX": ""}))
         test_client = client({})
