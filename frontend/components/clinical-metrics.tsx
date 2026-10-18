@@ -1,4 +1,5 @@
 import { ArrowDownToLine, Gauge, Info, Percent, Ruler, Scale, Users, Zap } from "lucide-react";
+import { MetricsExplainer } from "@/components/metrics-explainer";
 import { formatNumber } from "@/lib/format";
 import { ASSUMED_STRENGTH_MPA, FEMUR_AUTHORS, FEMUR_FALL_RISK, FEMUR_INDEX_PERCENT, FEMUR_MODEL } from "@/lib/model";
 
@@ -28,9 +29,12 @@ export function ClinicalMetrics() {
   ];
   return (
     <aside aria-label="Clinical metrics" className="h-fit overflow-hidden rounded-2xl border border-line bg-surface shadow-card">
-      <div className="flex items-start justify-between gap-3 border-b border-line px-5 py-4">
-        <div><h2 className="text-[15px] font-semibold text-ink">Clinical metrics</h2><p className="mt-0.5 text-[12px] text-muted">Published fall model · {m.solver} solve</p></div>
-        <span className="shrink-0 rounded-full border border-success/25 bg-success/[0.07] px-2.5 py-1 text-[11px] font-medium text-success">{m.dataset} {m.caseId}</span>
+      <div className="border-b border-line px-5 py-4">
+        <div className="flex items-start justify-between gap-3">
+          <div><h2 className="text-[15px] font-semibold text-ink">Clinical metrics</h2><p className="mt-0.5 text-[12px] text-muted">Published fall model · {m.solver} solve</p></div>
+          <span className="shrink-0 rounded-full border border-success/25 bg-success/[0.07] px-2.5 py-1 text-[11px] font-medium text-success">{m.dataset} {m.caseId}</span>
+        </div>
+        <MetricsExplainer />
       </div>
 
       <section aria-label="Fracture risk, published HFValid model" className="px-5 pb-6 pt-5">

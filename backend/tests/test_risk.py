@@ -2,7 +2,7 @@
 
 No network: provider calls go to the httpx.MockTransport helpers of test_explain. Tests pass an
 explicit env mapping and read the committed frontend/public/models/hfvalid-risk.json (the HFValid table).
-Run from backend/:  python -m unittest discover -s tests -v
+Run from backend/:  python -m unittest discover -s tests -t .
 """
 from __future__ import annotations
 
@@ -48,6 +48,10 @@ def reasons(result):
 
 class RiskTestCase(unittest.TestCase):
     def setUp(self):
+        # Saved Gemini answers are off here whatever the runner imports, so the developer's backend/.ai-answers.json
+        # is never written or read by these tests (tests/__init__.py does the same for the whole suite).
+        self.addCleanup(setattr, llm_providers, "ANSWER_STORE_DEFAULT", llm_providers.ANSWER_STORE_DEFAULT)
+        llm_providers.ANSWER_STORE_DEFAULT = None
         rk.reset_cooldowns()
         logging.getLogger("rainbowbone.risk").disabled = True
 
@@ -300,7 +304,8 @@ class ChainTests(RiskTestCase):
         clock = Clock().patch(self)
         first = run({"case_id": "Pat001", "fe": FE}, {}, Mock())
         self.assertEqual(first.provider, "template")
-        self.assertIs(run({"case_id": "Pat001", "fe": FE}, {}, Mock()), first)
+        kept = run({"case_id": "Pat001", "fe": FE}, {}, Mock())
+        self.assertEqual((kept.text, kept.served), (first.text, "cached"))
         mock = Mock(gemini=gemini_reply(GOOD), groq=groq_reply(GOOD))
         answers = [run({"case_id": "Pat001", "fe": FE}, KEYS, mock) for _ in range(4)]
         self.assertEqual(mock.calls, [PRIMARY])  # keys set: another chain, so the template did not stop Gemini
@@ -443,8 +448,8 @@ class RouteTests(RiskTestCase):
         response = self.client({}).post("/api/risk-analysis", json={"case_id": "Pat001", "fe": FE})
         self.assertEqual(response.status_code, 200)
         body = response.json()
-        self.assertEqual(set(body), {"case_id", "facts", "text", "provider", "model", "fallbacks", "source",
-                                     "grounding", "logged"})
+        self.assertEqual(set(body), {"case_id", "facts", "text", "provider", "model", "served", "saved_at", "fallbacks",
+                                     "source", "grounding", "logged"})
         self.assertEqual(body["grounding"]["store"], "local-backup")  # no VULTR_S3_* in this env
         self.assertIsNone(body["logged"])  # no DATABASE_URL
         self.assertEqual(set(body["facts"]), {

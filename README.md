@@ -42,7 +42,7 @@ flowchart TB
   user(["Browser"])
 
   subgraph VERCEL["Front end · Vercel · rainbone.health"]
-    next["Next.js 15 App Router · Tailwind · vtk.js<br/>/ · /enter · /dashboard · /physics-simulations<br/>/bones · /lesion-progression · /datasets · /preferences"]
+    next["Next.js 15 App Router · Tailwind · vtk.js<br/>/ · /enter · /privacy · /dashboard · /physics-simulations<br/>/bones · /lesion-progression · /datasets · /preferences"]
     static["frontend/public/<br/>HFValid femur FEA · press steps<br/>hfvalid-risk.json · sample_bone.nii.gz"]
     proxy["Rewrites /api/* and /health<br/>to API_PROXY_TARGET"]
   end
@@ -62,12 +62,14 @@ flowchart TB
       facts["Facts built in code<br/>no model computes a number"]
       cache["Answer cache<br/>Gemini answer 1 h · Groq or template 60 s"]
       cool["429 memory<br/>skip a model 300 s after HTTP 429,<br/>60 s after any other failure"]
-      chain["Provider chain<br/>gemini-3.8-flash → gemini-3.5-flash-lite<br/>→ Groq openai/gpt-oss-120b → template"]
+      chain["Provider chain<br/>gemini-3.8-flash → gemini-3.5-flash-lite<br/>→ saved Gemini answer → Groq openai/gpt-oss-120b<br/>→ template"]
+      saved[("Saved Gemini answers<br/>AI_ANSWER_STORE file")]
       check["Checker<br/>numbers and wording"]
       audit["Audit log · ai_log.py<br/>one row per answer in Tiger ai_analyses"]
       eps --> ground --> facts --> cache
       cache -->|"miss"| chain
       cool -.-> chain
+      chain <-.->|"save, serve when no Gemini model answers"| saved
       chain -->|"each answer"| check
       check -->|"rejected: next provider"| chain
       check -->|"passed"| audit
@@ -143,21 +145,27 @@ log (`backend/services/risk.py`, `explain.py`, `llm_providers.py`, `clinical_sto
   of risk) before a model is called. The model only words them and never receives a scan
   or its file name; the risk analysis also keeps our own FE numbers away from it.
 - **Provider chain.** `gemini-3.8-flash`, then `gemini-3.5-flash-lite` after an HTTP
-  error such as 429, then Groq `openai/gpt-oss-120b`, then a deterministic template that
-  needs no network. `AI_CHAIN` and `AI_OFFLINE` change the order.
+  error such as 429, then the Gemini answer saved earlier for exactly the same facts
+  (served as `served: "saved"` with its `saved_at`, and only if it still passes the
+  checker), then Groq `openai/gpt-oss-120b`, then a deterministic template that needs no
+  network. A Gemini key that is invalid or refused (HTTP 400, 401, 403) hands over to the
+  next key in `GEMINI_API_KEYS`; a 429 is never retried with another key. `AI_CHAIN` and
+  `AI_OFFLINE` change the order.
 - **Checker.** Every number in an answer must be one of the facts; in the risk analysis
   it must also be its own kind of quantity (a percent only for ARF0, newtons only for
   forces, a count only for women). The risk-analysis checker also rejects ranks stated
   the wrong way round, numbers written as words, statements about the future, "chance"
   or "probability" for ARF0, diagnosis, advice, and any claim about where the recorded
   fracture was. A rejected answer moves on to the next provider.
-- **Answer cache and 429 memory.** An answer is kept per case, grounding store, facts and
-  chain (Gemini for 1 h, Groq or template for 60 s), and concurrent equal requests share
-  one model call. A model that failed is skipped for 60 s, or 300 s after HTTP 429, by
-  both endpoints.
+- **Answer cache and 429 memory.** An answer is kept in memory per case, grounding
+  store, facts and chain (Gemini for 1 h, Groq or template for 60 s) and comes back as
+  `served: "cached"`; concurrent equal requests share one model call. A model that failed
+  is skipped for 60 s, or 300 s after HTTP 429, by both endpoints. Every checked Gemini
+  answer is also written to the `AI_ANSWER_STORE` file, which outlives a restart.
 - **Audit log.** Each answer the chain produces writes one row to the `ai_analyses`
   hypertable in Tiger Cloud: endpoint, case, provider, model, latency, grounding store,
-  fallbacks and the sha256 of the facts and of the text. The text itself is not stored.
+  fallbacks and the sha256 of the facts and of the text. The text itself is not stored,
+  and a saved Gemini answer is not logged again, since no model was called for it.
   `GET /api/ai-log` reads the latest rows.
 
 ### AI flow: one risk-analysis request
@@ -187,22 +195,29 @@ sequenceDiagram
   end
   Note over A: build_facts: ARF0 47.1 %, higher than 56 of 101, median 44.3 %,<br/>MSF 1,339 N, factor of risk 2.17–3.18, 4 of 101 fractured
   alt no answer kept for this case, store, facts and chain
-    loop gemini-3.8-flash, gemini-3.5-flash-lite, Groq openai/gpt-oss-120b
+    loop gemini-3.8-flash, then gemini-3.5-flash-lite
       Note over A: skip the model while it cools down (300 s after HTTP 429)
       A->>M: facts JSON only (no scan, no file name, no FE numbers)
       M-->>A: JSON text, or an HTTP error or a timeout
+      Note over A: checker: numbers and wording, a passing answer is saved
+    end
+    opt no Gemini model passed
+      Note over A: the saved Gemini answer for the same facts, if it still passes the checker
+    end
+    opt still no answer
+      A->>M: Groq openai/gpt-oss-120b, same facts JSON
+      M-->>A: JSON text, or an HTTP error or a timeout
       Note over A: checker: numbers and wording
     end
-    Note over A,M: the first text that passes is the answer
-    opt no model passed
+    opt still no answer
       Note over A: template built from the facts
     end
-    A->>T: INSERT INTO ai_analyses (hashes, provider, model, latency, grounding)
+    A->>T: INSERT INTO ai_analyses (hashes, provider, model, latency, grounding), not for a saved answer
     Note over A: keep the answer (Gemini 1 h, Groq or template 60 s)
   else answer kept
     Note over A: reuse it with the id of its ai_analyses row (not logged again)
   end
-  A-->>V: text, facts, provider, model, fallbacks, source, grounding, logged
+  A-->>V: text, facts, provider, model, served, fallbacks, source, grounding, logged
   V-->>B: the same JSON
   Note over B: AI card with the text and<br/>"Facts read from Vultr Object Storage · sha256 verified"
 ```
@@ -250,7 +265,8 @@ credentials, and checks each mesh's sha256 before drawing it.
 | Route | What it shows | API calls |
 |---|---|---|
 | [`/`](https://rainbone.health/) | Landing page: the HFValid femur in 3D with its solved numbers | none |
-| [`/enter`](https://rainbone.health/enter) | Guest pass: no account, no email, no password (`/login` redirects here) | none |
+| [`/enter`](https://rainbone.health/enter) | Guest pass for the Dr. Rowan demo seat, or optional Sign in with Google (`/login` redirects here) | none |
+| [`/privacy`](https://rainbone.health/privacy) | What the demo, Google sign-in and simulations store | none |
 | [`/dashboard`](https://rainbone.health/dashboard) | One-screen overview: stress map and cut-away, clinical metrics, AI fracture risk card, plain-words explanation, live engine run and history | `/health`, `/api/explain`, `/api/risk-analysis`, `/api/simulate`, `/api/history` |
 | [`/physics-simulations`](https://rainbone.health/physics-simulations) | Hydraulic-press replay of the same femur, with a printable missing region | none |
 | [`/bones`](https://rainbone.health/bones) | Imaging library: CTPelvic1K pelvic bone meshes from Vultr Object Storage | `/api/bones`, then the bucket |
@@ -280,7 +296,7 @@ Request and response fields, the checker rules and the tests are in
 | Path | What it holds |
 |---|---|
 | `package.json` (root) | Shortcuts only: `npm run setup`, `npm run dev`, `npm run build`, `npm start` and `npm run lint` run the same scripts inside `frontend/` |
-| `frontend/app/` | Next.js App Router pages: `/` (landing), `/enter` (guest pass; `/login` redirects there), `/dashboard`, `/physics-simulations`, `/bones`, `/lesion-progression`, `/datasets` and `/preferences` |
+| `frontend/app/` | Next.js App Router pages: `/` (landing), `/enter` (guest pass; `/login` redirects there), `/privacy`, `/dashboard`, `/physics-simulations`, `/bones`, `/lesion-progression`, `/datasets` and `/preferences` |
 | `frontend/components/` | Dashboard, `BoneViewer.tsx` (femur stress map and cut-away), `risk-analysis.tsx` and `plain-explanation.tsx` (AI cards), `CloudBones.tsx` (imaging library), `physics-simulations.tsx` and `press-viewer.tsx` (press replay), `secure-datasets.tsx`, `landing/` |
 | `frontend/lib/` | API client, colour ramp, tetrahedral slicing, model numbers, preferences |
 | `frontend/public/models/` | Precomputed femur FEA (`hfvalid-femur`), press steps (`femur-press`), printable reconstruction (`femur-reconstruction`) and the HFValid fracture risk table (`hfvalid-risk.json`), with sha256 pins |
@@ -341,13 +357,13 @@ Never commit `.env` files. The variables, by name:
 
 | Variables | Used for |
 |---|---|
-| `GEMINI_API_KEY`, `GEMINI_MODEL`, `GROQ_API_KEY`, `GROQ_MODEL`, `AI_CHAIN`, `AI_OFFLINE` | The AI provider chain |
+| `GEMINI_API_KEY`, `GEMINI_API_KEYS`, `GEMINI_MODEL`, `GROQ_API_KEY`, `GROQ_MODEL`, `AI_CHAIN`, `AI_OFFLINE`, `AI_ANSWER_STORE` | The AI provider chain and the saved Gemini answers |
 | `DATABASE_URL` | Tiger Cloud (TimescaleDB): simulation history and the AI audit log |
 | `VULTR_S3_ENDPOINT`, `VULTR_S3_ACCESS_KEY`, `VULTR_S3_SECRET_KEY`, `VULTR_S3_BUCKET` | Vultr Object Storage: `clinical/` grounding and `/api/bones` |
 | `VULTR_ENDPOINT_URL`, `VULTR_BUCKET_PATH`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | The lesion-progression objects (each falls back to its `VULTR_S3_*` counterpart) |
 | `CORS_ALLOW_ORIGINS`, `CORS_ALLOW_ORIGIN_REGEX` | Browser origins allowed to call the API |
 | `FSLDIR` | Optional FSL bone segmentation |
-| `NEXT_PUBLIC_API_BASE_URL`, `API_PROXY_TARGET` | Front end: where the browser sends API calls, and where Vercel forwards `/api/*` and `/health` |
+| `NEXT_PUBLIC_API_BASE_URL`, `API_PROXY_TARGET`, `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | Front end (`frontend/.env.example`): where the browser sends API calls, where Vercel forwards `/api/*` and `/health`, and the optional Google sign-in client |
 
 With `DATABASE_URL` set, apply the schema once with `python -m services.history migrate`
 from `backend/` (it runs every file in `backend/migrations/` in order).
@@ -361,6 +377,8 @@ optional FSL bone segmentation.
   Root Directory set to `frontend`. Production points `API_PROXY_TARGET` at the API and
   `NEXT_PUBLIC_API_BASE_URL` at the site itself, so API calls stay same-origin;
   `NEXT_PUBLIC_API_BASE_URL` is fixed at build time.
+  `NEXT_PUBLIC_GOOGLE_CLIENT_ID` (optional, also fixed at build time) turns on "Sign in with
+  Google" on `/enter`; list the site's origins as Authorized JavaScript origins on that client.
 - **Back end:** any Linux host with Python 3.12. Clone the whole repository (the API imports
   the solver from `scripts/bone_fea/`), install `backend/requirements.txt`, and run
   `uvicorn main:app` from `backend/` behind an HTTPS proxy. Production runs on Vultr Compute
@@ -417,10 +435,12 @@ optional FSL bone segmentation.
   run out the card falls back to Groq or to the template.
 - **Lesion progression is a visualization demo.** Its intermediate frames and metrics
   are illustrative placeholders, not measured progression.
-- **No accounts.** The clinician in the header is a demo profile, and
-  `GET /api/history` and `GET /api/ai-log` are readable by anyone. History stores the
-  file name exactly as sent, so name files without patient details.
-- **One solve at a time,** and every cache lives in the memory of one API process.
+- **No server accounts.** The clinician in the header is a demo profile; Google sign-in,
+  when it is on, keeps the name, email and photo in the browser only. `GET /api/history`
+  and `GET /api/ai-log` are readable by anyone. History stores the file name exactly as
+  sent, so name files without patient details.
+- **One solve at a time,** every in-memory cache belongs to one API process, and the
+  saved-answer file assumes a single server process.
 
 ## Team
 
