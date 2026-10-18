@@ -42,7 +42,7 @@ export function BoneReconstructionExport({ frameIndex, frame, firstBreak, onSele
       <p className="rounded-lg bg-sunken p-3 text-[11px] leading-5 text-muted">No missing region at step {frameIndex + 1}. Move to a step after the visible break.</p>
       <button disabled className={`${buttonStyle} cursor-not-allowed opacity-40`}><Download size={14} />Download missing region STL</button>
       {firstBreak >= 0 && <button onClick={() => onSelectFrame(firstBreak)} className="text-xs font-medium text-link hover:underline">Go to first break</button>}
-    </> : error ? <div role="alert" className="text-xs text-caution"><p>{error}</p><button onClick={() => setAttempt(value => value + 1)} className="mt-2 underline">Retry print files</button></div> : !model ? <p role="status" className="text-xs text-muted">Loading print files…</p> : !matching || !report ? <p role="alert" className="text-xs text-caution">Matching print files are unavailable for this simulation step.</p> : <div className={`grid items-start gap-5 ${preview ? "lg:grid-cols-[minmax(0,1fr)_320px]" : ""}`}>
+    </> : error ? <div role="alert" className="text-xs text-caution"><p>{error}</p><button onClick={() => setAttempt(value => value + 1)} className="mt-2 underline">Retry print files</button></div> : !model ? <p role="status" className="text-xs text-muted">Loading print files…</p> : !matching || !report ? <p role="alert" className="text-xs text-caution">Matching print files are unavailable for this simulation step.</p> : <div className="grid items-start gap-5">
       {preview && <ReconstructionPreview key={report.frame_index} parts={report.parts} />}
       <div className="min-w-0 space-y-3">
         <div className="rounded-lg bg-sunken px-3 py-2.5">

@@ -1,13 +1,22 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { ArrowDownToLine, ChevronLeft, ChevronRight, FlaskConical, Pause, Play, RotateCcw } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ArrowDownToLine, ChevronLeft, ChevronRight, FlaskConical, LayoutPanelLeft, Pause, Play, RotateCcw } from "lucide-react";
 import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { PressViewer } from "@/components/press-viewer";
 import { BoneReconstructionExport } from "@/components/bone-reconstruction-export";
+import { CollapsiblePanel, PANEL_DEFAULT, PanelSplitter, usePanelLayout, type PanelLayoutConfig } from "@/components/overview-layout";
 import { PRESS_PATH, pressStage, type PressField, type PressModel } from "@/lib/press-model";
 
 const inputStyle = "w-full rounded-lg border border-line bg-surface px-3 py-2 text-xs text-ink outline-none focus:border-focus";
+
+// From lg up the page fits the window like the patient overview: the press viewer fills the row and every card is a
+// collapsible panel in a resizable column. Every panel starts open, as the page looks without a saved layout.
+type PhysicsPanel = "playback" | "state" | "view" | "loading" | "print" | "response" | "interpret";
+const PHYSICS_LAYOUT: PanelLayoutConfig<PhysicsPanel> = {
+  storageKey: "rainbone.physics-layout.v1",
+  layout: { panelWidth: PANEL_DEFAULT, collapsed: { playback: false, state: false, view: false, loading: false, print: false, response: false, interpret: false } },
+};
 
 export function PhysicsSimulations() {
   const [model, setModel] = useState<PressModel | null>(null);
@@ -20,6 +29,8 @@ export function PhysicsSimulations() {
   const [scale, setScale] = useState(10);
   const [edges, setEdges] = useState(false);
   const onReady = useCallback((ready: boolean) => setViewerReady(ready), []);
+  const layout = usePanelLayout(PHYSICS_LAYOUT);
+  const rowRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const abort = new AbortController();
@@ -52,75 +63,83 @@ export function PhysicsSimulations() {
   function scrub(index: number) { setPlaying(false); setFrameIndex(index); }
   function togglePlayback() { if (frameIndex === lastStep) setFrameIndex(0); setPlaying(value => !value); }
   function restartPlayback() { setFrameIndex(0); setPlaying(true); }
+  const panel = (id: PhysicsPanel, title: string, card: React.ReactNode, className?: string) => (
+    <CollapsiblePanel id={id} title={title} collapsed={layout.collapsed[id]} onCollapsedChange={collapsed => layout.setCollapsed(id, collapsed)} className={className}>{card}</CollapsiblePanel>
+  );
 
-  return <div className="p-5 md:p-8">
-    <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
-      <div><p className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted">Virtual mechanical testing</p><h2 className="mt-2 font-serif text-[28px] font-semibold tracking-[-0.01em] text-ink">Femur under compression</h2><p className="mt-2 max-w-2xl text-sm leading-6 text-muted">Follow the colors as local deformation approaches the model’s failure limit, then watch damage develop under compression.</p></div>
-      <span className="flex items-center gap-2 rounded-full border border-caution/25 bg-caution/[0.07] px-3 py-1.5 text-[11px] text-caution"><FlaskConical size={14} /> Research demonstration</span>
+  // Above the viewer below lg, as before; from lg up the first panel.
+  const playback = model && frame && <section aria-label="Press playback controls" className="rounded-2xl border border-line bg-surface shadow-card p-4 sm:p-5">
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <div><h3 className="text-sm font-medium">FEA compression</h3><p className="mt-1 text-xs text-muted">Step {frameIndex + 1} of {model.frames.length} · {frame.stroke_mm.toFixed(3)} mm applied displacement</p></div>
+      <div className="flex items-center gap-2">
+        <button aria-label="Previous compression step" disabled={frameIndex === 0} onClick={() => scrub(frameIndex - 1)} className="rounded-lg border border-line p-2 text-muted disabled:opacity-30"><ChevronLeft size={16} /></button>
+        <button aria-label={playing ? "Pause compression" : "Run compression"} disabled={!viewerReady && !playing} onClick={togglePlayback} className="flex items-center gap-2 whitespace-nowrap rounded-lg bg-primary px-4 py-2 text-xs font-semibold text-white disabled:opacity-40">{playing ? <Pause size={15} /> : <Play size={15} />}{playing ? "Pause" : frameIndex === lastStep ? "Replay" : "Run press"}</button>
+        <button aria-label="Next compression step" disabled={frameIndex === lastStep} onClick={() => scrub(frameIndex + 1)} className="rounded-lg border border-line p-2 text-muted disabled:opacity-30"><ChevronRight size={16} /></button>
+        <button aria-label="Reset compression test" onClick={() => scrub(0)} className="rounded-lg border border-line p-2 text-muted"><RotateCcw size={15} /></button>
+      </div>
     </div>
-    <p className="mb-5 rounded-lg border border-line bg-surface px-4 py-3 text-xs leading-5 text-muted">Research demonstration with assumed material and failure properties — not a validated clinical test. Its damage visualization is exploratory.</p>
-    {error && <div role="alert" className="rounded-xl border border-caution/30 bg-surface p-6 text-sm"><p>{error}</p><button className="mt-3 text-link underline" onClick={() => setAttempt(value => value + 1)}>Retry simulation</button></div>}
-    {!model && !error && <div role="status" className="flex h-96 items-center justify-center rounded-2xl border border-line bg-surface shadow-card text-sm text-muted">Loading compression test…</div>}
-    {model && frame && <>
-      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_310px]">
-        <div className="min-w-0 space-y-5">
-          <section aria-label="Press playback controls" className="rounded-2xl border border-line bg-surface shadow-card p-4 sm:p-5">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div><h3 className="text-sm font-medium">FEA compression</h3><p className="mt-1 text-xs text-muted">Step {frameIndex + 1} of {model.frames.length} · {frame.stroke_mm.toFixed(3)} mm applied displacement</p></div>
-              <div className="flex items-center gap-2">
-                <button aria-label="Previous compression step" disabled={frameIndex === 0} onClick={() => scrub(frameIndex - 1)} className="rounded-lg border border-line p-2 text-muted disabled:opacity-30"><ChevronLeft size={16} /></button>
-                <button aria-label={playing ? "Pause compression" : "Run compression"} disabled={!viewerReady && !playing} onClick={togglePlayback} className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-xs font-semibold text-white disabled:opacity-40">{playing ? <Pause size={15} /> : <Play size={15} />}{playing ? "Pause" : frameIndex === lastStep ? "Replay" : "Run press"}</button>
-                <button aria-label="Next compression step" disabled={frameIndex === lastStep} onClick={() => scrub(frameIndex + 1)} className="rounded-lg border border-line p-2 text-muted disabled:opacity-30"><ChevronRight size={16} /></button>
-                <button aria-label="Reset compression test" onClick={() => scrub(0)} className="rounded-lg border border-line p-2 text-muted"><RotateCcw size={15} /></button>
-              </div>
-            </div>
-            <input aria-label="Compression step" type="range" min={0} max={lastStep} step={1} value={frameIndex} onChange={event => scrub(Number(event.target.value))} className="mt-5 w-full accent-primary" />
-            <div className="mt-1 flex justify-between font-mono text-[10px] text-muted"><span>UNLOADED</span><span>COMPRESSION → DAMAGE</span></div>
-            <div className="mt-4 flex flex-wrap gap-2 text-[11px]">
-              {firstBreak > 0 && <><button onClick={() => { scrub(firstBreak - 1); setField("failure_index"); }} className="rounded-md border border-line px-3 py-2 text-link">Before break</button><button onClick={() => { scrub(firstBreak); setField("failure_index"); }} className="rounded-md border border-line px-3 py-2 text-link">After break</button></>}
-            </div>
-            {frameIndex === firstBreak - 1 && <p className="mt-3 text-[11px] leading-5 text-caution">Last solved step before a visible gap. In Failure proximity, red elements have reached the assumed strain limit that initiates damage. The gap develops between saved steps.</p>}
-          </section>
-          <PressViewer model={model} frameIndex={frameIndex} field={field} scale={scale} edges={edges} playing={playing} onTogglePlayback={togglePlayback} onRestart={restartPlayback} onScrub={scrub} onReady={onReady} />
-        </div>
-        <aside aria-label="Compression results and settings" className="space-y-4">
-          <section className="rounded-2xl border border-line bg-surface shadow-card p-5">
-            <p className="font-mono text-[10px] uppercase tracking-[.16em] text-muted">Current state</p>
-            <p aria-live="polite" className={`mt-2 text-sm font-medium ${damaged ? "text-caution" : "text-link"}`}>{stage}</p>
-            <div className="mt-5 grid grid-cols-2 gap-4">
-              <Metric label="Reaction force" value={(frame.load_n / 1000).toFixed(2)} unit="kN" />
-              <Metric label="Press stroke" value={frame.stroke_mm.toFixed(3)} unit="mm" />
-              {field === "stress_mpa" ? <Metric label="Peak nodal stress" value={frame.max_nodal_stress_mpa.toFixed(1)} unit="MPa" /> : <Metric label="Peak failure index" value={frame.max_failure_index.toFixed(2)} unit="× limit" />}
-              <Metric label="Max displacement" value={frame.max_displacement_mm.toFixed(2)} unit="mm" />
-            </div>
-            <div className="mt-5 border-t border-line pt-4"><div className="flex items-center justify-between text-xs"><span className="text-muted">Damaged volume</span><span className={damaged ? "text-caution" : "text-ink"}>{frame.damaged_volume_percent.toFixed(2)}%</span></div><div className="mt-2 h-1.5 overflow-hidden rounded-full bg-line"><div className="h-full bg-spectrum-amber transition-[width]" style={{ width: `${frame.damaged_volume_percent}%` }} /></div><p className="mt-2 text-[10px] leading-4 text-muted">Volume with more than 5% stiffness loss. This is a model damage measure, not a fracture-risk probability.</p></div>
-          </section>
-          <section className="space-y-4 rounded-2xl border border-line bg-surface shadow-card p-5">
-            <h3 className="text-sm font-medium">View controls</h3>
-            <label className="block text-xs text-muted">Color field<select aria-label="Press color field" value={field} onChange={event => setField(event.target.value as PressField)} className={`${inputStyle} mt-2`}><option value="failure_index">Failure proximity · strain / limit</option><option value="stress_mpa">Von Mises stress · MPa</option><option value="damage">Material damage</option><option value="displacement_mm">Displacement</option><option value="anatomy">Bone surface</option></select></label>
-            <p className="text-[11px] leading-5 text-muted">{field === "failure_index" ? "Blue is below the assumed limit; yellow approaches it; red marks damage initiation. Colors use the same strain criterion as the simulated break. Gray regions have failure disabled. This records loading history, not fracture probability." : field === "stress_mpa" ? "Red means high von Mises stress, which does not trigger this model’s break. Select Failure proximity to follow the damage criterion." : "Use Failure proximity to see where the model reaches its damage-initiation limit."}</p>
-            <label className="block text-xs text-muted">Deformation display<select aria-label="Deformation magnification" value={scale} onChange={event => setScale(Number(event.target.value))} className={`${inputStyle} mt-2`}><option value={1}>×1 · actual displacement</option><option value={5}>×5 · magnified</option><option value={10}>×10 · magnified</option></select></label>
-            <p className="text-[10px] leading-4 text-muted">Magnification affects geometry display only. All reported values and the color scale use actual solved results.</p>
-            <label className="flex items-center gap-2 text-xs text-muted"><input type="checkbox" checked={edges} onChange={event => setEdges(event.target.checked)} className="accent-primary" /> Show element edges</label>
-          </section>
-          <div className="rounded-2xl border border-line bg-surface shadow-card p-5"><p className="flex items-center gap-2 text-xs text-link"><ArrowDownToLine size={15} /> Head loading · distal fixation</p><p className="mt-2 text-[11px] leading-5 text-muted">A prescribed downward head displacement represents the press fixture. The distal 15 mm is fixed. The frame and hydraulic cylinder are schematic.</p></div>
-        </aside>
+    <input aria-label="Compression step" type="range" min={0} max={lastStep} step={1} value={frameIndex} onChange={event => scrub(Number(event.target.value))} className="mt-5 w-full accent-primary" />
+    <div className="mt-1 flex justify-between font-mono text-[10px] text-muted"><span>UNLOADED</span><span>COMPRESSION → DAMAGE</span></div>
+    <div className="mt-4 flex flex-wrap gap-2 text-[11px]">
+      {firstBreak > 0 && <><button onClick={() => { scrub(firstBreak - 1); setField("failure_index"); }} className="rounded-md border border-line px-3 py-2 text-link">Before break</button><button onClick={() => { scrub(firstBreak); setField("failure_index"); }} className="rounded-md border border-line px-3 py-2 text-link">After break</button></>}
+    </div>
+    {frameIndex === firstBreak - 1 && <p className="mt-3 text-[11px] leading-5 text-caution">Last solved step before a visible gap. In Failure proximity, red elements have reached the assumed strain limit that initiates damage. The gap develops between saved steps.</p>}
+  </section>;
+
+  return <div className="p-5 md:p-8 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col lg:px-6 lg:pb-3 lg:pt-4">
+    {/* From lg up a grid, so the description runs under the buttons too and stays on one line on most screens. */}
+    <div className="mb-6 flex flex-wrap items-start justify-between gap-4 lg:mb-0 lg:grid lg:shrink-0 lg:grid-cols-[minmax(0,1fr)_auto] lg:gap-x-4 lg:gap-y-0">
+      <div className="min-w-0 lg:contents"><p className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted lg:col-start-1 lg:row-start-1">Virtual mechanical testing</p><h2 className="mt-2 font-serif text-[28px] font-semibold tracking-[-0.01em] text-ink lg:col-start-1 lg:row-start-2 lg:mt-0.5 lg:leading-tight">Femur under compression</h2><p className="mt-2 max-w-2xl text-sm leading-6 text-muted lg:col-span-2 lg:col-start-1 lg:row-start-3 lg:mt-0.5 lg:max-w-none lg:leading-5">Follow the colors as local deformation approaches the model’s failure limit, then watch damage develop under compression.</p></div>
+      <div className="flex shrink-0 items-center gap-2 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:self-center">
+        {model && <button type="button" onClick={layout.reset} title="Restore the default panel width and panels" className="hidden items-center gap-1.5 rounded-lg px-3 py-1.5 text-[13px] font-medium text-muted transition hover:bg-sunken hover:text-ink lg:inline-flex"><LayoutPanelLeft size={16} aria-hidden /> Reset layout</button>}
+        <span className="flex items-center gap-2 rounded-full border border-caution/25 bg-caution/[0.07] px-3 py-1.5 text-[11px] text-caution"><FlaskConical size={14} /> Research demonstration</span>
       </div>
-      <div className="mt-5">
-        <BoneReconstructionExport frameIndex={frameIndex} frame={frame} firstBreak={firstBreak} onSelectFrame={scrub} onPause={() => setPlaying(false)} />
+    </div>
+    <p className="mb-5 rounded-lg border border-line bg-surface px-4 py-3 text-xs leading-5 text-muted lg:mb-0 lg:mt-3 lg:shrink-0 lg:py-2">Research demonstration with assumed material and failure properties — not a validated clinical test. Its damage visualization is exploratory.</p>
+    {error && <div role="alert" className="rounded-xl border border-caution/30 bg-surface p-6 text-sm lg:mt-3"><p>{error}</p><button className="mt-3 text-link underline" onClick={() => setAttempt(value => value + 1)}>Retry simulation</button></div>}
+    {!model && !error && <div role="status" className="flex h-96 items-center justify-center rounded-2xl border border-line bg-surface shadow-card text-sm text-muted lg:mt-3">Loading compression test…</div>}
+    {model && frame && <div ref={rowRef} style={{ "--panel-w": `${layout.panelWidth}px` } as React.CSSProperties} className="grid gap-5 lg:mt-3 lg:flex lg:min-h-0 lg:flex-1 lg:gap-0">
+      <div className="min-w-0 space-y-5 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col lg:space-y-0 lg:[&>section]:min-h-0 lg:[&>section]:flex-1 lg:[&>section]:overflow-y-auto lg:[&>section>div.relative]:min-h-[240px]">
+        <div className="lg:hidden">{playback}</div>
+        <PressViewer model={model} frameIndex={frameIndex} field={field} scale={scale} edges={edges} playing={playing} onTogglePlayback={togglePlayback} onRestart={restartPlayback} onScrub={scrub} onReady={onReady} />
       </div>
-      <section aria-label="Force displacement response" className="mt-5 rounded-2xl border border-line bg-surface shadow-card p-5">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-2"><div><h3 className="text-sm font-medium">Force–stroke response</h3><p className="mt-1 text-[11px] text-muted">Reaction force from each solved step. Stiffness loss changes the response as damage develops.</p></div><span className="font-mono text-[10px] text-link">ACTUAL SOLVER OUTPUT</span></div>
-        <div className="h-52 min-w-0"><ResponsiveContainer width="100%" height="100%"><LineChart data={chart} margin={{ top: 8, right: 20, bottom: 16, left: 0 }}><CartesianGrid stroke="rgb(var(--line))" strokeDasharray="3 4" /><XAxis dataKey="stroke" type="number" domain={[0, "dataMax"]} tickFormatter={value => Number(value).toFixed(2)} tick={{ fill: "rgb(var(--muted))", fontSize: 10 }} label={{ value: "Press stroke (mm)", position: "bottom", fill: "rgb(var(--muted))", fontSize: 10 }} /><YAxis tick={{ fill: "rgb(var(--muted))", fontSize: 10 }} unit=" kN" width={55} /><Tooltip contentStyle={{ background: "rgb(var(--surface))", color: "rgb(var(--ink))", border: "1px solid rgb(var(--control))", borderRadius: 8, fontSize: 12 }} labelFormatter={value => `Stroke ${Number(value).toFixed(3)} mm`} formatter={value => [`${Number(value).toFixed(2)} kN`, "Reaction"]} /><ReferenceLine x={model.first_limit_stroke_mm} stroke="rgb(var(--caution))" strokeDasharray="4 4" /><Line dataKey="force" stroke="rgb(var(--muted))" strokeDasharray="4 4" dot={false} isAnimationActive={false} /><Line dataKey="completed" stroke="rgb(var(--link))" strokeWidth={2} dot={{ r: 2, fill: "rgb(var(--link))" }} isAnimationActive={false} /></LineChart></ResponsiveContainer></div>
-        <p className="mt-2 text-[10px] text-muted">Amber line: first assumed strain limit reached in the eligible material. Scrubbing replays the same loading history; it does not simulate unloading or healing.</p>
-      </section>
-      <details className="mt-5 rounded-2xl border border-line bg-surface shadow-card p-5 text-xs text-muted" open>
-        <summary className="cursor-pointer font-medium text-ink">How to interpret the failure visualization</summary>
-        <p className="mt-3 leading-6">Damage uses volume-weighted strain averaged within {model.strain_averaging_radius_mm} mm of each element center to reduce sensitivity to very small elements.</p>
-        <p className="mt-3 leading-6">Failure proximity uses the historical maximum of tensile principal strain / {(model.tensile_strain_limit * 100).toFixed(2)}% and compressive principal strain / {(model.compressive_strain_limit * 100).toFixed(2)}%. Each surface face displays its owning element’s ratio, without spreading a neighboring element’s value across it. Red starts at 1; gray marks fixture regions where failure is disabled. Reaching this limit starts damage, while a visible gap requires further degradation. Von Mises stress is a separate field and is not the failure criterion.</p>
-        <div className="mt-3 grid gap-4 leading-6 md:grid-cols-2"><div><p>The model reduces element stiffness irreversibly after principal strain exceeds an assumed limit: {(model.tensile_strain_limit * 100).toFixed(2)}% in tension or {(model.compressive_strain_limit * 100).toFixed(2)}% in compression. Material uses E = {model.youngs_modulus_mpa / 1000} GPa and ν = {model.poisson_ratio}.</p><p className="mt-2">At 95% damage, elements are hidden to expose the weakened region. The solver retains a small residual stiffness. The visible gap is an element-erosion illustration, not a validated crack path or fragment-contact simulation.</p></div><div><p>Patient geometry alone does not make this a clinical test. To become one, it would need CT-density calibration, mesh-convergence validation, a contact solve and a calibrated fracture-energy model; this demonstration has none of these yet. High strains close to the fixtures are excluded from damage initiation.</p><div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-link"><a href={`${PRESS_PATH}/manifest.json`} download className="hover:underline">Download simulation report</a><a href={model.source_url} target="_blank" rel="noreferrer" className="hover:underline">Dataset & attribution</a><a href="https://www.jove.com/t/64947/imaging-of-the-microstructural-failure-mechanism-in-the-human-hip" target="_blank" rel="noreferrer" className="hover:underline">Strain-limit reference</a></div></div></div>
-      </details>
-    </>}
+      <PanelSplitter width={layout.panelWidth} panelsId="physics-panels" rowRef={rowRef} onResize={layout.setPanelWidth} />
+      <div id="physics-panels" className="flex min-w-0 flex-col gap-5 lg:min-h-0 lg:w-[var(--panel-w)] lg:max-w-[calc(100%-416px)] lg:shrink-0 lg:gap-4 lg:overflow-y-auto lg:overscroll-contain lg:pb-1 lg:pr-1">
+        {panel("playback", "FEA compression", playback, "hidden lg:block")}
+        {panel("state", "Current state", <section className="rounded-2xl border border-line bg-surface shadow-card p-5">
+          <p className="font-mono text-[10px] uppercase tracking-[.16em] text-muted">Current state</p>
+          <p aria-live="polite" className={`mt-2 text-sm font-medium ${damaged ? "text-caution" : "text-link"}`}>{stage}</p>
+          <div className="mt-5 grid grid-cols-2 gap-4">
+            <Metric label="Reaction force" value={(frame.load_n / 1000).toFixed(2)} unit="kN" />
+            <Metric label="Press stroke" value={frame.stroke_mm.toFixed(3)} unit="mm" />
+            {field === "stress_mpa" ? <Metric label="Peak nodal stress" value={frame.max_nodal_stress_mpa.toFixed(1)} unit="MPa" /> : <Metric label="Peak failure index" value={frame.max_failure_index.toFixed(2)} unit="× limit" />}
+            <Metric label="Max displacement" value={frame.max_displacement_mm.toFixed(2)} unit="mm" />
+          </div>
+          <div className="mt-5 border-t border-line pt-4"><div className="flex items-center justify-between text-xs"><span className="text-muted">Damaged volume</span><span className={damaged ? "text-caution" : "text-ink"}>{frame.damaged_volume_percent.toFixed(2)}%</span></div><div className="mt-2 h-1.5 overflow-hidden rounded-full bg-line"><div className="h-full bg-spectrum-amber transition-[width]" style={{ width: `${frame.damaged_volume_percent}%` }} /></div><p className="mt-2 text-[10px] leading-4 text-muted">Volume with more than 5% stiffness loss. This is a model damage measure, not a fracture-risk probability.</p></div>
+        </section>)}
+        {panel("view", "View controls", <section className="space-y-4 rounded-2xl border border-line bg-surface shadow-card p-5">
+          <h3 className="text-sm font-medium">View controls</h3>
+          <label className="block text-xs text-muted">Color field<select aria-label="Press color field" value={field} onChange={event => setField(event.target.value as PressField)} className={`${inputStyle} mt-2`}><option value="failure_index">Failure proximity · strain / limit</option><option value="stress_mpa">Von Mises stress · MPa</option><option value="damage">Material damage</option><option value="displacement_mm">Displacement</option><option value="anatomy">Bone surface</option></select></label>
+          <p className="text-[11px] leading-5 text-muted">{field === "failure_index" ? "Blue is below the assumed limit; yellow approaches it; red marks damage initiation. Colors use the same strain criterion as the simulated break. Gray regions have failure disabled. This records loading history, not fracture probability." : field === "stress_mpa" ? "Red means high von Mises stress, which does not trigger this model’s break. Select Failure proximity to follow the damage criterion." : "Use Failure proximity to see where the model reaches its damage-initiation limit."}</p>
+          <label className="block text-xs text-muted">Deformation display<select aria-label="Deformation magnification" value={scale} onChange={event => setScale(Number(event.target.value))} className={`${inputStyle} mt-2`}><option value={1}>×1 · actual displacement</option><option value={5}>×5 · magnified</option><option value={10}>×10 · magnified</option></select></label>
+          <p className="text-[10px] leading-4 text-muted">Magnification affects geometry display only. All reported values and the color scale use actual solved results.</p>
+          <label className="flex items-center gap-2 text-xs text-muted"><input type="checkbox" checked={edges} onChange={event => setEdges(event.target.checked)} className="accent-primary" /> Show element edges</label>
+        </section>)}
+        {panel("loading", "Head loading · distal fixation", <div className="rounded-2xl border border-line bg-surface shadow-card p-5"><p className="flex items-center gap-2 text-xs text-link"><ArrowDownToLine size={15} /> Head loading · distal fixation</p><p className="mt-2 text-[11px] leading-5 text-muted">A prescribed downward head displacement represents the press fixture. The distal 15 mm is fixed. The frame and hydraulic cylinder are schematic.</p></div>)}
+        {panel("print", "Print missing region", <BoneReconstructionExport frameIndex={frameIndex} frame={frame} firstBreak={firstBreak} onSelectFrame={scrub} onPause={() => setPlaying(false)} />)}
+        {panel("response", "Force–stroke response", <section aria-label="Force displacement response" className="rounded-2xl border border-line bg-surface shadow-card p-5">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2"><div><h3 className="text-sm font-medium">Force–stroke response</h3><p className="mt-1 text-[11px] text-muted">Reaction force from each solved step. Stiffness loss changes the response as damage develops.</p></div><span className="font-mono text-[10px] text-link">ACTUAL SOLVER OUTPUT</span></div>
+          <div className="h-52 min-w-0"><ResponsiveContainer width="100%" height="100%"><LineChart data={chart} margin={{ top: 8, right: 20, bottom: 16, left: 0 }}><CartesianGrid stroke="rgb(var(--line))" strokeDasharray="3 4" /><XAxis dataKey="stroke" type="number" domain={[0, "dataMax"]} tickFormatter={value => Number(value).toFixed(2)} tick={{ fill: "rgb(var(--muted))", fontSize: 10 }} label={{ value: "Press stroke (mm)", position: "bottom", fill: "rgb(var(--muted))", fontSize: 10 }} /><YAxis tick={{ fill: "rgb(var(--muted))", fontSize: 10 }} unit=" kN" width={55} /><Tooltip contentStyle={{ background: "rgb(var(--surface))", color: "rgb(var(--ink))", border: "1px solid rgb(var(--control))", borderRadius: 8, fontSize: 12 }} labelFormatter={value => `Stroke ${Number(value).toFixed(3)} mm`} formatter={value => [`${Number(value).toFixed(2)} kN`, "Reaction"]} /><ReferenceLine x={model.first_limit_stroke_mm} stroke="rgb(var(--caution))" strokeDasharray="4 4" /><Line dataKey="force" stroke="rgb(var(--muted))" strokeDasharray="4 4" dot={false} isAnimationActive={false} /><Line dataKey="completed" stroke="rgb(var(--link))" strokeWidth={2} dot={{ r: 2, fill: "rgb(var(--link))" }} isAnimationActive={false} /></LineChart></ResponsiveContainer></div>
+          <p className="mt-2 text-[10px] text-muted">Amber line: first assumed strain limit reached in the eligible material. Scrubbing replays the same loading history; it does not simulate unloading or healing.</p>
+        </section>)}
+        {panel("interpret", "How to interpret the failure visualization", <details className="rounded-2xl border border-line bg-surface shadow-card p-5 text-xs text-muted" open>
+          <summary className="cursor-pointer font-medium text-ink">How to interpret the failure visualization</summary>
+          <p className="mt-3 leading-6">Damage uses volume-weighted strain averaged within {model.strain_averaging_radius_mm} mm of each element center to reduce sensitivity to very small elements.</p>
+          <p className="mt-3 leading-6">Failure proximity uses the historical maximum of tensile principal strain / {(model.tensile_strain_limit * 100).toFixed(2)}% and compressive principal strain / {(model.compressive_strain_limit * 100).toFixed(2)}%. Each surface face displays its owning element’s ratio, without spreading a neighboring element’s value across it. Red starts at 1; gray marks fixture regions where failure is disabled. Reaching this limit starts damage, while a visible gap requires further degradation. Von Mises stress is a separate field and is not the failure criterion.</p>
+          <div className="mt-3 grid gap-4 leading-6 md:grid-cols-2 lg:grid-cols-1"><div><p>The model reduces element stiffness irreversibly after principal strain exceeds an assumed limit: {(model.tensile_strain_limit * 100).toFixed(2)}% in tension or {(model.compressive_strain_limit * 100).toFixed(2)}% in compression. Material uses E = {model.youngs_modulus_mpa / 1000} GPa and ν = {model.poisson_ratio}.</p><p className="mt-2">At 95% damage, elements are hidden to expose the weakened region. The solver retains a small residual stiffness. The visible gap is an element-erosion illustration, not a validated crack path or fragment-contact simulation.</p></div><div><p>Patient geometry alone does not make this a clinical test. To become one, it would need CT-density calibration, mesh-convergence validation, a contact solve and a calibrated fracture-energy model; this demonstration has none of these yet. High strains close to the fixtures are excluded from damage initiation.</p><div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-link"><a href={`${PRESS_PATH}/manifest.json`} download className="hover:underline">Download simulation report</a><a href={model.source_url} target="_blank" rel="noreferrer" className="hover:underline">Dataset & attribution</a><a href="https://www.jove.com/t/64947/imaging-of-the-microstructural-failure-mechanism-in-the-human-hip" target="_blank" rel="noreferrer" className="hover:underline">Strain-limit reference</a></div></div></div>
+        </details>)}
+      </div>
+    </div>}
   </div>;
 }
 
