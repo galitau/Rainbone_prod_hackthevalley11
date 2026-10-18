@@ -43,7 +43,7 @@ test('429 honors retry delay; unavailable facts and network errors are not answe
 });
 test('actual drawer handler wraps visible endpoints and preserves middle Tab navigation', () => {
   const jsx=(type,props)=>({type,props});let calls=0;const document={body:{},activeElement:null};
-  const imports={react:{useEffect(){},useRef:current=>({current}),useState:value=>[calls++===0?true:value,()=>{}]},'react/jsx-runtime':{jsx,jsxs:jsx,Fragment:'fragment'},'react-dom':{createPortal:node=>node},'next/navigation':{usePathname:()=>'/dashboard'},'lucide-react':{},'@/lib/ai-label':{},'@/lib/ask-rainbone':{},'@/components/grounding-line':{}};
+  const imports={react:{useEffect(){},useRef:current=>({current}),useState:value=>[calls++===0?true:value,()=>{}]},'react/jsx-runtime':{jsx,jsxs:jsx,Fragment:'fragment'},'react-dom':{createPortal:node=>node},'next/navigation':{usePathname:()=>'/dashboard'},'lucide-react':{},'@/lib/ai-label':{},'@/lib/preferences':{useReducedMotion:()=>false},'@/lib/ask-rainbone':{},'@/components/grounding-line':{}};
   const code=ts.transpileModule(fs.readFileSync(path.join(__dirname,'../components/ask-rainbone.tsx'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,target:ts.ScriptTarget.ES2020}}).outputText;
   const exports={};vm.runInNewContext(code,{exports,require:name=>imports[name],document,getComputedStyle:()=>({visibility:'visible'})});
   const dialog=exports.AskRainbone().props.children[1];
@@ -67,4 +67,84 @@ test('structured execution trace preserves actual rules/tools/timings and remain
   assert.equal(parsed.tools_used[0],'get_page_guide');
   for (const invalid of [[{...trace[0],ms:-1}],[{...trace[0],ms:Infinity}],[{...trace[0],summary:{}}],[{...trace[0],tool:{}}]]) assert.throws(() => lib.parseAskAnswer({...original,trace:invalid}));
   assert.throws(() => lib.parseAskAnswer({...original,tools_used:[{}]}));
+});
+
+function traceHarness(reduced = false) {
+  const state = [], effects = [], timeouts = [], intervals = [], cleared = [];
+  let cursor = 0;
+  const jsx = (type, props) => ({type, props});
+  const imports = {
+    react: {useEffect: effect => effects.push(effect), useState: initial => {const index = cursor++; if (!(index in state)) state[index] = initial; return [state[index], value => {state[index] = value;}];}},
+    'react/jsx-runtime': {jsx, jsxs: jsx}, 'react-dom': {}, 'next/navigation': {}, 'lucide-react': {},
+    '@/lib/preferences': {useReducedMotion: () => reduced}, '@/lib/ai-label': {aiAnswerLabel: answer => `${answer.provider} · ${answer.served}`},
+    '@/lib/ask-rainbone': {}, '@/components/grounding-line': {},
+  };
+  const code = ts.transpileModule(fs.readFileSync(path.join(__dirname, '../components/ask-rainbone.tsx'), 'utf8'), {compilerOptions: {module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2020}}).outputText;
+  const exports = {};
+  vm.runInNewContext(code, {exports, require: name => imports[name], performance: {now: () => 3500}, window: {
+    setInterval: (fn, delay) => {intervals.push({fn, delay}); return intervals.length;}, clearInterval: id => cleared.push(['interval', id]),
+    setTimeout: (fn, delay) => {timeouts.push({fn, delay}); return timeouts.length;}, clearTimeout: id => cleared.push(['timeout', id]),
+  }});
+  return {render(exchange) {cursor = 0; effects.length = 0; return exports.ExecutionTrace({exchange});}, effects, timeouts, intervals, cleared};
+}
+function nodes(tree) {
+  if (Array.isArray(tree)) return tree.flatMap(nodes);
+  if (!tree || typeof tree !== 'object') return [];
+  return [tree, ...nodes(tree.props?.children)];
+}
+function content(tree) {
+  if (Array.isArray(tree)) return tree.map(content).join(' ');
+  if (tree == null || typeof tree === 'boolean') return '';
+  if (typeof tree !== 'object') return String(tree);
+  return content(tree.props?.children);
+}
+test('pending execution measures elapsed time without inventing stage progress and releases its timer', () => {
+  const harness = traceHarness(), exchange = {question: 'q', startedAt: 1000};
+  let tree = harness.render(exchange);
+  const cleanup = harness.effects[0]();
+  tree = harness.render(exchange);
+  assert.match(content(tree), /stage progress unavailable/);
+  assert.match(content(tree), /2\.5\s+s/);
+  assert.equal(nodes(tree).filter(node => node.props?.['data-stage']).length, 5);
+  assert.ok(nodes(tree).filter(node => node.props?.['data-stage']).every(node => node.props['data-recorded'] === false));
+  assert.equal(harness.timeouts.length, 0);
+  cleanup(); assert.deepEqual(harness.cleared, [['interval', 1]]);
+});
+test('recorded events reveal in order with actual timing and cancel remaining reveal work', () => {
+  const harness = traceHarness(), exchange = {question: 'q', startedAt: 0, elapsedMs: 2200, answer: {...payload(), trace: [
+    {stage: 'triage', summary: 'Rules selected guide', ms: 7}, {stage: 'writer', summary: 'Gemini selected statements', ms: 121}, {stage: 'writer', summary: 'Provider attempt within writer duration', ms: 100},
+  ]}};
+  harness.render(exchange); const cleanup = harness.effects[1]();
+  assert.deepEqual(harness.timeouts.map(timer => timer.delay), [0, 120, 240]);
+  harness.timeouts[0].fn(); let tree = harness.render(exchange);
+  const stages = nodes(tree).filter(node => node.props?.['data-stage']);
+  assert.equal(stages[0].props['data-recorded'], true); assert.equal(stages[2].props['data-recorded'], false);
+  assert.match(content(stages[0]), /7 ms/); assert.doesNotMatch(content(stages[2]), /No record/);
+  harness.timeouts[1].fn(); harness.timeouts[2].fn(); tree = harness.render(exchange);
+  assert.match(content(tree), /121 ms/); assert.match(content(tree), /2\.2\s+s/);
+  assert.equal(nodes(tree).filter(node => node.props?.hidden === true).length, 0);
+  const writer = nodes(tree).find(node => node.props?.['data-stage'] === 'writer');
+  assert.match(content(writer), /121 ms/); assert.doesNotMatch(content(writer), /221 ms/);
+  cleanup(); assert.equal(harness.cleared.length, 3);
+});
+test('reduced motion immediately shows cache-only execution without claiming tools reran', () => {
+  const harness = traceHarness(true), exchange = {question: 'q', startedAt: 0, elapsedMs: 150, answer: {...payload(), trace: [
+    {stage: 'cache', summary: 'Read saved answer; no provider request', ms: 4},
+  ], tools_used: ['get_page_guide']}};
+  const tree = harness.render(exchange); harness.effects.forEach(effect => effect());
+  assert.equal(harness.timeouts.length, 0); assert.equal(harness.intervals.length, 0);
+  assert.ok(nodes(tree).filter(node => node.props?.['data-stage']).every(node => node.props['data-recorded'] === false));
+  assert.match(content(tree), /Read saved answer; no provider request/);
+  assert.match(content(tree), /Evidence tools for this answer:.*get_page_guide/);
+  assert.equal(nodes(tree).filter(node => node.props?.hidden === true).length, 0);
+  assert.doesNotMatch(content(tree), /revealing recorded steps/);
+});
+test('fallback summary requires explicit Gemini 429 evidence and does not claim cache execution', () => {
+  const render = (served, summary) => traceHarness(true).render({question:'q', startedAt:0, elapsedMs:100, answer:{...payload(),provider:'groq',served,trace:[{stage:'writer',summary,ms:10}]}});
+  assert.match(content(render('live', 'Gemini HTTP 429; continued to backup')), /Gemini 429 → Groq/);
+  assert.doesNotMatch(content(render('live', 'Gemini unavailable')), /Gemini 429 → Groq/);
+  const cached = render('cached', 'Gemini HTTP 429 from earlier answer');
+  assert.doesNotMatch(content(cached), /Gemini 429 → Groq/);
+  assert.match(content(cached), /reused; no new writer call/);
+  assert.equal(nodes(cached).find(node=>node.type==='details').props.open, undefined);
 });

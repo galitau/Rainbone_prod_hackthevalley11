@@ -424,3 +424,46 @@ html.pref-text-large .text-\[28px\] {
   --caution: 104 60 0;
   --critical: 142 0 0;
 }
+
+/* Ask shows an indeterminate sweep until the server returns its recorded trace. */
+@keyframes ask-working-sweep {
+  from { transform: translateX(-120%); }
+  to { transform: translateX(420%); }
+}
+@keyframes ask-enter {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes ask-drawer-enter {
+  from { opacity: 0; transform: translateX(24px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+.ask-stage-working::after {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 30%;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgb(var(--link) / .12), transparent);
+  animation: ask-working-sweep 1.8s linear infinite;
+}
+.ask-trace-step:not([hidden]), .ask-answer-content {
+  animation: ask-enter .24s cubic-bezier(.16, 1, .3, 1) both;
+}
+dialog[open] .ask-drawer-panel {
+  animation: ask-drawer-enter .22s cubic-bezier(.16, 1, .3, 1) both;
+}
+.ask-stage { transition: background-color .15s, color .15s; }
+.ask-execution[data-reduced="true"] *, .ask-execution[data-reduced="true"] ::after,
+.ask-drawer-panel[data-reduced="true"], .ask-answer-content[data-reduced="true"],
+.pref-reduce-motion .ask-execution *, .pref-reduce-motion .ask-stage-working::after,
+.pref-reduce-motion .ask-drawer-panel, .pref-reduce-motion .ask-answer-content {
+  animation: none !important;
+  transition: none !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ask-execution *, .ask-stage-working::after, .ask-drawer-panel, .ask-answer-content {
+    animation: none !important;
+    transition: none !important;
+  }
+}
