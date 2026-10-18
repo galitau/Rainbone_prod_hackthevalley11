@@ -4,6 +4,9 @@ import { useEffect, useRef, useState } from "react";
 import type { ProgressionFrame } from "@/lib/progression-data";
 import { getProgressionFrame } from "@/lib/progression-cache";
 
+// Smoothed surfaces by frame index. Kept for the page's lifetime so revisiting a frame skips the smoothing work.
+const smoothedFrames = new Map<number, { getNumberOfPoints: () => number }>();
+
 export function ProgressionViewer({ frame, active = true }: { frame: ProgressionFrame; active?: boolean }) {
   const container = useRef<HTMLDivElement>(null);
   const [rendered, setRendered] = useState(false);
@@ -87,17 +90,21 @@ export function ProgressionViewer({ frame, active = true }: { frame: Progression
         // (display only; the frame data and its metrics are unchanged), then shade with point normals.
         // If smoothing fails on a frame, show the raw surface instead.
         let surface = data;
-        try {
+        const cached = smoothedFrames.get(frame.frameIndex);
+        if (cached) surface = cached as typeof data;
+        else try {
           const clean = CleanPolyData.newInstance({ pointMerging: true });
           const smooth = WindowedSinc.newInstance({ numberOfIterations: 10, passBand: 0.1, featureEdgeSmoothing: false, boundarySmoothing: true, nonManifoldSmoothing: true, normalizeCoordinates: true });
           const normals = PolyDataNormals.newInstance({ computePointNormals: true });
-          resources.push(clean, smooth, normals);
           clean.setInputData(data);
           smooth.setInputConnection(clean.getOutputPort());
           normals.setInputConnection(smooth.getOutputPort());
           normals.update();
           const smoothed = normals.getOutputData();
-          if (smoothed?.getNumberOfPoints()) surface = smoothed;
+          if (smoothed?.getNumberOfPoints()) {
+            surface = smoothed;
+            smoothedFrames.set(frame.frameIndex, smoothed);
+          }
         } catch {
           surface = data;
         }
@@ -131,9 +138,11 @@ export function ProgressionViewer({ frame, active = true }: { frame: Progression
     }
     setError(null);
     setRendered(false);
-    void load();
+    // Wait until the slider settles so a drag does not load and smooth every frame it passes.
+    const settle = setTimeout(() => void load(), 220);
     return () => {
       disposed = true;
+      clearTimeout(settle);
       cleanup();
     };
   }, [active, frame.frameIndex, frame.vtpFile, frame.point, frame.lesionVolumeCm3, attempt]);

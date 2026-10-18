@@ -21,7 +21,7 @@ export function ProgressionTimeline({ timeline, currentFrameIndex, onSelectFrame
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="font-mono text-[10px] uppercase tracking-[.16em] text-muted">Lesion progression</p>
-          <h2 className="mt-1 text-[15px] font-semibold text-ink">{frame.label} · month {frame.month}</h2>
+          <h2 className="mt-1 text-[15px] font-semibold text-ink">{frame.label.startsWith("Month") ? frame.label : `${frame.label} · month ${frame.month}`}</h2>
           <p className="mt-1 text-xs text-muted">Frame {frame.frameIndex} of {timeline.length - 1} · {frame.vtpFile}</p>
         </div>
         <div className="flex items-center gap-2">
