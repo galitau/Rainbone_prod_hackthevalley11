@@ -81,6 +81,8 @@ BLOCKED_OUTPUT_PATTERNS: tuple[str, ...] = (
     r"\bdefinitely\b", r"\bguarantee", r"\binevitabl", r"\bsure(?:ly)?\b", r"\bgoing\s+to\b",
     r"\bbound\s+to\b", r"\bexpected\s+to\b", r"\bwill\b", r"\bcancer", r"\bmetasta", r"\btumou?r",
     r"\b(?:more|less|as)\s+likely\b", r"\bvalidat",
+    # The dataset records a fracture without naming where, so the answer may not call it a hip fracture.
+    r"\bhip\s+fractur", r"\bbr(?:oke|eaks?|oken)\s+(?:a|her|their|the)\s+hips?\b", r"\bhips?\s+(?:was|were)\s+broken",
 )
 _TIME = tuple(re.compile(p, re.IGNORECASE) for p in TIME_PATTERNS)
 _BLOCKED = tuple(re.compile(p, re.IGNORECASE) for p in BLOCKED_OUTPUT_PATTERNS)
@@ -124,7 +126,7 @@ SYSTEM_PROMPT = (
     "You explain to a reader with no medical or engineering background how likely one real thigh bone "
     "(femur) is to break, using only published research data about it. The user message is JSON. The femur "
     "belongs to one of cohort_n women in the HFValid study, who had a CT scan of the femur and were followed "
-    "to record whether they had a hip fracture afterwards. Fields: age is the woman's age at the CT scan. "
+    "to record whether they had a fracture afterwards. Fields: age is the woman's age at the CT scan. "
     "msf_newtons is the femur's Minimum Sidefall Strength (MSF): the smallest sideways-fall force, over many "
     "fall directions, that the study authors' finite-element model says would break it. msf_lower_than is how "
     "many women in the study had a stronger femur (a higher MSF): write 'N of the cohort_n women had a "
@@ -137,9 +139,9 @@ SYSTEM_PROMPT = (
     "that, and let msf_lower_than show how this femur compares. arf0_percent is its ARF0, the absolute risk of "
     "fracture the study authors estimated from that model coupled with a model of falling; arf0_higher_than "
     "is how many women in the study had a lower ARF0. cohort_median_arf0_percent is the study's median ARF0; "
-    "cohort_fractured women had a hip fracture during the follow-up, with ARF0 from "
+    "cohort_fractured women had a recorded fracture during the follow-up, with ARF0 from "
     "fractured_arf0_min_percent to fractured_arf0_max_percent. fractured_within_followup says whether this "
-    "woman had a hip fracture during the follow-up, and days_ct_to_fracture is then the days from the CT scan "
+    "woman had a recorded fracture during the follow-up, and days_ct_to_fracture is then the days from the CT scan "
     "to it. "
     "Write 2 or 3 short plain sentences, at most 420 characters, on how likely this femur is to break: first "
     "what a sideways fall would do to it (factor_of_risk_low to factor_of_risk_high times its strength), then "
@@ -457,11 +459,11 @@ def template_text(facts: RiskFacts) -> str:
         f"{f.arf0_higher_than} of the {f.cohort_n} women.",
     ]
     if not f.fractured_within_followup:
-        parts.append("No hip fracture was recorded for this woman during the study's follow-up.")
+        parts.append("No fracture was recorded for this woman during the study's follow-up.")
     elif f.days_ct_to_fracture is not None:
-        parts.append(f"The study recorded a hip fracture {f.days_ct_to_fracture:,} days after this CT scan.")
+        parts.append(f"The study recorded a fracture {f.days_ct_to_fracture:,} days after this CT scan.")
     else:
-        parts.append("The study recorded a hip fracture during the follow-up.")
+        parts.append("The study recorded a fracture during the follow-up.")
     return " ".join(parts)
 
 
