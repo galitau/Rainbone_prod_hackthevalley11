@@ -44,7 +44,9 @@ finite-element solve with SfePy. It uses the same `tetrahedralize` and
    parsed with `Nifti1Image.from_bytes` (or `Nifti2Image`). Voxel spacing
    comes from the header.
 2. Bone mask: voxels at or above 150 HU. Only the largest face-connected
-   component is kept, and the volume is cropped to its bounding box.
+   component is kept, and the volume is cropped to its bounding box. When
+   FSL is installed, FSL makes this mask; otherwise numpy/scipy do. Both give
+   the same mask (see "Bone segmentation with FSL").
 3. Material: each bone voxel's HU is mapped to a Young's modulus with the
    existing bounded linear map in `hu_to_apparent_density_and_modulus`:
    E = 10 + 15 × clip(((HU + 1000) / 2000 − 0.15) / 0.85, 0, 1) GPa. The
@@ -104,6 +106,60 @@ empty upload returns 400.
   408.83 cm³ component before coarsening and a 408.43 cm³ mesh after it.
 - No mesh-convergence study has been made. This is not a medical device, and
   no output is a clinical measurement.
+
+## Bone segmentation with FSL
+
+When `FSLDIR` (shell or `backend/.env`) points at an FSL install, step 2 runs
+as two FSL commands on a temporary copy of the volume
+(`services/fsl_segmentation.py`):
+
+```bash
+fslmaths ct.nii -thr 150 -bin mask.nii -odt char   # voxels at or above 150 HU
+connectedcomp mask.nii labels.nii 6                 # face-connected components
+```
+
+The largest component is kept; on a tie, the one that comes first in C order,
+as `scipy.ndimage.label` numbers them. NaN voxels are written as −1000 HU and
+±inf as the largest finite values, which is how the numpy path treats them.
+Without `FSLDIR`, or when a command is missing, fails or runs over 60 s, the
+numpy/scipy path runs instead, with a warning when `FSLDIR` was set. The
+`segmentation` entry of the INFO log says which one ran. The response fields
+do not change.
+
+FSL does not make the mask more accurate: it runs the same threshold and
+connected-component steps. Measured with the FSL packages `fsl-avwutils`
+2209.8 and `fsl-cluster` 2201.0, segmentation only, 3 runs each:
+
+| Volume | Bone voxels kept | Same mask as numpy/scipy | FSL | numpy/scipy |
+|---|---|---|---|---|
+| `public/sample_bone.nii.gz` | 3,048 | yes | 0.04–0.08 s | under 0.01 s |
+| Femur-shaped volume (see Example response), 256 × 331 × 220 | 413,475 | yes | 1.18–1.27 s | 0.26–0.31 s |
+
+The femur-shaped volume gives the same response either way (13.98 MPa,
+22.35 GPa, 408.43 cm³, index 9.32).
+
+FSL is optional and is not in `requirements.txt`. It runs on macOS and Linux,
+and on Windows only through WSL. It is free for non-commercial use under its
+own licence (<https://fsl.fmrib.ox.ac.uk/fsl/docs/license.html>). Only
+`fslmaths` and `connectedcomp` are needed; FSL's conda instructions
+(<https://fsl.fmrib.ox.ac.uk/fsl/docs/install/conda.html>) install them
+without the rest of FSL. The tested install, with micromamba:
+
+```bash
+micromamba create -y -p ~/fsl-bone --override-channels \
+  -c https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public/ -c conda-forge \
+  fsl-avwutils fsl-cluster
+```
+
+Then set `FSLDIR` to that folder (`~/fsl-bone`). A full FSL install also
+works.
+
+`tests/test_fsl_segmentation.py` always checks the fallback. When `FSLDIR` is
+set it also checks that FSL and numpy/scipy give the same mask for threshold
+edges (exactly 150 HU, 149.99 HU, NaN, ±inf), corner-only contact, a tie, C-
+and Fortran-ordered arrays and the femur-shaped volume, and that
+`/api/simulate` returns the same response for the sample either way.
+Without `FSLDIR` those tests are skipped with the reason.
 
 ## Bundled sample
 

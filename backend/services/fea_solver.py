@@ -13,6 +13,8 @@ import numpy as np
 import scipy.ndimage as ndi
 from pydantic import BaseModel, Field
 
+from services.fsl_segmentation import fsl_bone_mask
+
 
 def _load_bone_fea_solver():
     # scripts/ is not a package; load solve.py by path so the API and the
@@ -91,6 +93,14 @@ def hu_to_apparent_density_and_modulus(
     return density[bone_mask], modulus_gpa[bone_mask]
 
 
+def segment_bone(volume: np.ndarray, spacing_mm: np.ndarray) -> tuple[np.ndarray, str]:
+    """Largest face-connected component at or above 150 HU: with FSL when installed, else numpy/scipy."""
+    mask = fsl_bone_mask(volume, spacing_mm, minimum_hu=150.0)
+    if mask is not None:
+        return mask, "fsl"
+    return largest_component(threshold_bone_hu(volume)), "numpy"
+
+
 def largest_component(mask: np.ndarray) -> np.ndarray:
     """Keep the largest face-connected component of a binary mask."""
     labels, count = ndi.label(mask)
@@ -157,7 +167,7 @@ def analyze_bone_volume(
 ) -> tuple[FEAResult, dict[str, Any]]:
     """Segment, mesh and solve one CT volume; return API fields and solver details."""
     started = time.perf_counter()
-    bone = largest_component(threshold_bone_hu(volume))
+    bone, segmentation = segment_bone(volume, spacing_mm)
     if int(bone.sum()) < 8:
         raise FEASolverError("The NIfTI volume does not contain enough bone voxels to mesh.")
     # Work on the bounding box of the bone so large scans stay cheap.
@@ -214,6 +224,7 @@ def analyze_bone_volume(
     details = {
         "input_shape": [int(v) for v in volume.shape],
         "input_spacing_mm": [float(v) for v in spacing_mm],
+        "segmentation": segmentation,
         "coarsening_factors": [int(v) for v in factors],
         "effective_voxel_mm": [float(v) for v in voxel_mm],
         "thresholded_component_voxels": int(bone.sum()),
