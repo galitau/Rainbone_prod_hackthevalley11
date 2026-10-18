@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, type ReactNode } from "react";
 import {
   Activity,
   ChevronRight,
@@ -61,7 +61,9 @@ type OverviewProps = {
 // app/physics-simulations/page.tsx renders <Dashboard view="physics" />, app/bones/page.tsx <Dashboard view="imaging" />,
 // app/lesion-progression/page.tsx <Dashboard view="progression" />, app/datasets/page.tsx <Dashboard view="datasets" />
 // and app/preferences/page.tsx <Dashboard view="preferences" />.
-type DashboardProps = OverviewProps | { view: "physics" | "imaging" | "progression" | "datasets" | "preferences" };
+type DashboardProps = OverviewProps
+  | { view: "physics" | "imaging" | "progression" | "datasets" | "preferences" }
+  | { view: "research"; children: ReactNode };
 
 const VIEW_TITLES = {
   overview: "Patient overview",
@@ -70,9 +72,10 @@ const VIEW_TITLES = {
   progression: "Lesion progression",
   datasets: "Secure datasets",
   preferences: "Preferences",
+  research: "Research paper",
 } as const;
 
-const isWorkspaceView = (view: keyof typeof VIEW_TITLES) => view === "datasets" || view === "preferences";
+const isWorkspaceView = (view: keyof typeof VIEW_TITLES) => view === "datasets" || view === "preferences" || view === "research";
 const warmProgression = () => { void prefetchProgressionFrames(); };
 
 export function Dashboard(props: DashboardProps) {
@@ -83,10 +86,10 @@ export function Dashboard(props: DashboardProps) {
   const fit = view === "overview" || view === "physics" || view === "progression" || view === "imaging";
 
   return (
-    <main className={`min-h-screen bg-canvas text-ink${fit ? " lg:flex lg:h-dvh lg:min-h-[640px] lg:flex-col lg:overflow-hidden" : ""}`}>
+    <main data-workspace-view={view} className={`min-h-screen bg-canvas text-ink${fit ? " lg:flex lg:h-dvh lg:min-h-[640px] lg:flex-col lg:overflow-hidden" : ""}`}>
       {view === "preferences" && <a href="#preferences-content" className="skip-preferences">Skip to preferences</a>}
       <div className={`flex min-h-screen${fit ? " lg:min-h-0 lg:flex-1" : ""}`}>
-        <aside className="sticky top-0 hidden h-screen w-[256px] shrink-0 flex-col bg-nav lg:flex">
+        <aside data-workspace-sidebar className="sticky top-0 hidden h-screen w-[256px] shrink-0 flex-col bg-nav lg:flex">
           <div className="spectrum-line h-[3px]" aria-hidden />
           <div className="px-5 pb-2 pt-6"><Link href="/" aria-label="Rainbone home" className="inline-block rounded-lg"><RainboneLogo size="lg" /></Link></div>
           <nav aria-label="Workspace" className="mt-8 space-y-1 px-3">
@@ -98,9 +101,9 @@ export function Dashboard(props: DashboardProps) {
           </nav>
           <nav aria-label="Account" className="mt-8 space-y-1 px-3">
             <p className="px-3 pb-2 text-[11px] font-medium uppercase tracking-[0.08em] text-nav-muted">Workspace</p>
-            <NavItem active={false} href="/research-paper" icon={<FileText size={17} />} label="Research paper" />
             <NavItem active={view === "datasets"} href="/datasets" icon={<ShieldCheck size={17} />} label="Secure datasets" />
             <NavItem active={view === "preferences"} href="/preferences" icon={<Settings2 size={17} />} label="Preferences" />
+            <NavItem active={view === "research"} href="/research-paper" icon={<FileText size={17} />} label="Research paper" />
           </nav>
           <div className="mt-auto p-4">
             <div className="rounded-xl border border-nav-line bg-white/[0.03] p-4">
@@ -111,7 +114,7 @@ export function Dashboard(props: DashboardProps) {
         </aside>
 
         <section className={`min-w-0 flex-1${fit ? " lg:flex lg:min-h-0 lg:flex-col" : ""}`}>
-          <header className="sticky top-0 z-10 border-b border-line bg-surface/90 backdrop-blur">
+          <header data-workspace-header className="sticky top-0 z-10 border-b border-line bg-surface/90 backdrop-blur">
             <div className="flex h-16 items-center justify-between gap-4 px-5 md:px-8">
               <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-1.5 text-[13px] text-muted">
                 <Link href="/" aria-label="Rainbone home" className="rounded lg:hidden"><RainboneMarkSmall /></Link>
@@ -138,9 +141,9 @@ export function Dashboard(props: DashboardProps) {
               <MobileNavItem active={view === "physics"} href="/physics-simulations" label="Physics simulations" />
               <MobileNavItem active={view === "imaging"} href="/bones" label="Imaging library" />
               <MobileNavItem active={view === "progression"} href="/lesion-progression" label="Lesion progression" onIntent={warmProgression} />
-              <MobileNavItem active={false} href="/research-paper" label="Research paper" />
               <MobileNavItem active={view === "datasets"} href="/datasets" label="Secure datasets" />
               <MobileNavItem active={view === "preferences"} href="/preferences" label="Preferences" />
+              <MobileNavItem active={view === "research"} href="/research-paper" label="Research paper" />
             </nav>
           </header>
 
@@ -149,6 +152,7 @@ export function Dashboard(props: DashboardProps) {
             : props.view === "progression" ? <LesionProgression />
             : props.view === "datasets" ? <SecureDatasets />
             : props.view === "preferences" ? <PreferencesPanel />
+            : props.view === "research" ? props.children
             : <CloudBones />}
         </section>
       </div>

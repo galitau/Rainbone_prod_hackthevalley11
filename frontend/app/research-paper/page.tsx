@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { pageMetadata } from "@/lib/seo";
 import { PrintButton } from "./print-button";
+import { Dashboard } from "@/components/dashboard";
 
 export const metadata = pageMetadata("/research-paper");
 
@@ -96,8 +97,8 @@ const EQ = {
   grounded: "<mtable displaystyle=\"true\" class=\"tml-jot\"><mtr><mtd style=\"padding-left:0em;padding-right:0em;\"><mrow><mpadded lspace=\"0\"><mi>verified</mi></mpadded><mo form=\"prefix\" stretchy=\"false\">(</mo><mi>f</mi><mo form=\"postfix\" stretchy=\"false\">)</mo><mspace width=\"0.2778em\"></mspace><mo stretchy=\"false\">⟺</mo><mspace width=\"0.2778em\"></mspace><msub><mi>k</mi><mtext>idx</mtext></msub><mo form=\"prefix\" stretchy=\"false\">(</mo><mi>f</mi><mo form=\"postfix\" stretchy=\"false\">)</mo><mo>=</mo><mi>k</mi><mo form=\"prefix\" stretchy=\"false\">(</mo><mi>f</mi><mo form=\"postfix\" stretchy=\"false\">)</mo><mtext> </mtext><mo>∧</mo><mtext> </mtext><msub><mi>h</mi><mtext>idx</mtext></msub><mo form=\"prefix\" stretchy=\"false\">(</mo><mi>f</mi><mo form=\"postfix\" stretchy=\"false\">)</mo><mo>=</mo><msub><mi>h</mi><mtext>pin</mtext></msub><mo form=\"prefix\" stretchy=\"false\">(</mo><mi>f</mi><mo form=\"postfix\" stretchy=\"false\">)</mo><mtext> </mtext><mo>∧</mo><mtext> </mtext><mi>|</mi><msub><mi>b</mi><mi>f</mi></msub><mi>|</mi><mo>=</mo><msub><mi>n</mi><mtext>idx</mtext></msub><mo form=\"prefix\" stretchy=\"false\">(</mo><mi>f</mi><mo form=\"postfix\" stretchy=\"false\">)</mo></mrow></mtd></mtr><mtr><mtd style=\"padding-left:0em;padding-right:0em;\"><mrow><mo>∧</mo><mtext> </mtext><mi>SHA256</mi><mo>⁡</mo><mo form=\"prefix\" stretchy=\"false\">(</mo><msub><mi>b</mi><mi>f</mi></msub><mo form=\"postfix\" stretchy=\"false\">)</mo><mo>=</mo><msub><mi>h</mi><mtext>pin</mtext></msub><mo form=\"prefix\" stretchy=\"false\">(</mo><mi>f</mi><mo form=\"postfix\" stretchy=\"false\">)</mo><mtext> </mtext><mo>∧</mo><mtext> </mtext><mpadded lspace=\"0\"><mi>JSON</mi></mpadded><mo form=\"prefix\" stretchy=\"false\">(</mo><msub><mi>b</mi><mi>f</mi></msub><mo form=\"postfix\" stretchy=\"false\">)</mo><mo>≠</mo><mi>⊥</mi><mi>.</mi></mrow></mtd></mtr></mtable>",
   // G(f)=\begin{cases} (\text{bucket},\ \text{verified}) & \mathrm{verified}(f),\\ (\text{local backup},\ \text{verified}) & \neg\,\mathrm{verified}(f)\ \wedge\ \operatorname{SHA256}(b^{\text{local}}_f)=h_{\text{pin}}(f),\\ \text{HTTP 503, no model call} & \text{otherwise.} \end{cases}
   fallbackG: "<mrow><mi>G</mi><mo form=\"prefix\" stretchy=\"false\">(</mo><mi>f</mi><mo form=\"postfix\" stretchy=\"false\">)</mo><mo>=</mo><mrow><mo fence=\"true\" form=\"prefix\">{</mo><mtable><mtr><mtd class=\"tml-left\" style=\"padding-left:0em;padding-right:0em;\"><mrow><mo form=\"prefix\" stretchy=\"false\">(</mo><mtext>bucket</mtext><mo separator=\"true\">,</mo><mtext> </mtext><mtext>verified</mtext><mo form=\"postfix\" stretchy=\"false\">)</mo></mrow></mtd><mtd class=\"tml-left\" style=\"padding-left:1em;padding-right:0em;\"><mrow><mpadded lspace=\"0\"><mi>verified</mi></mpadded><mo form=\"prefix\" stretchy=\"false\">(</mo><mi>f</mi><mo form=\"postfix\" stretchy=\"false\">)</mo><mo separator=\"true\">,</mo></mrow></mtd></mtr><mtr><mtd class=\"tml-left\" style=\"padding-left:0em;padding-right:0em;\"><mrow><mo form=\"prefix\" stretchy=\"false\">(</mo><mtext>local backup</mtext><mo separator=\"true\">,</mo><mtext> </mtext><mtext>verified</mtext><mo form=\"postfix\" stretchy=\"false\">)</mo></mrow></mtd><mtd class=\"tml-left\" style=\"padding-left:1em;padding-right:0em;\"><mrow><mo form=\"prefix\" stretchy=\"false\">¬</mo><mspace width=\"0.1667em\"></mspace><mpadded lspace=\"0\"><mi>verified</mi></mpadded><mo form=\"prefix\" stretchy=\"false\">(</mo><mi>f</mi><mo form=\"postfix\" stretchy=\"false\">)</mo><mtext> </mtext><mo>∧</mo><mtext> </mtext><mi>SHA256</mi><mo>⁡</mo><mo form=\"prefix\" stretchy=\"false\">(</mo><msubsup><mi>b</mi><mi>f</mi><mtext>local</mtext></msubsup><mo form=\"postfix\" stretchy=\"false\">)</mo><mo>=</mo><msub><mi>h</mi><mtext>pin</mtext></msub><mo form=\"prefix\" stretchy=\"false\">(</mo><mi>f</mi><mo form=\"postfix\" stretchy=\"false\">)</mo><mo separator=\"true\">,</mo></mrow></mtd></mtr><mtr><mtd class=\"tml-left\" style=\"padding-left:0em;padding-right:0em;\"><mtext>HTTP 503, no model call</mtext></mtd><mtd class=\"tml-left\" style=\"padding-left:1em;padding-right:0em;\"><mtext>otherwise.</mtext></mtd></mtr></mtable><mo fence=\"true\" form=\"postfix\"></mo></mrow></mrow>",
-  // d=\operatorname{SHA256}\Bigl(\mathrm{JSON}_{\text{sorted}}\bigl[\,\texttt{ask-tools-6},\ \{(k,h,\text{store},\text{verified})\}_{\text{risk, fe}},\ \{\text{id}\mapsto\text{text}\}\,\bigr]\Bigr).
-  askDigest: "<mrow><mi>d</mi><mo>=</mo><mi>SHA256</mi><mo>⁡</mo><mo fence=\"true\" symmetric=\"true\" minsize=\"1.8em\" maxsize=\"1.8em\">(</mo><msub><mpadded lspace=\"0\"><mi>JSON</mi></mpadded><mtext>sorted</mtext></msub><mo fence=\"true\" symmetric=\"true\" minsize=\"1.2em\" maxsize=\"1.2em\">[</mo><mspace width=\"0.1667em\"></mspace><mtext>𝚊𝚜𝚔-𝚝𝚘𝚘𝚕𝚜-𝟼</mtext><mo separator=\"true\">,</mo><mtext> </mtext><mo form=\"prefix\" stretchy=\"false\">{</mo><mo form=\"prefix\" stretchy=\"false\">(</mo><mi>k</mi><mo separator=\"true\">,</mo><mi>h</mi><mo separator=\"true\">,</mo><mtext>store</mtext><mo separator=\"true\">,</mo><mtext>verified</mtext><mo form=\"postfix\" stretchy=\"false\">)</mo><msub><mo form=\"postfix\" stretchy=\"false\">}</mo><mtext>risk, fe</mtext></msub><mo separator=\"true\">,</mo><mtext> </mtext><mo form=\"prefix\" stretchy=\"false\">{</mo><mtext>id</mtext><mrow><mspace width=\"0.2778em\"></mspace><mo>↦</mo><mspace width=\"0.2778em\"></mspace></mrow><mtext>text</mtext><mo form=\"postfix\" stretchy=\"false\">}</mo><mspace width=\"0.1667em\"></mspace><mo fence=\"true\" symmetric=\"true\" minsize=\"1.2em\" maxsize=\"1.2em\">]</mo><mo fence=\"true\" symmetric=\"true\" minsize=\"1.8em\" maxsize=\"1.8em\">)</mo><mi>.</mi></mrow>",
+  // d=\operatorname{SHA256}\Bigl(\mathrm{JSON}_{\text{sorted}}\bigl[\,\texttt{ask-tools-7},\ \{(k,h,\text{store},\text{verified})\}_{\text{risk, fe}},\ \{\text{id}\mapsto\text{text}\}\,\bigr]\Bigr).
+  askDigest: "<mrow><mi>d</mi><mo>=</mo><mi>SHA256</mi><mo>⁡</mo><mo fence=\"true\" symmetric=\"true\" minsize=\"1.8em\" maxsize=\"1.8em\">(</mo><msub><mpadded lspace=\"0\"><mi>JSON</mi></mpadded><mtext>sorted</mtext></msub><mo fence=\"true\" symmetric=\"true\" minsize=\"1.2em\" maxsize=\"1.2em\">[</mo><mspace width=\"0.1667em\"></mspace><mtext>𝚊𝚜𝚔-𝚝𝚘𝚘𝚕𝚜-𝟽</mtext><mo separator=\"true\">,</mo><mtext> </mtext><mo form=\"prefix\" stretchy=\"false\">{</mo><mo form=\"prefix\" stretchy=\"false\">(</mo><mi>k</mi><mo separator=\"true\">,</mo><mi>h</mi><mo separator=\"true\">,</mo><mtext>store</mtext><mo separator=\"true\">,</mo><mtext>verified</mtext><mo form=\"postfix\" stretchy=\"false\">)</mo><msub><mo form=\"postfix\" stretchy=\"false\">}</mo><mtext>risk, fe</mtext></msub><mo separator=\"true\">,</mo><mtext> </mtext><mo form=\"prefix\" stretchy=\"false\">{</mo><mtext>id</mtext><mrow><mspace width=\"0.2778em\"></mspace><mo>↦</mo><mspace width=\"0.2778em\"></mspace></mrow><mtext>text</mtext><mo form=\"postfix\" stretchy=\"false\">}</mo><mspace width=\"0.1667em\"></mspace><mo fence=\"true\" symmetric=\"true\" minsize=\"1.2em\" maxsize=\"1.2em\">]</mo><mo fence=\"true\" symmetric=\"true\" minsize=\"1.8em\" maxsize=\"1.8em\">)</mo><mi>.</mi></mrow>",
   // \begin{gathered} \mathcal A(F)=\bigl\{\operatorname{round}(|v|,\delta):\ v\in F,\ \delta\in\{0,1,2\}\bigr\},\\ x\approx a\iff|x-a|\le\max\bigl(10^{-12}\max(|x|,|a|),\ 10^{-9}\bigr). \end{gathered}
   allowedSet: "<mtable displaystyle=\"true\" class=\"tml-jot\"><mtr><mtd style=\"padding-left:0em;padding-right:0em;\"><mrow><mi class=\"mathcal\">𝒜</mi><mo form=\"prefix\" stretchy=\"false\">(</mo><mi>F</mi><mo form=\"postfix\" stretchy=\"false\">)</mo><mo>=</mo><mo fence=\"true\" symmetric=\"true\" minsize=\"1.2em\" maxsize=\"1.2em\">{</mo><mi>round</mi><mo>⁡</mo><mo form=\"prefix\" stretchy=\"false\">(</mo><mi>|</mi><mi>v</mi><mi>|</mi><mo separator=\"true\">,</mo><mi>δ</mi><mo form=\"postfix\" stretchy=\"false\">)</mo><mo lspace=\"0.2222em\" rspace=\"0.2222em\">:</mo><mtext> </mtext><mi>v</mi><mo>∈</mo><mi>F</mi><mo separator=\"true\">,</mo><mtext> </mtext><mi>δ</mi><mo>∈</mo><mo form=\"prefix\" stretchy=\"false\">{</mo><mn>0,1,2</mn><mo form=\"postfix\" stretchy=\"false\">}</mo><mo fence=\"true\" symmetric=\"true\" minsize=\"1.2em\" maxsize=\"1.2em\">}</mo><mo separator=\"true\">,</mo></mrow></mtd></mtr><mtr><mtd style=\"padding-left:0em;padding-right:0em;\"><mrow><mi>x</mi><mo>≈</mo><mi>a</mi><mspace width=\"0.2778em\"></mspace><mo stretchy=\"false\">⟺</mo><mspace width=\"0.2778em\"></mspace><mi>|</mi><mi>x</mi><mo>−</mo><mi>a</mi><mi>|</mi><mo>≤</mo><mrow><mi>max</mi><mo>⁡</mo></mrow><mo fence=\"true\" symmetric=\"true\" minsize=\"1.2em\" maxsize=\"1.2em\">(</mo><msup><mn>10</mn><mrow><mo lspace=\"0em\" rspace=\"0em\">−</mo><mn>12</mn></mrow></msup><mrow><mi>max</mi><mo>⁡</mo></mrow><mo form=\"prefix\" stretchy=\"false\">(</mo><mi>|</mi><mi>x</mi><mi>|</mi><mo separator=\"true\">,</mo><mi>|</mi><mi>a</mi><mi>|</mi><mo form=\"postfix\" stretchy=\"false\">)</mo><mo separator=\"true\">,</mo><mtext> </mtext><msup><mn>10</mn><mrow><mo lspace=\"0em\" rspace=\"0em\">−</mo><mn>9</mn></mrow></msup><mo fence=\"true\" symmetric=\"true\" minsize=\"1.2em\" maxsize=\"1.2em\">)</mo><mi>.</mi></mrow></mtd></mtr></mtable>",
   // \begin{gathered} P_{\text{num}}(\tau):\ \forall x\in\mathcal N(\tau)\ \ \exists a\in\mathcal A(F):\ x\approx a,\\ P_{\text{unit}}(\tau):\ \forall (x,u)\in\mathcal N_U(\tau)\ \ \exists a\in\mathcal A\bigl(\{F_{k(u)}\}\bigr):\ x\approx a. \end{gathered}
@@ -130,16 +131,16 @@ const EQ = {
   acceptA: "<mtable displaystyle=\"true\" class=\"tml-jot\"><mtr><mtd style=\"padding-left:0em;padding-right:0em;\"><mrow><msub><mpadded lspace=\"0\"><mi>Accept</mi></mpadded><mi>A</mi></msub><mo form=\"prefix\" stretchy=\"false\">(</mo><mi>s</mi><mo form=\"postfix\" stretchy=\"false\">)</mo><mo>=</mo><mi>s</mi><mo>∈</mo><mi class=\"mathcal\">ℒ</mi><mo fence=\"true\" symmetric=\"true\" minsize=\"1.2em\" maxsize=\"1.2em\">(</mo><mtext>\\𝚜*[𝚊-𝚣][𝚊-𝚣𝟶-𝟿_]*(\\𝚜*,\\𝚜*[𝚊-𝚣][𝚊-𝚣𝟶-𝟿_]*)*\\𝚜*</mtext><mo fence=\"true\" symmetric=\"true\" minsize=\"1.2em\" maxsize=\"1.2em\">)</mo></mrow></mtd></mtr><mtr><mtd style=\"padding-left:0em;padding-right:0em;\"><mrow><mo>∧</mo><mtext> </mtext><mn>1</mn><mo>≤</mo><mi>|</mi><mi>I</mi><mi>|</mi><mo>≤</mo><mn>3</mn><mo>∧</mo><mi>|</mi><mspace width=\"0.1667em\"></mspace><mi>set</mi><mo>⁡</mo><mo form=\"prefix\" stretchy=\"false\">(</mo><mi>I</mi><mo form=\"postfix\" stretchy=\"false\">)</mo><mi>|</mi><mo>=</mo><mi>|</mi><mi>I</mi><mi>|</mi><mo>∧</mo><mi>I</mi><mo>⊆</mo><msub><mi>S</mi><mtext>allowed</mtext></msub></mrow></mtd></mtr><mtr><mtd style=\"padding-left:0em;padding-right:0em;\"><mrow><mo>∧</mo><mtext> </mtext><mo form=\"prefix\" stretchy=\"false\">(</mo><mtext>𝚞𝚗𝚊𝚟𝚊𝚒𝚕𝚊𝚋𝚕𝚎</mtext><mo>∈</mo><mi>I</mi><mo stretchy=\"false\">⇒</mo><mi>|</mi><mi>I</mi><mi>|</mi><mo>=</mo><mn>1</mn><mo form=\"postfix\" stretchy=\"false\">)</mo><mo>∧</mo><mi>words</mi><mo>⁡</mo><mo form=\"prefix\" stretchy=\"false\">(</mo><mi>ρ</mi><mo form=\"prefix\" stretchy=\"false\">(</mo><mi>I</mi><mo form=\"postfix\" stretchy=\"false\">)</mo><mo form=\"postfix\" stretchy=\"false\">)</mo><mo>≤</mo><mn>120</mn></mrow></mtd></mtr><mtr><mtd style=\"padding-left:0em;padding-right:0em;\"><mrow><mo>∧</mo><mtext> </mtext><mi>cites</mi><mo>⁡</mo><mo form=\"prefix\" stretchy=\"false\">(</mo><mi>ρ</mi><mo form=\"prefix\" stretchy=\"false\">(</mo><mi>I</mi><mo form=\"postfix\" stretchy=\"false\">)</mo><mo form=\"postfix\" stretchy=\"false\">)</mo><mo>⊆</mo><mi class=\"mathcal\">𝒮</mi><mo>∧</mo><mi>links</mi><mo>⁡</mo><mo form=\"prefix\" stretchy=\"false\">(</mo><mi>ρ</mi><mo form=\"prefix\" stretchy=\"false\">(</mo><mi>I</mi><mo form=\"postfix\" stretchy=\"false\">)</mo><mo form=\"postfix\" stretchy=\"false\">)</mo><mo>⊆</mo><mi class=\"mathcal\">𝒫</mi><mo>∧</mo><mi>R</mi><mo>⊆</mo><mi>I</mi><mi>.</mi></mrow></mtd></mtr></mtable>",
   // \rho(I)=\operatorname{text}(i_1)\,\Vert\,\cdots\,\Vert\,\operatorname{text}(i_{|I|})\,\Vert\,\text{DISCLAIMER},
   render: "<mrow><mi>ρ</mi><mo form=\"prefix\" stretchy=\"false\">(</mo><mi>I</mi><mo form=\"postfix\" stretchy=\"false\">)</mo><mo>=</mo><mi>text</mi><mo>⁡</mo><mo form=\"prefix\" stretchy=\"false\">(</mo><msub><mi>i</mi><mn>1</mn></msub><mo form=\"postfix\" stretchy=\"false\">)</mo><mspace width=\"0.1667em\"></mspace><mi>‖</mi><mspace width=\"0.1667em\"></mspace><mo>⋯</mo><mspace width=\"0.1667em\"></mspace><mi>‖</mi><mspace width=\"0.1667em\"></mspace><mspace width=\"0.1667em\"></mspace><mi>text</mi><mo>⁡</mo><mo form=\"prefix\" stretchy=\"false\">(</mo><msub><mi>i</mi><mrow><mi>|</mi><mi>I</mi><mi>|</mi></mrow></msub><mo form=\"postfix\" stretchy=\"false\">)</mo><mspace width=\"0.1667em\"></mspace><mi>‖</mi><mspace width=\"0.1667em\"></mspace><mtext>DISCLAIMER</mtext><mo separator=\"true\">,</mo></mrow>",
-  // R=\begin{cases}I_{\text{rule}} & \texttt{prediction\_limit}\in I_{\text{rule}},\\ \{I_{\text{rule}}[0]\} & I_{\text{rule}}\ne\varnothing,\\ \varnothing & \text{otherwise.}\end{cases}
-  required: "<mrow><mi>R</mi><mo>=</mo><mrow><mo fence=\"true\" form=\"prefix\">{</mo><mtable><mtr><mtd class=\"tml-left\" style=\"padding-left:0em;padding-right:0em;\"><msub><mi>I</mi><mtext>rule</mtext></msub></mtd><mtd class=\"tml-left\" style=\"padding-left:1em;padding-right:0em;\"><mrow><mtext>𝚙𝚛𝚎𝚍𝚒𝚌𝚝𝚒𝚘𝚗_𝚕𝚒𝚖𝚒𝚝</mtext><mo>∈</mo><msub><mi>I</mi><mtext>rule</mtext></msub><mo separator=\"true\">,</mo></mrow></mtd></mtr><mtr><mtd class=\"tml-left\" style=\"padding-left:0em;padding-right:0em;\"><mrow><mo form=\"prefix\" stretchy=\"false\">{</mo><msub><mi>I</mi><mtext>rule</mtext></msub><mo form=\"prefix\" stretchy=\"false\">[</mo><mn>0</mn><mo form=\"postfix\" stretchy=\"false\">]</mo><mo form=\"postfix\" stretchy=\"false\">}</mo></mrow></mtd><mtd class=\"tml-left\" style=\"padding-left:1em;padding-right:0em;\"><mrow><msub><mi>I</mi><mtext>rule</mtext></msub><mo>≠</mo><mi>⌀</mi><mo separator=\"true\">,</mo></mrow></mtd></mtr><mtr><mtd class=\"tml-left\" style=\"padding-left:0em;padding-right:0em;\"><mi>⌀</mi></mtd><mtd class=\"tml-left\" style=\"padding-left:1em;padding-right:0em;\"><mtext>otherwise.</mtext></mtd></mtr></mtable><mo fence=\"true\" form=\"postfix\"></mo></mrow></mrow>",
+  // R=\begin{cases} I_{\text{rule}} & \texttt{prediction\_limit}\in I_{\text{rule}},\\ I_{\text{rule}} & \operatorname{set}(I_{\text{rule}})=\{\texttt{arf0\_rank},\texttt{strength}\},\\ \{I_{\text{rule}}[0]\} & I_{\text{rule}}\ne\varnothing,\\ \varnothing & \text{otherwise.} \end{cases}
+  required: "<mrow><mi>R</mi><mo>=</mo><mrow><mo fence=\"true\" form=\"prefix\">{</mo><mtable><mtr><mtd class=\"tml-left\" style=\"padding-left:0em;padding-right:0em;\"><msub><mi>I</mi><mtext>rule</mtext></msub></mtd><mtd class=\"tml-left\" style=\"padding-left:1em;padding-right:0em;\"><mrow><mtext>𝚙𝚛𝚎𝚍𝚒𝚌𝚝𝚒𝚘𝚗_𝚕𝚒𝚖𝚒𝚝</mtext><mo>∈</mo><msub><mi>I</mi><mtext>rule</mtext></msub><mo separator=\"true\">,</mo></mrow></mtd></mtr><mtr><mtd class=\"tml-left\" style=\"padding-left:0em;padding-right:0em;\"><msub><mi>I</mi><mtext>rule</mtext></msub></mtd><mtd class=\"tml-left\" style=\"padding-left:1em;padding-right:0em;\"><mrow><mi>set</mi><mo>⁡</mo><mo form=\"prefix\" stretchy=\"false\">(</mo><msub><mi>I</mi><mtext>rule</mtext></msub><mo form=\"postfix\" stretchy=\"false\">)</mo><mo>=</mo><mo form=\"prefix\" stretchy=\"false\">{</mo><mtext>𝚊𝚛𝚏𝟶_𝚛𝚊𝚗𝚔</mtext><mo separator=\"true\">,</mo><mtext>𝚜𝚝𝚛𝚎𝚗𝚐𝚝𝚑</mtext><mo form=\"postfix\" stretchy=\"false\">}</mo><mo separator=\"true\">,</mo></mrow></mtd></mtr><mtr><mtd class=\"tml-left\" style=\"padding-left:0em;padding-right:0em;\"><mrow><mo form=\"prefix\" stretchy=\"false\">{</mo><msub><mi>I</mi><mtext>rule</mtext></msub><mo form=\"prefix\" stretchy=\"false\">[</mo><mn>0</mn><mo form=\"postfix\" stretchy=\"false\">]</mo><mo form=\"postfix\" stretchy=\"false\">}</mo></mrow></mtd><mtd class=\"tml-left\" style=\"padding-left:1em;padding-right:0em;\"><mrow><msub><mi>I</mi><mtext>rule</mtext></msub><mo>≠</mo><mi>⌀</mi><mo separator=\"true\">,</mo></mrow></mtd></mtr><mtr><mtd class=\"tml-left\" style=\"padding-left:0em;padding-right:0em;\"><mi>⌀</mi></mtd><mtd class=\"tml-left\" style=\"padding-left:1em;padding-right:0em;\"><mtext>otherwise.</mtext></mtd></mtr></mtable><mo fence=\"true\" form=\"postfix\"></mo></mrow></mrow>",
   // \begin{gathered} \mathrm{admit}(c,t)\iff\bigl|\{h\in H_c:\ h>t-60\}\bigr|<8,\\ \text{Retry-After}=\max\bigl(1,\ \lceil h_0+60-t\rceil\bigr), \end{gathered}
   admission: "<mtable displaystyle=\"true\" class=\"tml-jot\"><mtr><mtd style=\"padding-left:0em;padding-right:0em;\"><mrow><mpadded lspace=\"0\"><mi>admit</mi></mpadded><mo form=\"prefix\" stretchy=\"false\">(</mo><mi>c</mi><mo separator=\"true\">,</mo><mi>t</mi><mo form=\"postfix\" stretchy=\"false\">)</mo><mspace width=\"0.2778em\"></mspace><mo stretchy=\"false\">⟺</mo><mspace width=\"0.2778em\"></mspace><mo fence=\"true\" stretchy=\"true\" symmetric=\"true\" minsize=\"1.2em\" maxsize=\"1.2em\">|</mo><mo form=\"prefix\" stretchy=\"false\">{</mo><mi>h</mi><mo>∈</mo><msub><mi>H</mi><mi>c</mi></msub><mo lspace=\"0.2222em\" rspace=\"0.2222em\">:</mo><mtext> </mtext><mi>h</mi><mo>&gt;</mo><mi>t</mi><mo>−</mo><mn>60</mn><mo form=\"postfix\" stretchy=\"false\">}</mo><mo fence=\"true\" stretchy=\"true\" symmetric=\"true\" minsize=\"1.2em\" maxsize=\"1.2em\">|</mo><mo>&lt;</mo><mn>8</mn><mo separator=\"true\">,</mo></mrow></mtd></mtr><mtr><mtd style=\"padding-left:0em;padding-right:0em;\"><mrow><mtext>Retry-After</mtext><mo>=</mo><mrow><mi>max</mi><mo>⁡</mo></mrow><mo fence=\"true\" symmetric=\"true\" minsize=\"1.2em\" maxsize=\"1.2em\">(</mo><mn>1</mn><mo separator=\"true\">,</mo><mtext> </mtext><mo form=\"prefix\" stretchy=\"false\">⌈</mo><msub><mi>h</mi><mn>0</mn></msub><mo>+</mo><mn>60</mn><mo>−</mo><mi>t</mi><mo form=\"postfix\" stretchy=\"false\">⌉</mo><mo fence=\"true\" symmetric=\"true\" minsize=\"1.2em\" maxsize=\"1.2em\">)</mo><mo separator=\"true\">,</mo></mrow></mtd></mtr></mtable>",
   // \begin{gathered} \text{row}=\bigl(t,\ \text{uuid},\ \text{endpoint},\ \text{case},\ p,\ m,\ \operatorname{SHA256}(\text{facts}),\ \operatorname{SHA256}(\text{text}),\\ \Delta t_{\text{ms}},\ \text{store},\ [(p_j,\text{category}_j)]_j,\ [\text{tool}_k]_{k\le4}\bigr). \end{gathered}
   auditRow: "<mtable displaystyle=\"true\" class=\"tml-jot\"><mtr><mtd style=\"padding-left:0em;padding-right:0em;\"><mrow><mtext>row</mtext><mo>=</mo><mo fence=\"true\" symmetric=\"true\" minsize=\"1.2em\" maxsize=\"1.2em\">(</mo><mi>t</mi><mo separator=\"true\">,</mo><mtext> </mtext><mtext>uuid</mtext><mo separator=\"true\">,</mo><mtext> </mtext><mtext>endpoint</mtext><mo separator=\"true\">,</mo><mtext> </mtext><mtext>case</mtext><mo separator=\"true\">,</mo><mtext> </mtext><mi>p</mi><mo separator=\"true\">,</mo><mtext> </mtext><mi>m</mi><mo separator=\"true\">,</mo><mtext> </mtext><mi>SHA256</mi><mo>⁡</mo><mo form=\"prefix\" stretchy=\"false\">(</mo><mtext>facts</mtext><mo form=\"postfix\" stretchy=\"false\">)</mo><mo separator=\"true\">,</mo><mtext> </mtext><mi>SHA256</mi><mo>⁡</mo><mo form=\"prefix\" stretchy=\"false\">(</mo><mtext>text</mtext><mo form=\"postfix\" stretchy=\"false\">)</mo><mo separator=\"true\">,</mo></mrow></mtd></mtr><mtr><mtd style=\"padding-left:0em;padding-right:0em;\"><mrow><mpadded lspace=\"0\"><mi mathvariant=\"normal\">Δ</mi></mpadded><msub><mi>t</mi><mtext>ms</mtext></msub><mo separator=\"true\">,</mo><mtext> </mtext><mtext>store</mtext><mo separator=\"true\">,</mo><mtext> </mtext><mo form=\"prefix\" stretchy=\"false\">[</mo><mo form=\"prefix\" stretchy=\"false\">(</mo><msub><mi>p</mi><mi>j</mi></msub><mo separator=\"true\">,</mo><msub><mtext>category</mtext><mi>j</mi></msub><mo form=\"postfix\" stretchy=\"false\">)</mo><msub><mo form=\"postfix\" stretchy=\"false\">]</mo><mi>j</mi></msub><mo separator=\"true\">,</mo><mtext> </mtext><mo form=\"prefix\" stretchy=\"false\">[</mo><msub><mtext>tool</mtext><mi>k</mi></msub><msub><mo form=\"postfix\" stretchy=\"false\">]</mo><mrow><mi>k</mi><mo>≤</mo><mn>4</mn></mrow></msub><mo fence=\"true\" symmetric=\"true\" minsize=\"1.2em\" maxsize=\"1.2em\">)</mo><mi>.</mi></mrow></mtd></mtr></mtable>",
   // \mathrm{audit\_ok}(q)\iff\text{row}_{\text{logged.id}(q)}.\text{text\_sha256}=\operatorname{SHA256}\bigl(\text{answer}(q)\bigr).
   auditCheck: "<mrow><mrow><mpadded lspace=\"0\"><mi mathvariant=\"normal\">a</mi></mpadded><mpadded lspace=\"0\"><mi mathvariant=\"normal\">u</mi></mpadded><mpadded lspace=\"0\"><mi mathvariant=\"normal\">d</mi></mpadded><mpadded lspace=\"0\"><mi mathvariant=\"normal\">i</mi></mpadded><mpadded lspace=\"0\"><mi mathvariant=\"normal\">t</mi></mpadded><mi>_</mi><mpadded lspace=\"0\"><mi mathvariant=\"normal\">o</mi></mpadded><mpadded lspace=\"0\"><mi mathvariant=\"normal\">k</mi></mpadded></mrow><mo form=\"prefix\" stretchy=\"false\">(</mo><mi>q</mi><mo form=\"postfix\" stretchy=\"false\">)</mo><mspace width=\"0.2778em\"></mspace><mo stretchy=\"false\">⟺</mo><mspace width=\"0.2778em\"></mspace><msub><mtext>row</mtext><mrow><mtext>logged.id</mtext><mo form=\"prefix\" stretchy=\"false\">(</mo><mi>q</mi><mo form=\"postfix\" stretchy=\"false\" lspace=\"0em\" rspace=\"0em\">)</mo></mrow></msub><mi>.</mi><mtext>text_sha256</mtext><mo>=</mo><mi>SHA256</mi><mo>⁡</mo><mo fence=\"true\" symmetric=\"true\" minsize=\"1.2em\" maxsize=\"1.2em\">(</mo><mtext>answer</mtext><mo form=\"prefix\" stretchy=\"false\">(</mo><mi>q</mi><mo form=\"postfix\" stretchy=\"false\">)</mo><mo fence=\"true\" symmetric=\"true\" minsize=\"1.2em\" maxsize=\"1.2em\">)</mo><mi>.</mi></mrow>",
-  // \text{total}_k=\sum_{c\in\text{calls},\ c.u_k\ne\bot}c.u_k\ \ (\bot\text{ if none is known}),\qquad \text{complete}\iff\text{reasons}=\varnothing,
-  tokens: "<mrow><msub><mtext>total</mtext><mi>k</mi></msub><mo>=</mo><mrow><munder><mo movablelimits=\"false\">∑</mo><mrow><mi>c</mi><mo>∈</mo><mtext>calls</mtext><mo separator=\"true\">,</mo><mtext> </mtext><mi>c</mi><mi>.</mi><msub><mi>u</mi><mi>k</mi></msub><mo>≠</mo><mi>⊥</mi></mrow></munder></mrow><mi>c</mi><mi>.</mi><msub><mi>u</mi><mi>k</mi></msub><mtext> </mtext><mtext> </mtext><mo form=\"prefix\" stretchy=\"false\">(</mo><mi>⊥</mi><mtext> if none is known</mtext><mo form=\"postfix\" stretchy=\"false\">)</mo><mo separator=\"true\">,</mo><mspace width=\"2em\"></mspace><mtext>complete</mtext><mspace width=\"0.2778em\"></mspace><mo stretchy=\"false\">⟺</mo><mspace width=\"0.2778em\"></mspace><mtext>reasons</mtext><mo>=</mo><mi>⌀</mi><mo separator=\"true\">,</mo></mrow>",
+  // \begin{gathered} C_k=\{c\in\text{calls}:c.u_k\ne\bot\},\\ \text{total}_k=\begin{cases} 0 & \text{calls}=\varnothing\ \wedge\ \text{reasons}=\varnothing,\\ \sum_{c\in C_k}c.u_k & C_k\ne\varnothing,\\ \bot & \text{otherwise,} \end{cases}\\ \text{complete}\iff\text{reasons}=\varnothing. \end{gathered}
+  tokens: "<mtable displaystyle=\"true\" class=\"tml-jot\"><mtr><mtd style=\"padding-left:0em;padding-right:0em;\"><mrow><msub><mi>C</mi><mi>k</mi></msub><mo>=</mo><mo form=\"prefix\" stretchy=\"false\">{</mo><mi>c</mi><mo>∈</mo><mtext>calls</mtext><mo lspace=\"0.2222em\" rspace=\"0.2222em\">:</mo><mi>c</mi><mi>.</mi><msub><mi>u</mi><mi>k</mi></msub><mo>≠</mo><mi>⊥</mi><mo form=\"postfix\" stretchy=\"false\">}</mo><mo separator=\"true\">,</mo></mrow></mtd></mtr><mtr><mtd style=\"padding-left:0em;padding-right:0em;\"><mrow><msub><mtext>total</mtext><mi>k</mi></msub><mo>=</mo><mrow><mo fence=\"true\" form=\"prefix\">{</mo><mtable><mtr><mtd class=\"tml-left\" style=\"padding-left:0em;padding-right:0em;\"><mn>0</mn></mtd><mtd class=\"tml-left\" style=\"padding-left:1em;padding-right:0em;\"><mrow><mtext>calls</mtext><mo>=</mo><mi>⌀</mi><mtext> </mtext><mo>∧</mo><mtext> </mtext><mtext>reasons</mtext><mo>=</mo><mi>⌀</mi><mo separator=\"true\">,</mo></mrow></mtd></mtr><mtr><mtd class=\"tml-left\" style=\"padding-left:0em;padding-right:0em;\"><mrow><msub><mo movablelimits=\"false\">∑</mo><mrow><mi>c</mi><mo>∈</mo><msub><mi>C</mi><mi>k</mi></msub></mrow></msub><mi>c</mi><mi>.</mi><msub><mi>u</mi><mi>k</mi></msub></mrow></mtd><mtd class=\"tml-left\" style=\"padding-left:1em;padding-right:0em;\"><mrow><msub><mi>C</mi><mi>k</mi></msub><mo>≠</mo><mi>⌀</mi><mo separator=\"true\">,</mo></mrow></mtd></mtr><mtr><mtd class=\"tml-left\" style=\"padding-left:0em;padding-right:0em;\"><mi>⊥</mi></mtd><mtd class=\"tml-left\" style=\"padding-left:1em;padding-right:0em;\"><mtext>otherwise,</mtext></mtd></mtr></mtable><mo fence=\"true\" form=\"postfix\"></mo></mrow></mrow></mtd></mtr><mtr><mtd style=\"padding-left:0em;padding-right:0em;\"><mrow><mtext>complete</mtext><mspace width=\"0.2778em\"></mspace><mo stretchy=\"false\">⟺</mo><mspace width=\"0.2778em\"></mspace><mtext>reasons</mtext><mo>=</mo><mi>⌀</mi><mi>.</mi></mrow></mtd></mtr></mtable>",
   // \sigma=\frac{F}{A}=\frac{90\ \text{N}}{9\ \text{mm}^2}=10\ \text{MPa},\qquad \delta=\frac{FL}{EA}=\frac{90\cdot6}{1000\cdot9}=0.06\ \text{mm},
   bar: "<mrow><mi>σ</mi><mo>=</mo><mfrac><mi>F</mi><mi>A</mi></mfrac><mo>=</mo><mfrac><mrow><mn>90</mn><mtext> </mtext><mtext>N</mtext></mrow><mrow><mn>9</mn><mtext> </mtext><msup><mtext>mm</mtext><mn>2</mn></msup></mrow></mfrac><mo>=</mo><mn>10</mn><mtext> </mtext><mtext>MPa</mtext><mo separator=\"true\">,</mo><mspace width=\"2em\"></mspace><mi>δ</mi><mo>=</mo><mfrac><mrow><mi>F</mi><mi>L</mi></mrow><mrow><mi>E</mi><mi>A</mi></mrow></mfrac><mo>=</mo><mfrac><mrow><mn>90</mn><mo>⋅</mo><mn>6</mn></mrow><mrow><mn>1000</mn><mo>⋅</mo><mn>9</mn></mrow></mfrac><mo>=</mo><mn>0.06</mn><mtext> </mtext><mtext>mm</mtext><mo separator=\"true\">,</mo></mrow>",
   // \delta=\sigma\left(\frac{L_1}{E_1}+\frac{L_2}{E_2}\right)=10\left(\frac{3}{1000}+\frac{3}{3000}\right)=0.04\ \text{mm}.
@@ -254,6 +255,7 @@ const TOC: { id: string; label: string; sub?: { id: string; label: string }[] }[
       { id: "s6-5", label: "6.5 Segmentation Dice (pelvic library)" },
       { id: "s6-6", label: "6.6 Red-team evaluation of Ask Rainbone" },
       { id: "s6-7", label: "6.7 Latency where recorded" },
+      { id: "s6-8", label: "6.8 Optional native boundary extraction" },
     ],
   },
   { id: "s7", label: "7 Limitations, ethics and privacy" },
@@ -299,8 +301,9 @@ const CSS = `
 .rb-toc li ol { columns: auto; padding-left: 1.1em; }
 .rb-toc a { text-decoration: none; color: #1d232a; }
 .rb-toc a:hover { text-decoration: underline; color: #1f4fb4; }
-.rb-section, .rb-anchor { scroll-margin-top: 16px; }
-.rb-sub { scroll-margin-top: 16px; }
+.rb-paper [id] { scroll-margin-top: 144px; }
+.rb-section, .rb-anchor { scroll-margin-top: 144px; }
+.rb-sub { scroll-margin-top: 144px; }
 .rb-section h2 { font-size: 1.4rem; font-weight: 600; font-variant-caps: small-caps; letter-spacing: 0.03em; margin: 2.1em 0 0.6em; padding-bottom: 4px; border-bottom: 1px solid #d9d3c7; break-after: avoid; }
 .rb-sub h3 { font-size: 1.12rem; font-weight: 600; margin: 1.6em 0 0.5em; break-after: avoid; }
 .rb-h4 { font-style: italic; font-weight: 600; }
@@ -359,6 +362,10 @@ const CSS = `
 @media print {
   @page { margin: 18mm 16mm; }
   body { background: #fff !important; }
+  [data-workspace-view="research"] { min-height: 0 !important; }
+  [data-workspace-view="research"] > div { display: block !important; min-height: 0 !important; }
+  [data-workspace-view="research"] [data-workspace-sidebar],
+  [data-workspace-view="research"] [data-workspace-header] { display: none !important; }
   .rb-noprint { display: none !important; }
   .rb-wrap { background: #fff !important; padding: 0; }
   .rb-sheet { border: 0; box-shadow: none; padding: 0; max-width: none; }
@@ -372,7 +379,8 @@ const CSS = `
 
 export default function ResearchPaperPage() {
   return (
-    <main className="rb-wrap">
+    <Dashboard view="research">
+    <div className="rb-wrap">
       <style>{CSS}</style>
       <nav className="rb-bar rb-noprint" aria-label="Paper actions">
         <Link href="/dashboard" className="rb-back">← Back to workspace</Link>
@@ -393,7 +401,7 @@ export default function ResearchPaperPage() {
               <tr><th scope="row">Report</th><td>Rainbone project report · Hack the Valley 11</td></tr>
               <tr><th scope="row">Date</th><td>18 October 2026</td></tr>
               <tr><th scope="row">Status</th><td>Research prototype · not a medical device</td></tr>
-              <tr><th scope="row">Code described</th><td>Rainbone repository, <Code>main</Code> at commit <Code>d874d96</Code></td></tr>
+              <tr><th scope="row">Code described</th><td>Rainbone repository, <Code>main</Code> at commit <a href="https://github.com/galitau/Rainbone_prod_hackthevalley11/tree/001a6e2"><Code>001a6e2</Code></a></td></tr>
               <tr><th scope="row">Data</th><td>HFValid collection (CC BY 4.0) [1]; CTPelvic1K sub-dataset 6 (CC BY 4.0) [5]</td></tr>
               <tr><th scope="row">Keywords</th><td>finite-element analysis · femur · von Mises stress · damage mechanics · grounded generation · acceptance predicates · LangGraph</td></tr>
             </tbody>
@@ -414,8 +422,7 @@ export default function ResearchPaperPage() {
             Young&apos;s modulus, and a displacement-controlled damage model replays a hydraulic-press demonstration. An AI layer puts these
             numbers into words: code computes every figure, facts are read only when their sha256 matches a pin in the repository, and every
             model answer must pass deterministic acceptance predicates before it is shown. A five-stage pipeline, orchestrated with
-            LangGraph, lets models choose read-only tools and approved statement IDs; code renders every sentence, so no model writes free
-            prose. In a 32-question, rule-scored red-team run against the production assistant, made before the LangGraph orchestrator was
+            LangGraph, lets models choose read-only tools and approved statement IDs; in Ask, code renders every sentence from that catalogue. In a 32-question, rule-scored red-team run against the production assistant, made before the LangGraph orchestrator was
             deployed, 30 answers passed, 7 of them flagged (including two medical-advice questions answered with facts rather than refused,
             since fixed); both failures were fixed and passed a targeted re-check. The material properties
             and loads are assumptions, the 10.55 % standing-load stress ratio is not a fracture probability, Rainbone gives no forecast and
@@ -499,7 +506,7 @@ export default function ResearchPaperPage() {
             deterministic code from versioned files, and a language model may only restate those numbers. Second, <strong>every step can be
             checked</strong>: each finite-element solve must satisfy equilibrium to a relative tolerance of <M mathml={"<msup><mn>10</mn><mrow><mo lspace=\"0em\" rspace=\"0em\">−</mo><mn>6</mn></mrow></msup>"} />, each fact file
             read by the AI must match a sha256 pinned in the repository, each model answer must satisfy explicit acceptance predicates, and
-            each newly generated answer is logged by hash when the audit database is reachable. The contributions are:
+            newly generated answers use a best-effort hash audit when the database is configured and available. The contributions are:
           </p>
           <ol className="rb-list">
             <li>A traceable pipeline from a published, author-reviewed CT segmentation to a browser stress map: surface reduction, constrained
@@ -645,7 +652,7 @@ export default function ResearchPaperPage() {
               solving, <Code>build_model.py</Code> rejects any element with <M mathml={"<mrow><mi>|</mi><mrow><mspace width=\"0.1667em\"></mspace><mi>det</mi><mo>⁡</mo></mrow><mi>|</mi><mo>&lt;</mo></mrow><mrow><msup><mn>10</mn><mrow><mo lspace=\"0em\" rspace=\"0em\">−</mo><mn>12</mn></mrow></msup></mrow>"} /> and reorders the nodes of any element
               with a negative determinant, so that every element volume
             </p>
-            <Eq id="tetVolume" mathml={EQ.tetVolume} src="scripts/bone_fea/build_model.py:25–29, 39; scripts/bone_fea/solve.py:140" />
+            <Eq id="tetVolume" mathml={EQ.tetVolume} src="scripts/bone_fea/build_model.py:25–29, 39; scripts/bone_fea/solve.py:161" />
             <p>
               is positive. Coordinates are RAS in millimetres; the femoral-head centre <M mathml={"<mrow><mi>𝐜</mi><mo>=</mo></mrow><mrow><mo form=\"prefix\" stretchy=\"false\">(</mo><mn>74.5402</mn><mo separator=\"true\">,</mo><mspace width=\"0.1667em\"></mspace><mo>−</mo><mn>1.2438</mn><mo separator=\"true\">,</mo><mspace width=\"0.1667em\"></mspace><mo>−</mo><mn>50.4298</mn><mo form=\"postfix\" stretchy=\"false\">)</mo></mrow>"} /> mm
               is a constant in the import script, and the repository does not record how it was obtained.
@@ -668,7 +675,7 @@ export default function ResearchPaperPage() {
               diagonal (split table <Code>[[0,1,2,6],[0,2,3,6],[0,3,7,6],[0,7,4,6],[0,4,5,6],[0,5,1,6]]</Code>). With integer corner indices{" "}
               <M mathml={"<mi>𝐠</mi>"} />, the nodes are
             </p>
-            <Eq id="voxelNodes" mathml={EQ.voxelNodes} src="scripts/bone_fea/solve.py:12–25; backend/services/fea_solver.py:237–246" />
+            <Eq id="voxelNodes" mathml={EQ.voxelNodes} src="scripts/bone_fea/solve.py:22–35; backend/services/fea_solver.py:237–246" />
             <p>
               so voxel centres fall on integer multiples of the effective spacing. Array axes 0, 1 and 2 are used as <M mathml={"<mrow><mi>x</mi><mo separator=\"true\">,</mo></mrow><mrow><mi>y</mi><mo separator=\"true\">,</mo></mrow><mrow><mi>z</mi></mrow>"} />; no
               anatomical orientation is applied. The mesh must be one face-connected component of at least 8 voxels spanning at least 4
@@ -692,26 +699,26 @@ export default function ResearchPaperPage() {
               distal slab <M mathml={"<msub><mpadded lspace=\"0\"><mi mathvariant=\"normal\">Ω</mi></mpadded><mi>D</mi></msub>"} /> and a loaded part <M mathml={"<msub><mpadded lspace=\"0\"><mi mathvariant=\"normal\">Γ</mi></mpadded><mi>N</mi></msub>"} /> of the boundary, the displacement <M mathml={"<mi>𝐮</mi>"} />{" "}
               satisfies
             </p>
-            <Eq id="strongForm" mathml={EQ.strongForm} src="scripts/bone_fea/solve.py:117–122" />
+            <Eq id="strongForm" mathml={EQ.strongForm} src="scripts/bone_fea/solve.py:138–143" />
             <p>with the small-strain tensor</p>
-            <Eq id="strain" mathml={EQ.strain} src="SfePy dw_lin_elastic / ev_cauchy_stress, called at scripts/bone_fea/solve.py:119, 127" />
+            <Eq id="strain" mathml={EQ.strain} src="SfePy dw_lin_elastic / ev_cauchy_stress, called at scripts/bone_fea/solve.py:140, 148" />
             <p>and the isotropic Hooke&apos;s law built by SfePy&apos;s <Code>stiffness_from_youngpoisson</Code>:</p>
-            <Eq id="hooke" mathml={EQ.hooke} src="scripts/bone_fea/solve.py:107, 114; scripts/bone_fea/press_solver.py:112–114" />
+            <Eq id="hooke" mathml={EQ.hooke} src="scripts/bone_fea/solve.py:128, 135; scripts/bone_fea/press_solver.py:112–114" />
             <p>
               For the reference femur <M mathml={"<mrow><mi>E</mi><mo>=</mo></mrow><mrow><mn>10,000</mn></mrow>"} /> MPa and <M mathml={"<mrow><mi>ν</mi><mo>=</mo></mrow><mrow><mn>0.3</mn></mrow>"} /> in every element, an assumption that is neither calibrated
               nor taken from CT density; by Eq. <EqRef id="hooke" /> this gives <M mathml={"<mrow><mi>λ</mi><mo>=</mo></mrow><mrow><mn>5769.23</mn></mrow>"} /> MPa and <M mathml={"<mrow><mi>μ</mi><mo>=</mo></mrow><mrow><mn>3846.15</mn></mrow>"} /> MPa
               (derived here, not stored in the repository). SfePy stores symmetric tensors in the order 11, 22, 33, 12, 13, 23, with the
               stiffness matrix acting on engineering shear strains:
             </p>
-            <Eq id="voigt" mathml={EQ.voigt} src="SfePy stiffness_from_lame (via stiffness_from_youngpoisson, scripts/bone_fea/solve.py:107)" />
+            <Eq id="voigt" mathml={EQ.voigt} src="SfePy stiffness_from_lame (via stiffness_from_youngpoisson, scripts/bone_fea/solve.py:128)" />
             <p>
               The discrete problem uses continuous piecewise-linear (P1) vector fields <M mathml={"<msub><mi>V</mi><mi>h</mi></msub>"} /> on the four-node tetrahedra (SfePy cell
               type <Code>3_4</Code>, <Code>approx_order=1</Code>). The equation named <Code>balance</Code> is the stiffness term{" "}
               <Code>dw_lin_elastic</Code> minus the traction term <Code>dw_surface_ltr</Code>, both integrated with an order-2 rule:
             </p>
-            <Eq id="weakForm" mathml={EQ.weakForm} src="scripts/bone_fea/solve.py:103–121" />
+            <Eq id="weakForm" mathml={EQ.weakForm} src="scripts/bone_fea/solve.py:124–142" />
             <p>In matrix form, with the usual P1 strain–displacement matrices <M mathml={"<msub><mi>𝐁</mi><mi>e</mi></msub>"} /> and shape functions <M mathml={"<mi>𝐍</mi>"} />,</p>
-            <Eq id="discrete" mathml={EQ.discrete} src="scripts/bone_fea/solve.py:119–125 (assembled inside SfePy)" />
+            <Eq id="discrete" mathml={EQ.discrete} src="scripts/bone_fea/solve.py:140–146 (assembled inside SfePy)" />
             <p>
               where the sums denote assembly. The system is solved by one Newton iteration (<Code>i_max=1</Code>) with SfePy&apos;s{" "}
               <Code>ScipyDirect</Code> sparse direct solver; on a linear problem this is a single exact linear solve.
@@ -723,27 +730,27 @@ export default function ResearchPaperPage() {
               node set. The load is applied to the exterior triangles whose three vertices lie within <M mathml={"<msub><mi>h</mi><mi>N</mi></msub>"} /> of the maximum{" "}
               <M mathml={"<mi>z</mi>"} /> and within 25 mm of the head centre:
             </p>
-            <Eq id="femurRegions" mathml={EQ.femurRegions} src="scripts/bone_fea/solve.py:75–102; scripts/bone_fea/build_model.py:31–32" />
+            <Eq id="femurRegions" mathml={EQ.femurRegions} src="scripts/bone_fea/solve.py:96–123; scripts/bone_fea/build_model.py:31–32" />
             <p>
               The loaded band is intersected with the exterior facets, so faces inside the band are excluded. The traction is uniform and
               scaled so that it integrates to the resultant <M mathml={"<mi>F</mi>"} />:
             </p>
-            <Eq id="traction" mathml={EQ.traction} src="scripts/bone_fea/solve.py:88–91, 117" />
+            <Eq id="traction" mathml={EQ.traction} src="scripts/bone_fea/solve.py:109–112, 138" />
             <p>
               <span className="rb-h4">Acceptance of a solve.</span>{" "}
               After the solution is stored, the constraints are removed and the full residual is evaluated. At the clamped nodes it gives
               the support reaction; at the free nodes it measures the equilibrium error. A result outside tolerance raises{" "}
               <Code>RuntimeError</Code> and is never written:
             </p>
-            <Eq id="equilibrium" mathml={EQ.equilibrium} src="scripts/bone_fea/solve.py:129–139" />
+            <Eq id="equilibrium" mathml={EQ.equilibrium} src="scripts/bone_fea/solve.py:150–160" />
             <p>
               <span className="rb-h4">Stress recovery.</span>{" "}
               The Cauchy stress is evaluated per element with <Code>ev_cauchy_stress</Code> in <Code>el_avg</Code> mode; on a P1 tetrahedron
               it is constant,
             </p>
-            <Eq id="elementStress" mathml={EQ.elementStress} src="scripts/bone_fea/solve.py:127" />
+            <Eq id="elementStress" mathml={EQ.elementStress} src="scripts/bone_fea/solve.py:148" />
             <p>and SfePy&apos;s <Code>get_von_mises_stress</Code> reduces it to the equivalent stress</p>
-            <Eq id="vonMises" mathml={EQ.vonMises} src="scripts/bone_fea/solve.py:128 (SfePy sfepy/mechanics/tensors.py)" />
+            <Eq id="vonMises" mathml={EQ.vonMises} src="scripts/bone_fea/solve.py:149 (SfePy sfepy/mechanics/tensors.py)" />
             <p>
               The raw element values are kept in <Code>bone-fea.vtu</Code>. For continuous contours, <Code>build_model.py</Code> averages them
               at each node over every tetrahedron that shares it, weighted by volume:
@@ -783,7 +790,7 @@ export default function ResearchPaperPage() {
               saturates at <M mathml={"<mrow><mi>ρ</mi><mo>=</mo></mrow><mrow><mn>1</mn></mrow>"} />, before the clip at 1.2. Inside the 150 HU mask the map therefore gives 17.5 to 25 GPa, saturating at
               1000 HU (derived). The repository&apos;s own examples agree: 700 HU gives 22.35 GPa and 750 HU gives 22.79 GPa
               (<Code>backend/README.md</Code>). Each tetrahedron then gets its own isotropic modulus through a material function evaluated per
-              quadrature point (<Code>solve.py:108–116</Code>). After coarsening, a block <M mathml={"<mi>B</mi>"} /> with <M mathml={"<msub><mi>n</mi><mi>B</mi></msub>"} /> bone voxels has
+              quadrature point (<Code>solve.py:129–137</Code>). After coarsening, a block <M mathml={"<mi>B</mi>"} /> with <M mathml={"<msub><mi>n</mi><mi>B</mi></msub>"} /> bone voxels has
             </p>
             <Eq id="blockModulus" mathml={EQ.blockModulus} src="backend/services/fea_solver.py:170–181, 247–252" />
             <p>
@@ -798,7 +805,7 @@ export default function ResearchPaperPage() {
               corner elements of the voxel mesh do not set the value. The upload&apos;s stress ratio and volumes are
             </p>
             <Eq id="apiIndex" mathml={EQ.apiIndex} src="backend/services/fea_solver.py:43, 274" />
-            <Eq id="boneVolume" mathml={EQ.boneVolume} src="backend/services/fea_solver.py:234, 297" />
+            <Eq id="boneVolume" mathml={EQ.boneVolume} src="backend/services/fea_solver.py:234, 299" />
             <p>
               which are equal by construction: coarsening changes the mesh, not the bone volume it carries. An upload produces neither an
               ARF0 nor an MSF.
@@ -958,9 +965,10 @@ export default function ResearchPaperPage() {
             <p>
               A changed bucket object therefore cannot change the facts, and a changed local copy stops generation (fail closed). The bucket
               client makes one attempt per object (connect timeout 1 s, read timeout 1.5 s) and accepts at most 4 MiB. Verified reads are
-              cached for 600 s and fallbacks for 60 s; every response carries a <Code>grounding</Code> object with store, key, sha256,{" "}
+              cached for 600 s and fallbacks for 60 s. The two explanation cards carry a <Code>grounding</Code> object with store, key, sha256,{" "}
               <Code>verified</Code> and, after a fallback, a reason that never names a credential, the endpoint, the bucket or a URL (a bucket
-              error is reported by HTTP status and error code only).
+              error is reported by HTTP status and error code only). Ask retains per-file provenance; its aggregate grounding is absent when the
+              two verified files came from different stores (<Code>backend/services/ask.py:218–223</Code>).
             </p>
             <p>
               <span className="rb-h4">Facts, not model arithmetic.</span>{" "}
@@ -973,7 +981,7 @@ export default function ResearchPaperPage() {
               bundle from both grounded files, refuses to proceed unless both are verified, and identifies it by a digest that enters every
               cache key:
             </p>
-            <Eq id="askDigest" mathml={EQ.askDigest} src="backend/services/ask.py:214–224, 341–342" />
+            <Eq id="askDigest" mathml={EQ.askDigest} src="backend/services/ask.py:28, 214–224, 343–344" />
           </Sub>
 
           <Sub id="s5-2" n="5.2" title="The checker as acceptance predicates">
@@ -1077,7 +1085,7 @@ export default function ResearchPaperPage() {
               then <Code>gemini-3.5-flash-lite</Code>; if both fail, a previously saved Gemini answer for exactly the same route, facts and
               prompts is served if it still passes the checker, before Groq <Code>openai/gpt-oss-120b</Code> is tried. Calls time out after
               10 s per Gemini key and 8 s for Groq. Output is constrained to a JSON schema, and any answer cut short (Gemini{" "}
-              <Code>finishReason</Code> other than <Code>STOP</Code>, Groq <Code>length</Code>) is rejected so partial text is never shown.
+              an explicit <Code>finishReason</Code> other than <Code>STOP</Code>, Groq <Code>length</Code>) is rejected so partial text is never shown.
             </p>
             <Algorithm n={2} title="Provider chain for /api/explain and /api/risk-analysis (explain.py, risk.py, llm_providers.py).">
               <li><span className="rb-kw">input</span> facts <M mathml={"<mi>F</mi>"} />, prompts, provider order <M mathml={"<mi>O</mi>"} /> (default gemini, groq, template), clock <M mathml={"<mi>t</mi>"} /></li>
@@ -1108,8 +1116,9 @@ export default function ResearchPaperPage() {
             <Eq id="lifetime" mathml={EQ.lifetime} src="backend/services/llm_providers.py:470–471, 536–541; backend/services/ai_log.py:116–118" />
             <p>
               Concurrent equal requests share one computation; a kept answer is re-checked against the current checker before reuse; at most 256
-              answers are kept per route (128 for Ask) and at most 500 saved Gemini answers, oldest dropped. Each response reports its{" "}
-              <Code>fallbacks</Code> and whether it was served <em>live</em>, <em>cached</em> or <em>saved</em>.
+              answers are kept per route (128 for Ask) and at most 500 saved Gemini answers, oldest dropped. The explanation-card responses report
+              <Code> fallbacks</Code>; Ask exposes safe failure categories in its <Code>trace</Code>. Responses identify whether the answer
+              was served <em>live</em>, <em>cached</em> or <em>saved</em>.
             </p>
           </Sub>
 
@@ -1128,7 +1137,7 @@ export default function ResearchPaperPage() {
               <M mathml={"<mi>s</mi>"} /> is the writer&apos;s selection, <M mathml={"<mrow><mi>s</mi><mo>=</mo></mrow><mrow><mi>⊥</mi></mrow>"} /> means that no selection was accepted, and a rewrite asks the same provider again with a revision instruction, at
               most once per request:
             </p>
-            <Eq id="criticRoute" mathml={EQ.criticRoute} src="backend/services/ask.py:472–490" />
+            <Eq id="criticRoute" mathml={EQ.criticRoute} src="backend/services/ask.py:476–494" />
             <figure className="rb-fig" id="figure-1">
               <svg viewBox="0 0 340 560" role="img" aria-labelledby="fig1-title fig1-desc">
                 <title id="fig1-title">Ask Rainbone as a LangGraph state machine</title>
@@ -1148,7 +1157,7 @@ export default function ResearchPaperPage() {
                   { y: 46, title: "triage", sub: "rules, or Gemini function calls" },
                   { y: 122, title: "evidence", sub: "≤ 4 allowlisted read-only tools" },
                   { y: 198, title: "writer", sub: "selects 1–3 statement IDs" },
-                  { y: 400, title: "audit", sub: "render · hash · log one row" },
+                  { y: 400, title: "audit", sub: "render · hash · best-effort audit" },
                 ].map(node => (
                   <g key={node.title}>
                     <rect x="20" y={node.y} width="180" height="52" rx="8" fill="#eef2f8" stroke="#16325c" strokeWidth="1.4" />
@@ -1186,8 +1195,9 @@ export default function ResearchPaperPage() {
             <p>
               <span className="rb-h4">Stages.</span>{" "}
               <em>Triage</em> routes known intents by rules (personal-data and treatment requests first, then data and navigation keywords);
-              any other question gets one Gemini native function-calling turn (<Code>functionCallingConfig</Code> mode <Code>ANY</Code>, at
-              most 6 s, sharing the cooldowns of §5.3), and if that yields no valid plan the trace says &ldquo;Rules triage&rdquo;.{" "}
+              other questions enter one bounded Gemini native-triage stage (<Code>functionCallingConfig</Code> mode <Code>ANY</Code>, at
+              most 6 s, sharing the cooldowns of §5.3). It may try multiple models or keys within that budget, or skip calls when all models
+              are cooling down; if it yields no valid plan the trace says &ldquo;Rules triage&rdquo; (<Code>backend/services/ask_triage.py:32–50</Code>).{" "}
               <em>Evidence</em> validates the whole plan before running anything:
             </p>
             <Eq id="planValid" mathml={EQ.planValid} src="backend/services/ask_tools.py:10, 45–64, 111–116" />
@@ -1199,10 +1209,10 @@ export default function ResearchPaperPage() {
               <M mathml={"<msub><mi>S</mi><mtext>allowed</mtext></msub>"} /> the IDs the evidence allows, <M mathml={"<mi class=\"mathcal\">𝒮</mi>"} /> the five citation sources, <M mathml={"<mi class=\"mathcal\">𝒫</mi>"} /> the six
               workspace pages and <M mathml={"<mi>R</mi>"} /> the required IDs of a recognised intent,
             </p>
-            <Eq id="acceptA" mathml={EQ.acceptA} src="backend/services/ask.py:233–255, 419–426" />
+            <Eq id="acceptA" mathml={EQ.acceptA} src="backend/services/ask.py:235–255, 421–430" />
             <p><em>Audit</em> renders the answer from the fixed catalogue only, and the required IDs depend on the rule that recognised the question:</p>
-            <Eq id="render" mathml={EQ.render} src="backend/services/ask.py:229–232" />
-            <Eq id="required" mathml={EQ.required} src="backend/services/ask.py:305–307" />
+            <Eq id="render" mathml={EQ.render} src="backend/services/ask.py:231–232" />
+            <Eq id="required" mathml={EQ.required} src="backend/services/ask.py:307–309" />
             <p>
               The catalogue holds 19 statements, each ending in a citation; the disclaimer reads &ldquo;Research prototype; not a medical
               device or medical advice. [Rainbone-guide]&rdquo;. A prediction question recognised by the rules must therefore return, together, the limitation
@@ -1211,6 +1221,13 @@ export default function ResearchPaperPage() {
               Rainbone&apos;s validated prediction for a person.&rdquo; (Rainbone has no prediction of its own, validated or otherwise.) If
               the selection produced by the rules writer ever failed the critic,
               the request would raise: the catalogue itself would be invalid.
+            </p>
+            <p>
+              A recognised generic cohort-comparison question requires both <Code>arf0_rank</Code> and <Code>strength</Code>, so a writer cannot
+              return only one rank; explicit ARF0 or strength questions remain metric-specific. The strength statement names its subject explicitly: &ldquo;Pat001&apos;s femur has a minimum sidefall
+              strength of 1,339 N in the study authors&apos; model; 75 of the 101 women had a stronger femur.&rdquo; It ends with the
+              <Code> [HFValid-Pat001]</Code> citation. Tests require both statements for comparison questions and reject a writer selection
+              that omits either (<Code>backend/services/ask.py:177–180, 288–293, 307–309</Code>; <Code>backend/tests/test_ask_comparison.py</Code>).
             </p>
             <Table n={5} caption="Ask Rainbone's allowlisted read-only tools and the statements each may unlock (ask_tools.py).">
               <thead><tr><th>Tool</th><th>Arguments (enumerated)</th><th>Statement IDs allowed</th></tr></thead>
@@ -1225,8 +1242,9 @@ export default function ResearchPaperPage() {
             <p>
               <span className="rb-h4">Fault handling and limits.</span>{" "}
               If LangGraph itself fails, a built-in loop continues from the committed cursor without replaying finished stages; an error raised
-              by a stage is re-raised unchanged. The last trace step names the orchestrator (&ldquo;Orchestrator: LangGraph StateGraph&rdquo; or
-              &ldquo;Orchestrator: built-in (LangGraph unavailable)&rdquo;). A test pins the visit order with one critic rejection as triage,
+              by a stage is re-raised unchanged. A fresh trace names the orchestrator (&ldquo;Orchestrator: LangGraph StateGraph&rdquo; or
+              &ldquo;Orchestrator: built-in (LangGraph unavailable)&rdquo;); cached traces identify the original orchestrator and state that it was
+              not rerun. A test pins the visit order with one critic rejection as triage,
               evidence, writer, critic, writer, critic, audit (<Code>backend/tests/test_ask_graph.py:17–28</Code>). Each transport peer may ask
               8 questions per sliding 60 s window,
             </p>
@@ -1239,8 +1257,10 @@ export default function ResearchPaperPage() {
 
           <Sub id="s5-5" n="5.5" title="Audit and energy meter">
             <p>
-              Each answer the chain produces attempts to write one row to the <Code>ai_analyses</Code> TimescaleDB hypertable (7-day chunks) in
-              Tiger Cloud. The row holds hashes, never text:
+              Newly produced live or template answers use a best-effort logger for the <Code>ai_analyses</Code> TimescaleDB hypertable (7-day
+              chunks) in Tiger Cloud. Saved or cached reuse adds no row; coalesced requests share the producer&apos;s result. Unconfigured or
+              cooling-down logging can skip the write (<Code>backend/services/ask.py:508–509, 537–555</Code>; <Code>backend/services/ai_log.py:128–129</Code>).
+              A stored row holds hashes, never text:
             </p>
             <Eq id="auditRow" mathml={EQ.auditRow} src="backend/services/ai_log.py:139–156; backend/migrations/002_ai_analyses.sql; 003_ai_tools.sql" />
             <p>
@@ -1257,9 +1277,11 @@ export default function ResearchPaperPage() {
               output. Ask returns a per-request subtotal over every returned triage and writer generation, rejected selections and the rewrite
               included:
             </p>
-            <Eq id="tokens" mathml={EQ.tokens} src="backend/services/ask_usage.py:86–96" />
+            <Eq id="tokens" mathml={EQ.tokens} src="backend/services/ask_usage.py:48–51, 86–96" />
             <p>
-              where a missing report, failed attempt, request timeout or invalid output adds a reason. These are reported-generation
+              where missing usage or an unobserved failed, timed-out or invalid provider response adds an incomplete reason. A rejected selection
+              with fully reported usage can still have complete token accounting. No calls and no incomplete reasons means
+              zero new work; cached and coalesced requests likewise report zero newly initiated calls. These are reported-generation
               subtotals, not billing totals or measured footprints. Under a live Gemini answer the card adds one constant reference, labelled
               &ldquo;for scale, not measured for this answer&rdquo;: Google&apos;s published median of 0.24 Wh and 0.03 gCO₂e for one Gemini Apps
               text prompt [8, 9]. Because it is a per-prompt median, it is never scaled by tokens, and cached, saved, Groq and template answers
@@ -1466,6 +1488,28 @@ export default function ResearchPaperPage() {
               7,553 blocks. FSL produces the same mask as NumPy and SciPy and is slower, so it is optional.
             </p>
           </Sub>
+          <Sub id="s6-8" n="6.8" title="Optional native boundary extraction">
+            <p>
+              Boundary-face extraction has an optional integer-only C++ kernel; SfePy still solves the mechanics. The build prefers
+              C++23, then C++20, then C++17. One background build has a 20 s total budget and caches its library by source, language mode
+              and platform. Startup and requests use NumPy until the library is ready, and retain that fallback if building, loading or
+              input checks fail. <Code>RAINBONE_NATIVE_SURFACE=0</Code> disables the native path
+              (<Code>scripts/bone_fea/native_surface.py</Code>; <Code>scripts/bone_fea/solve.py:12–19, 50–60</Code>).
+            </p>
+            <p>
+              On the bundled 60,819-tetrahedron HFValid mesh, recorded boundary-extraction timings were 125.8 → 20.1 ms locally (6.26×),
+              and 728–752 → approximately 47 ms on the production API host (15.5–16.1× across two benchmark runs). Each result uses two
+              warm-ups and the median of seven timed runs, including Python-wrapper validation. File loading, compilation, the FEA solve
+              and network latency are excluded; these measurements establish the speed-up of boundary extraction only
+              (<Code>README.md</Code>, Deploy; <Code>scripts/bone_fea/benchmark_surface.py:29–59</Code>).
+            </p>
+            <p>
+              The benchmark requires exact face and owning-tetrahedron arrays. Regression tests also check byte-for-byte parity on the
+              committed HFValid mesh, face order and orientation, reordered tetrahedra, duplicate faces and empty input, plus compiler,
+              loader and fallback failures (<Code>backend/tests/test_native_surface.py</Code>). Each API solve logs the extraction path
+              and compiled language mode actually used (<Code>backend/services/fea_solver.py:290–291, 310–312</Code>).
+            </p>
+          </Sub>
         </Section>
 
         {/* ------------------------------------------------------------------ 7 */}
@@ -1513,7 +1557,7 @@ export default function ResearchPaperPage() {
             <li><strong>A consented, de-identified timeline per resident.</strong> Once resident consent, research-ethics review and a
               PHIPA-compliant agreement with the care home are in place, each new CT would be solved and compared with the resident&apos;s
               previous one under a de-identified resident ID, so a care team could see the femur&apos;s simulated stress and stress ratio change between scans,
-              before a fall. Tiger Cloud already stores every simulation run as a time series; the timeline would add the resident ID and the
+              before a fall. Tiger Cloud already stores confirmed simulation-run records as a time series; the timeline would add the resident ID and the
               comparison. Privacy work comes first.</li>
             <li><strong>Calibrated material.</strong> CT-density-based stiffness from a calibrated density–modulus relation instead of one
               assumed modulus, together with a mesh-convergence study.</li>
@@ -1647,6 +1691,7 @@ python3 redteam/redteam_ask.py score --facts-ref origin/main`}</pre>
           </p>
         </Section>
       </article>
-    </main>
+    </div>
+    </Dashboard>
   );
 }
