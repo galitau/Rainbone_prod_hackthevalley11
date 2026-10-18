@@ -273,9 +273,13 @@ The dashboard (`/dashboard`):
 
 Uploaded results appear in their own panel. The displayed reference femur, published
 HFValid measures and AI cards remain Pat001; an upload does not replace them. Admission
-is bounded before multipart parsing: at most three requests per API process, with one
-solver active at a time. Excess requests receive HTTP 429 with `Retry-After: 5` and are
-not queued. Cache and admission state are process-local, not a distributed job queue.
+bounds incoming bodies to eight per API process, with a 60-second body deadline (408
+on timeout). That slot is released once the body arrives. Uncached solves then use a
+separate three-slot running/queued limit, with one solver active at a time, released
+before history persistence. Cached results bypass solve admission; the ingress cap
+still applies before their contents are known. Excess requests receive HTTP 429 with
+`Retry-After: 5`. Failed or busy sample runs still load earlier filename-matched history,
+which is not confirmation of a new save. State is process-local, not a distributed queue.
 
 `/physics-simulations` replays a precomputed hydraulic-press loading history of the
 same femur (`models/femur-press/manifest.json` and one VTP per load step). It calls

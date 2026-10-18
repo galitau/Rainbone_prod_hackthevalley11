@@ -14,6 +14,7 @@ from fastapi import BackgroundTasks, FastAPI, File, HTTPException, Response, Upl
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from starlette.responses import JSONResponse
+from starlette.formparsers import MultiPartException
 from routes_bones import router as bones_router
 
 from routes_ai_log import router as ai_log_router
@@ -28,12 +29,24 @@ from services.settings import runtime_env
 
 # One solve at a time: a full CT can hold several GB while it is segmented.
 SOLVE_LIMITER = anyio.CapacityLimiter(1)
+# A raw asyncio cancellation can release AnyIO's token while its thread continues.
+# The thread-held lock preserves the one-heavy-solve bound until that work ends.
+SOLVE_WORKER_LOCK = threading.Lock()
 
-# Admission happens before FastAPI parses/spools multipart data, not merely before
-# UploadFile.read(). Keep the existing one-solve limit and bound queued uploads too.
-MAX_ADMITTED_UPLOADS = 3
-UPLOAD_ADMISSION = threading.BoundedSemaphore(MAX_ADMITTED_UPLOADS)
+# Two admissions, each held only for the work it bounds:
+# * UPLOAD_ADMISSION, a loose cap on bodies being received, taken before FastAPI parses or spools the multipart data and
+#   released as soon as the last body chunk arrives. A body that has not finished within UPLOAD_BODY_SECONDS is refused
+#   (408), so slow clients cannot hold these slots.
+# * SOLVE_ADMISSION, the strict limit: the running solve plus the uploads waiting for SOLVE_LIMITER. Taken only after the
+#   kept results miss, released when the solve returns; never held while the response is sent or the history row saved.
+#   A kept result (the dashboard's sample on every visit) never needs one, so it is never refused for a busy engine.
+MAX_ACTIVE_UPLOADS = 8
+UPLOAD_ADMISSION = threading.BoundedSemaphore(MAX_ACTIVE_UPLOADS)
+UPLOAD_BODY_SECONDS = 60.0
+MAX_ADMITTED_SOLVES = 3
+SOLVE_ADMISSION = threading.BoundedSemaphore(MAX_ADMITTED_SOLVES)
 UPLOAD_RETRY_SECONDS = 5
+BUSY_DETAIL = "The engine is busy with other uploads. Try again shortly."
 
 
 class UploadAdmissionMiddleware:
@@ -45,15 +58,44 @@ class UploadAdmissionMiddleware:
             return await self.app(scope, receive, send)
         admission = UPLOAD_ADMISSION
         if not admission.acquire(blocking=False):
-            response = JSONResponse(
-                {"detail": "The engine is busy with other uploads. Try again shortly."}, status_code=429,
-                headers={"Retry-After": str(UPLOAD_RETRY_SECONDS)},
-            )
+            response = JSONResponse({"detail": BUSY_DETAIL}, status_code=429,
+                                    headers={"Retry-After": str(UPLOAD_RETRY_SECONDS)})
             return await response(scope, receive, send)
+        held = True
+
+        def release() -> None:
+            nonlocal held
+            if held:
+                held = False
+                admission.release()
+
+        deadline = anyio.current_time() + UPLOAD_BODY_SECONDS
+        timed_out = False
+
+        async def receive_body():
+            nonlocal timed_out
+            if not held:  # the body is complete; later reads only wait for a disconnect
+                return await receive()
+            with anyio.move_on_after(max(0.0, deadline - anyio.current_time())):
+                message = await receive()
+                if message["type"] != "http.request" or not message.get("more_body", False):
+                    release()
+                return message
+            release()
+            timed_out = True
+            # MultipartParser closes its partially spooled files on MultiPartException.
+            # Starlette translates it to 400; send_response preserves our timeout status.
+            raise MultiPartException(f"The upload did not finish within {UPLOAD_BODY_SECONDS:g} s.")
+
+        async def send_response(message):
+            if timed_out and message["type"] == "http.response.start":
+                message = {**message, "status": 408}
+            await send(message)
+
         try:
-            await self.app(scope, receive, send)
+            await self.app(scope, receive_body, send_response)
         finally:
-            admission.release()
+            release()
 
 # Results of real solves by sha256 of the uploaded bytes. The solve reads only the bytes, so the same file always gives
 # the same numbers; posting it again (the dashboard's sample on every visit) answers at once instead of queueing behind
@@ -186,10 +228,42 @@ async def simulate(file: Annotated[UploadFile, File(description="NIfTI .nii or .
             _keep_result(digest, solved_result)
             return solved_result, True
 
+        admission = SOLVE_ADMISSION
+        if not admission.acquire(blocking=False):
+            raise HTTPException(status_code=429, detail=BUSY_DETAIL, headers={"Retry-After": str(UPLOAD_RETRY_SECONDS)})
+        # A disconnected/cancelled coroutine must not release a running worker's slot.
+        # Queued cancellation releases immediately; once started, the worker owns it.
+        ownership = threading.Lock()
+        worker_started = False
+        held = True
+
+        def release_slot():
+            nonlocal held
+            if held:
+                held = False
+                admission.release()
+
+        def admitted_solve():
+            nonlocal worker_started
+            with ownership:
+                if not held:
+                    raise RuntimeError("Solve cancelled before starting")
+                worker_started = True
+            try:
+                with SOLVE_WORKER_LOCK:
+                    return solve_unless_kept()
+            finally:
+                with ownership:
+                    release_slot()
+
         try:
-            result, solved = await anyio.to_thread.run_sync(solve_unless_kept, limiter=SOLVE_LIMITER)
+            result, solved = await anyio.to_thread.run_sync(admitted_solve, limiter=SOLVE_LIMITER)
         except FEASolverError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
+        finally:
+            with ownership:
+                if not worker_started:
+                    release_slot()
         reused = not solved
         if solved:
             # Saved after the response is sent; a failed save is logged and never fails the simulation.
