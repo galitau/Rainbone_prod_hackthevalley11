@@ -54,7 +54,7 @@ export function LiveRun({ run, history, onRunSample, onUpload }: Props) {
         {run.status === "error" && (
           <div className="rounded-lg border border-caution/25 bg-caution/[0.08] p-3.5">
             <p className="flex items-center gap-2 text-[12.5px] font-medium text-caution">
-              <CircleAlert size={15} aria-hidden /> No numbers from the engine
+              <CircleAlert size={15} aria-hidden /> {run.busy ? "Engine busy · not started" : "No numbers from the engine"}
             </p>
             <p className="mt-1 text-[12.5px] leading-5 text-ink">{run.message}</p>
           </div>
@@ -95,7 +95,7 @@ function RunBadge({ run }: { run: RunState }) {
   if (run.status === "idle")
     return <span title={where} className="rounded-full border border-line bg-sunken px-2.5 py-1 text-[11px] font-medium text-muted">Not run</span>;
   if (run.status === "error")
-    return <span title={where} className="rounded-full border border-caution/25 bg-caution/[0.08] px-2.5 py-1 text-[11px] font-medium text-caution">No numbers</span>;
+    return <span title={where} className="rounded-full border border-caution/25 bg-caution/[0.08] px-2.5 py-1 text-[11px] font-medium text-caution">{run.busy ? "Not started" : "No numbers"}</span>;
   return <span title={where} className="rounded-full border border-success/25 bg-success/[0.07] px-2.5 py-1 text-[11px] font-medium text-success">From FEA service</span>;
 }
 
@@ -130,6 +130,12 @@ function AllNumbers({ run, history }: { run: RunState; history: HistoryState }) 
 }
 
 export function historyMessage(run: RunState, history: HistoryState): string {
+  if (run.status === "error") {
+    if (history.status === "loading") return "Checking previous saved runs…";
+    if (history.status === "unavailable") return "Previous history unavailable";
+    const count = matchingSimulationRuns(history, undefined, run.input.name).length;
+    return `${count} previous filename matches; this attempt has no result`;
+  }
   if (run.status !== "ready") return "Awaiting a completed result";
   if (history.status === "loading") return "Checking saved record…";
   if (history.status === "unavailable") return "Save not confirmed";
@@ -144,7 +150,7 @@ export function UploadedResult({ run, history }: { run: RunState; history: Histo
     <p className="text-xs font-medium uppercase tracking-widest text-link">Your upload</p>
     <h2 id="uploaded-result-title" tabIndex={-1} className="mt-2 break-all text-lg font-semibold text-ink">{run.input.name}</h2>
     <p className="mt-2 text-xs leading-5 text-body">Results below belong to this file. The 3D reference femur, published risk and AI explanations still describe HFValid Pat001.</p>
-    <p role="status" aria-live="polite" className="mt-4 text-sm font-medium text-ink">{run.status === "loading" ? "Solving your uploaded volume…" : run.status === "error" ? "This file could not be solved." : result ? result.reused ? "Reused the result for identical file contents." : "Your simulation is complete." : "Waiting for a simulation."}</p>
+    <p role="status" aria-live="polite" className="mt-4 text-sm font-medium text-ink">{run.status === "loading" ? "Solving your uploaded volume…" : run.status === "error" ? run.busy ? "Engine busy · your file was not started." : "This file could not be solved." : result ? result.reused ? "Reused the result for identical file contents." : "Your simulation is complete." : "Waiting for a simulation."}</p>
     {run.status === "error" && <p className="mt-2 text-sm text-caution">{run.message}</p>}
     {result && <>
       <dl className="mt-4 grid grid-cols-2 gap-4 text-sm">

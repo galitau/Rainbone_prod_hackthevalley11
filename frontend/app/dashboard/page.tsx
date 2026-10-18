@@ -58,18 +58,30 @@ export default function Home() {
     const id = ++latestRun.current;
     setRun({ status: "loading", input });
     setHistory({ status: "loading" });
+    const isCurrent = () => mounted.current && id === latestRun.current;
+    const loadPreviousHistory = async () => {
+      if (!isCurrent()) return;
+      const next = await fetchHistory(12, input.name);
+      if (isCurrent()) setHistory(next);
+    };
     let file: File;
     try {
       file = await getFile();
     } catch {
-      if (id === latestRun.current) setRun({ status: "error", input, message: "The sample scan could not be loaded from this site." });
+      if (!isCurrent()) return;
+      setRun({ status: "error", input, message: "The sample scan could not be loaded from this site." });
+      await loadPreviousHistory();
       return;
     }
+    if (!isCurrent()) return;
     const outcome = await runSimulation(file);
-    if (id !== latestRun.current) return;
-    setRun(outcome.ok ? { status: "ready", input, result: outcome.result, ms: outcome.ms } : { status: "error", input, message: outcome.message });
+    if (!isCurrent()) return;
+    setRun(outcome.ok ? { status: "ready", input, result: outcome.result, ms: outcome.ms } : { status: "error", input, message: outcome.message, busy: outcome.busy });
     void refreshHealth(); // the API answered (or not), so don't leave an older status on screen until the next poll
-    if (!outcome.ok) return;
+    if (!outcome.ok) {
+      await loadPreviousHistory();
+      return;
+    }
     await readBackSimulation(outcome.result, input.name, setHistory, () => mounted.current && id === latestRun.current);
   }, [refreshHealth]);
 
