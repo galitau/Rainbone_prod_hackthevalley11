@@ -1,3 +1,5 @@
+import type { AiUsage } from "@/lib/ai-usage";
+
 // Base URL of the FastAPI backend. Next.js inlines NEXT_PUBLIC_* variables at build time.
 export const API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
 
@@ -203,6 +205,7 @@ export type Explanation = {
   // Optional: absent from older APIs. grounding is null when the numbers came in the request.
   grounding?: Grounding | null;
   logged?: Logged;
+  usage?: AiUsage | null; // tokens of the model call that wrote it; null for the template, absent from older APIs
 };
 
 // "unavailable": the backend has no /api/explain (404) or this page cannot reach it, so the dashboard shows
@@ -280,6 +283,7 @@ export type RiskAnalysis = {
   source: { citation: string; doi: string; license: string };
   grounding?: Grounding | null; // absent from older APIs
   logged?: Logged;
+  usage?: AiUsage | null; // tokens of the model call that wrote it; null for the template, absent from older APIs
 };
 
 // "unavailable": the API has no /api/risk-analysis or no published data for this case (404), or this page cannot

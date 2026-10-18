@@ -35,6 +35,12 @@ marked provider "gemini", is never served. A missing, unreadable or unwritable
 file never fails a request: the chain only goes without it. The file is read
 and rewritten whole on each save, which assumes one server process: with
 several workers two saves at once can lose one entry (never corrupt the file).
+
+Token usage: each answer carries the tokens its provider reported for the call that wrote it (usage_of()):
+Gemini's usageMetadata (promptTokenCount; candidatesTokenCount plus thoughtsTokenCount as output, since
+thinking tokens are generated and billed as output; totalTokenCount) and Groq's OpenAI-style usage
+(prompt_tokens, completion_tokens, total_tokens). A missing or malformed usage block gives None and never
+fails the answer. A saved Gemini answer keeps the usage of the call that wrote it.
 """
 from __future__ import annotations
 
@@ -100,6 +106,7 @@ class GeminiText(str):
 
     response_id: Optional[str]
     model_version: Optional[str]
+    usage: Optional[dict] = None  # gemini_usage() of the response, set by GeminiProvider
 
     def __new__(cls, text: str, response_id: Optional[str] = None, model_version: Optional[str] = None):
         value = super().__new__(cls, text)
@@ -122,6 +129,60 @@ def gemini_keys(env: Mapping[str, str]) -> list[str]:
         if key and key not in keys:
             keys.append(key)
     return keys
+
+
+class ProviderText(str):
+    """The text of one answer from a provider other than Gemini, carrying the token usage it reported."""
+
+    usage: Optional[dict]
+
+    def __new__(cls, text: str, usage: Optional[dict] = None):
+        value = super().__new__(cls, text)
+        value.usage = usage
+        return value
+
+
+def _count(block: Mapping[str, Any], name: str) -> Optional[int]:
+    """A token count: a non-negative int (not a bool), else None."""
+    value = block.get(name)
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
+
+
+def _usage(prompt: Optional[int], output: Optional[int], thinking: Optional[int],
+           total: Optional[int]) -> Optional[dict]:
+    if prompt is None and output is None and total is None:
+        return None
+    if total is None and prompt is not None and output is not None:
+        total = prompt + output
+    return {"prompt_tokens": prompt, "output_tokens": output, "thinking_tokens": thinking, "total_tokens": total}
+
+
+def gemini_usage(data: Any) -> Optional[dict]:
+    """{prompt_tokens, output_tokens, thinking_tokens, total_tokens} from a generateContent response's
+    usageMetadata, or None when it is missing or holds no count. output_tokens is candidatesTokenCount plus
+    thoughtsTokenCount (thinking tokens are generated too); totalTokenCount is the API's own total."""
+    meta = data.get("usageMetadata") if isinstance(data, dict) else None
+    if not isinstance(meta, dict):
+        return None
+    candidates, thinking = _count(meta, "candidatesTokenCount"), _count(meta, "thoughtsTokenCount")
+    output = None if candidates is None and thinking is None else (candidates or 0) + (thinking or 0)
+    return _usage(_count(meta, "promptTokenCount"), output, thinking, _count(meta, "totalTokenCount"))
+
+
+def openai_usage(data: Any) -> Optional[dict]:
+    """The same from an OpenAI-compatible (Groq) response's usage: prompt_tokens, completion_tokens,
+    total_tokens. None when it is missing or holds no count."""
+    block = data.get("usage") if isinstance(data, dict) else None
+    if not isinstance(block, dict):
+        return None
+    return _usage(_count(block, "prompt_tokens"), _count(block, "completion_tokens"), None,
+                  _count(block, "total_tokens"))
+
+
+def usage_of(text: Any) -> Optional[dict]:
+    """The usage a provider's text carries (GeminiText, ProviderText), or None."""
+    usage = getattr(text, "usage", None)
+    return dict(usage) if isinstance(usage, dict) else None
 
 
 def _output_text(raw: Any) -> str:
@@ -258,7 +319,9 @@ class GeminiProvider:
             value = data.get(name) if isinstance(data, dict) else None
             return value.strip() if isinstance(value, str) and value.strip() else None
 
-        return GeminiText(_output_text(text), field("responseId"), field("modelVersion"))
+        answer = GeminiText(_output_text(text), field("responseId"), field("modelVersion"))
+        answer.usage = gemini_usage(data)
+        return answer
 
 
 class GroqProvider:
@@ -294,7 +357,7 @@ class GroqProvider:
             raise ProviderError("unexpected response body") from None
         if choice.get("finish_reason") == "length":
             raise ProviderError("cut off at the token limit")
-        return _output_text(content)
+        return ProviderText(_output_text(content), openai_usage(data))
 
 
 # ----------------------------------------------------------------------------- shared chain state
@@ -505,6 +568,7 @@ class SavedAnswer:
     saved_at: str  # ISO 8601, UTC
     response_id: str  # Gemini's responseId and modelVersion for the response the text came from
     model_version: str
+    usage: Optional[dict] = None  # the tokens the call that wrote it reported; None in files saved before
 
 
 def _read_entries(path: Path) -> dict:
@@ -542,6 +606,7 @@ def save_answer(path: Optional[Path], kind: str, facts: str, system: str, user: 
             "provider": "gemini", "kind": kind, "facts": facts, "model": model, "text": str(text),
             "response_id": response_id, "model_version": model_version,
             "saved_at": _wall_now().isoformat(timespec="seconds"),
+            "usage": usage_of(text),
         }
         if len(entries) > ANSWER_STORE_MAX:
             def saved_at(item: tuple) -> str:
@@ -581,8 +646,11 @@ def load_answer(path: Optional[Path], kind: str, facts: str, system: str, user: 
             return None
         text, model, saved_at, response_id, model_version = fields
         datetime.fromisoformat(saved_at)  # ValueError: not a time
+        usage = entry.get("usage")
+        usage = _usage(*(_count(usage, k) for k in ("prompt_tokens", "output_tokens", "thinking_tokens",
+                                                     "total_tokens"))) if isinstance(usage, dict) else None
         return SavedAnswer(text=text, model=model, saved_at=saved_at, response_id=response_id,
-                           model_version=model_version)
+                           model_version=model_version, usage=usage)
     except Exception as exc:
         log.warning("saved Gemini answers: unusable entry in %s (%s)", path.name, type(exc).__name__)
         return None
@@ -597,6 +665,7 @@ class ModelAnswer:
     model: str
     served: str = "live"
     saved_at: Optional[str] = None
+    usage: Optional[dict] = None  # usage_of() the text: the tokens the call that wrote it reported
 
 
 async def ask_models(models: list, system: str, user: str, check: Callable[[str], Optional[str]],
@@ -617,11 +686,12 @@ async def ask_models(models: list, system: str, user: str, check: Callable[[str]
             text, reason, try_next = await attempt(provider, system, user, check)
             if text is not None:
                 save_answer(store, kind, facts, system, user, provider.model, text)
-                return ModelAnswer(text=str(text), model=provider.model)
+                return ModelAnswer(text=str(text), model=provider.model, usage=usage_of(text))
             fell_through(provider.model, reason or "no text")
             if not try_next:
                 break
     saved = load_answer(store, kind, facts, system, user)
     if saved is not None and check(saved.text) is None:
-        return ModelAnswer(text=saved.text, model=saved.model, served="saved", saved_at=saved.saved_at)
+        return ModelAnswer(text=saved.text, model=saved.model, served="saved", saved_at=saved.saved_at,
+                           usage=saved.usage)
     return None
