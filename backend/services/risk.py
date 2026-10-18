@@ -36,8 +36,8 @@ from typing import TYPE_CHECKING, Any, Literal, Mapping, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from services.explain import (_NUMBER_WORDS, NUMBER_RE, Fallback, _number_value, build_providers, chain_order,
-                              spelled_numbers_as_digits)
+from services.explain import (_NUMBER_WORDS, _TENS, _UNITS, _WORD_VALUES, NUMBER_RE, Fallback, _number_value,
+                              build_providers, chain_order)
 from services.llm_providers import AnswerCache, answer_ttl, attempt, chain_signature
 from services.llm_providers import reset_cooldowns as reset_provider_cooldowns
 
@@ -80,6 +80,7 @@ BLOCKED_OUTPUT_PATTERNS: tuple[str, ...] = (
     r"\bchance", r"\bprobab", r"\bodds\b", r"\blikelihood", r"(?:%|percent)\s+likely", r"\bcertain",
     r"\bdefinitely\b", r"\bguarantee", r"\binevitabl", r"\bsure(?:ly)?\b", r"\bgoing\s+to\b",
     r"\bbound\s+to\b", r"\bexpected\s+to\b", r"\bwill\b", r"\bcancer", r"\bmetasta", r"\btumou?r",
+    r"\b(?:more|less|as)\s+likely\b", r"\bvalidat",
 )
 _TIME = tuple(re.compile(p, re.IGNORECASE) for p in TIME_PATTERNS)
 _BLOCKED = tuple(re.compile(p, re.IGNORECASE) for p in BLOCKED_OUTPUT_PATTERNS)
@@ -111,6 +112,11 @@ _COUNT_BEFORE = re.compile(r"\bthan\s+(?:those\s+of\s+|that\s+of\s+)?$", re.IGNO
 # after _NAMED_TERMS has taken the 0 out of ARF0.
 _ARF0_VALUE = re.compile(r"\bARF0?\b\)?\s*(?:\([^)]*\)\s*)?(?:is|was|of|at|=|:)\s*(?:about\s+|around\s+|roughly\s+|"
                          r"nearly\s+|just\s+)?(\d+(?:\.\d+)?)\s*(?:%|per\s?cent\b)", re.IGNORECASE)
+# A number word that counts women ("four women", "four of the 101", "four who fractured"). Only such a word is read as
+# its digits, and only when the count is a fact (see _count_words_as_digits); any other number word is refused, so
+# "three times", "two places" or "three in the study" cannot pass through a rounded fact.
+_COUNT_WORD = re.compile(r"(?<![\w-])(?:" + "|".join(_UNITS + _TENS) + r")(?=\s+(?:of\s+the\b|(?:other\s+)?women\b|"
+                         r"who\b))", re.IGNORECASE)
 _OTHER_ARF0_BEFORE = re.compile(r"\b(?:median|average|mean|typical|fractured|lowest|highest|minimum|maximum|cohort|"
                                 r"range[ds]?|ranging|other)\b[^.;]*$", re.IGNORECASE)
 
@@ -330,6 +336,16 @@ def _kind_pools(facts: RiskFacts) -> dict[str, set[float]]:
     }
 
 
+def _count_words_as_digits(text: str, facts: RiskFacts) -> str:
+    """`text` with each number word that counts women written as digits when that count is a fact."""
+    counts = (facts.cohort_fractured, facts.arf0_higher_than, facts.msf_lower_than, facts.cohort_n)
+
+    def digits(match: re.Match) -> str:
+        value = _WORD_VALUES[match.group(0).lower()]
+        return str(value) if value in counts else match.group(0)
+    return _COUNT_WORD.sub(digits, text)
+
+
 def _kind(scan: str, match: re.Match) -> Optional[str]:
     for kind, after in _KINDS:
         if after.match(scan, match.end()):
@@ -380,7 +396,7 @@ def check(text: str, facts: RiskFacts) -> Optional[str]:
         return f"over {MAX_CHARS} characters"
     scan = _NAMED_TERMS.sub(lambda m: re.sub(r"\d", "", m.group(0)), text)
     allowed, pools = allowed_numbers(facts), _kind_pools(facts)
-    scan = spelled_numbers_as_digits(scan, allowed)  # "four women" is checked as "4 women"
+    scan = _count_words_as_digits(scan, facts)  # "four women" is checked as "4 women"
     for match in NUMBER_RE.finditer(scan):
         value = _number_value(match.group(0))
         unit = _TIME_UNIT_AFTER.match(scan, match.end())

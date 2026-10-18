@@ -392,6 +392,41 @@ class CheckerTests(unittest.TestCase):
         zero = build_facts(ExplainRequest(**{**SIM, "fracture_risk_index_percent": 0.0}))
         self.assertIsNone(check("A stress-to-strength ratio of zero percent.", zero))
 
+    def test_a_number_word_without_its_unit_is_refused_even_when_a_fact(self):
+        # The dashboard's femur: 10.0 GPa makes 10 a fact, but "ten" may not count, compare or multiply anything.
+        femur = build_facts(ExplainRequest(**{**SIM, "max_von_mises_stress_mpa": 15.83, "average_youngs_modulus_gpa": 10.0,
+                                              "fracture_risk_index_percent": 10.55}))
+        for text in ["The stress reached 15.83 MPa, ten times below what bone can take.",
+                     "The load is like ten bags of sugar."]:
+            with self.subTest(text=text):
+                self.assertEqual(check(text, femur), "spelled-out quantity: 'ten'")
+        self.assertIsNone(check("Its stiffness of ten GPa is uniform.", femur))
+
+    def test_a_number_with_a_unit_must_be_that_units_fact(self):
+        femur = build_facts(ExplainRequest(**{**SIM, "max_von_mises_stress_mpa": 15.83, "average_youngs_modulus_gpa": 10.0,
+                                              "fracture_risk_index_percent": 10.55}))
+        for text, token in [("That stress is ten percent of the assumed strength.", "10"),
+                            ("That stress is 10% of the assumed strength.", "10")]:
+            with self.subTest(text=text):
+                self.assertEqual(check(text, femur), f"not the stress_to_strength_percent in the input: {token}")
+        self.assertEqual(check("The stress reached 408 MPa.", femur), "not the max_von_mises_stress_mpa in the input: 408")
+        self.assertEqual(check("The stiffness was 800 GPa.", femur), "not the average_youngs_modulus_gpa in the input: 800")
+        for text in ["That stress is 10.55% of the assumed strength.", "That stress is about 11 percent of it.",
+                     "Stress 15.8 MPa, stiffness 10 GPa, 800 newtons on 408 cm3."]:
+            with self.subTest(text=text):
+                self.assertIsNone(check(text, femur))
+
+    def test_json_field_names_read_aloud_are_refused(self):
+        # A live gemini-3.5-flash-lite answer for the dashboard's femur, which the answer cache then kept for 1 h.
+        femur = build_facts(ExplainRequest(load_newtons=800.0, max_von_mises_stress_mpa=15.83, average_youngs_modulus_gpa=10.0,
+                                           bone_volume_cm3=408.09, fracture_risk_index_percent=10.55))
+        live = ("The material has an average youngs modulus gpa of 10.0 and reaches a max von mises stress mpa of "
+                "15.83. The stress to strength percent is 10.55")
+        self.assertEqual(check(live, femur), "field name: 'average youngs modulus gpa'")
+        self.assertEqual(check("The stress_to_strength_percent is 10.55.", femur),
+                         "field name: 'stress_to_strength_percent'")
+        self.assertIsNone(check(ex.template_text(femur), femur))
+
     def test_prompt_names_the_ratio_and_asks_for_digits(self):
         self.assertIn("stress_to_strength_percent", ex.SYSTEM_PROMPT)
         self.assertIn("stress-to-strength ratio", ex.SYSTEM_PROMPT)

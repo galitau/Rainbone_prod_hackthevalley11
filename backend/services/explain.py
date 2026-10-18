@@ -4,8 +4,9 @@ The request carries the numbers /api/simulate computed (the SimulationResponse
 fields). No model computes a number: models only word the facts built here, and
 check() rejects any text that uses a number which is not a fact (or a fact
 rounded to 1 or 0 decimals), spells a quantity out, uses a word from
-BLOCKED_OUTPUT_PATTERNS, or runs too long. A lone number word whose value is a
-fact ("four" when 4 is one) is read as that number, not rejected.
+BLOCKED_OUTPUT_PATTERNS, reads a JSON field name aloud, or runs too long. A
+lone number word right before its unit, whose value is a fact ("seventeen GPa"
+when 17 is one), is read as that number, not rejected.
 
 Providers are tried in order. AI_CHAIN sets it (comma list of gemini, groq,
 template; default gemini,groq,template; template is appended when missing).
@@ -86,6 +87,22 @@ _WORD_VALUES: dict[str, int] = {**{w: i for i, w in enumerate(_UNITS)}, **{w: 20
 # A number word joined to the next one ("twenty-two", "one hundred", "three quarters") or to "-fold" is never read as
 # one number.
 _JOINED_TO_NEXT = re.compile(r"[\s-]+" + _NUMBER_WORDS.pattern + r"|-fold\b", re.IGNORECASE)
+# A unit right after a number word ("seventeen GPa", "zero percent"). Only then is the word read as its digits: without
+# a unit it is a count or a multiple that no fact holds ("ten times below", "ten bags of sugar").
+_UNIT_AFTER_WORD = re.compile(r"\s*(?:%|per\s?cent\b|MPa\b|megapascals?\b|GPa\b|gigapascals?\b|(?-i:N)\b|newtons?\b|"
+                              r"cm3|cm³|cubic\b)", re.IGNORECASE)
+# The fact a number with a unit after it must be: "10%" is not the 10 GPa stiffness, "16 MPa" not a rounded volume.
+_UNIT_FACT: tuple[tuple[re.Pattern, str], ...] = (
+    (re.compile(r"\s*(?:%|per\s?cent\b)", re.IGNORECASE), "stress_to_strength_percent"),
+    (re.compile(r"\s*(?:MPa\b|megapascals?\b)", re.IGNORECASE), "max_von_mises_stress_mpa"),
+    (re.compile(r"\s*(?:GPa\b|gigapascals?\b)", re.IGNORECASE), "average_youngs_modulus_gpa"),
+    (re.compile(r"\s*(?:N\b|[Nn]ewtons?\b)"), "load_newtons"),
+    (re.compile(r"\s*(?:cm3|cm\u00b3|cm\^3|cubic\b)", re.IGNORECASE), "bone_volume_cm3"),
+)
+# The facts' JSON field names read aloud ("an average youngs modulus gpa of 10.0"), which a model has written as text.
+_ECHOED_KEYS = re.compile(r"\b(?:" + "|".join(k.replace("_", r"[\s_]+") for k in (
+    "average_youngs_modulus_gpa", "youngs_modulus_gpa", "max_von_mises_stress_mpa", "von_mises_stress_mpa",
+    "stress_to_strength_percent", "bone_volume_cm3", "load_newtons")) + r")\b", re.IGNORECASE)
 
 SYSTEM_PROMPT = (
     "You explain the result of one engineering computer simulation of a bone to a reader with no "
@@ -208,13 +225,14 @@ def allowed_numbers(facts: Mapping[str, float]) -> set[float]:
 
 
 def spelled_numbers_as_digits(text: str, allowed: set[float]) -> str:
-    """`text` with each lone number word ("zero" to "ninety") whose value is in `allowed` written as digits, so
-    the number checks read it like the fact it is. Other number and quantity words are left for check() to refuse:
-    one not in `allowed`, a plural or -fold form, a scale (hundred), or one joined to the next ("twenty-two")."""
+    """`text` with each lone number word ("zero" to "ninety") that comes right before its unit and whose value is in
+    `allowed` written as digits, so the number checks read it like the fact it is. Other number and quantity words
+    are left for check() to refuse: one without a unit after it, one not in `allowed`, a plural or -fold form, a
+    scale (hundred), or one joined to the next ("twenty-two")."""
     def digits(match: re.Match) -> str:
         word = match.group(0)
         value = _WORD_VALUES.get(word.lower())
-        if value is None or _JOINED_TO_NEXT.match(text, match.end()):
+        if value is None or _JOINED_TO_NEXT.match(text, match.end()) or not _UNIT_AFTER_WORD.match(text, match.end()):
             return word
         return str(value) if any(math.isclose(value, a, abs_tol=1e-9) for a in allowed) else word
     return _NUMBER_WORDS.sub(digits, text)
@@ -234,6 +252,12 @@ def check(text: str, facts: Mapping[str, float]) -> Optional[str]:
         value = _number_value(match.group(0))
         if not any(math.isclose(value, a, rel_tol=1e-12, abs_tol=1e-9) for a in allowed):
             return f"number not in input: {match.group(0)}"
+        for unit, key in _UNIT_FACT:
+            if unit.match(scan, match.end()):
+                if key in facts and not any(math.isclose(value, a, rel_tol=1e-12, abs_tol=1e-9)
+                                            for a in allowed_numbers({key: facts[key]})):
+                    return f"not the {key} in the input: {match.group(0)}"
+                break
     word = _NUMBER_WORDS.search(scan)
     if word:
         return f"spelled-out quantity: {word.group(0)!r}"
@@ -241,6 +265,9 @@ def check(text: str, facts: Mapping[str, float]) -> Optional[str]:
         hit = pattern.search(scan)
         if hit:
             return f"blocked wording: {hit.group(0)!r}"
+    hit = _ECHOED_KEYS.search(scan)
+    if hit:
+        return f"field name: {hit.group(0)!r}"
     return None
 
 

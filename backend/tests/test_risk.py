@@ -238,15 +238,31 @@ class CheckerTests(unittest.TestCase):
             with self.subTest(text=text):
                 self.assertEqual(check(text, self.facts), f"spelled-out quantity: {word!r}")
 
-    def test_a_number_word_that_is_a_fact_gets_the_same_checks_as_its_digits(self):
-        # cohort_fractured is 4: "four" passes where "4" would, and fails where "4" would.
-        for text in ["Four of the 101 women had a hip fracture.", "The four women who fractured had 53.7% to 73.2%."]:
+    def test_a_number_word_passes_only_as_a_count_of_women_that_is_a_fact(self):
+        # cohort_fractured is 4: "four" passes where it counts women, and is a spelled-out quantity anywhere else.
+        for text in ["Four of the 101 women had a hip fracture.", "The four women who fractured had 53.7% to 73.2%.",
+                     "Four women fractured during the follow-up."]:
             with self.subTest(text=text):
                 self.assertIsNone(check(text, self.facts))
-        for text, reason in [("Its ARF0 is four percent.", "not a percent in the input: 4"),
-                             ("It may break within four years.", "time prediction: '4 years'")]:
+        for text, word in [("Its ARF0 is four percent.", "four"), ("It may break within four years.", "four"),
+                           ("Only three women in the study broke a hip.", "three")]:
             with self.subTest(text=text):
-                self.assertEqual(check(text, self.facts), reason)
+                self.assertEqual(check(text, self.facts), f"spelled-out quantity: {word!r}")
+
+    def test_a_rounded_fact_does_not_let_a_number_word_through(self):
+        # round(2.17) = 2 and round(3.18) = 3 are facts; as words they would invent falls, places, counts and multiples.
+        for text, word in [("This woman had fallen three times before her CT scan.", "three"),
+                           ("Only three in the study broke a hip.", "three"),
+                           ("Her femur would crack in two places in a sideways fall.", "two"),
+                           ("This femur is two times as likely to break as an average femur.", "two"),
+                           ("A sideways fall makes this femur three times more likely to break than the median woman.",
+                            "three")]:
+            with self.subTest(text=text):
+                self.assertEqual(check(text, self.facts), f"spelled-out quantity: {word!r}")
+        for text, hit in [("A sideways fall makes this femur 3 times more likely to break.", "more likely"),
+                          ("Its ARF0 is a validated estimate.", "validat")]:
+            with self.subTest(text=text):
+                self.assertEqual(check(text, self.facts), f"blocked wording: {hit!r}")
 
     def test_length_and_empty(self):
         self.assertEqual(check(" ", self.facts), "empty text")
