@@ -48,6 +48,31 @@ switches in PowerShell; otherwise decimal arguments can be split.
 Only the generated VTP, VTU, segmentation, provenance and manifests need to be
 served. The full CT and TetGen intermediate files need not be committed.
 
+## STL for 3D printing
+
+The dashboard viewer provides **3D print bone · STL**. The download converts the intact,
+full-resolution `slicer-surface.vtp` to binary STL, retaining all 143,016 triangles
+and the original millimeter scale (84.1 × 64.4 × 397.0 mm). It is independent of
+the cut-away, FEA frame, and display magnification. A translation centers XY and
+puts minimum Z at zero without rotating, scaling, smoothing, or decimating.
+STL contains geometry only; import the coordinates as millimeters.
+
+Regenerate the STL and its report with Python, VTK and NumPy, or Slicer's Python:
+
+```powershell
+& 'C:/tools/Slicer/bin/PythonSlicer.exe' scripts/bone_fea/export_print_mesh.py
+```
+
+The exporter checks finite coordinates, nonzero triangle areas, closed and
+manifold edges, consistent outward winding, one connected component, and
+positive volume. It reads the STL back and verifies triangle count, dimensions,
+and volume. `bone-print.json` records the checks, source/output hashes, and the
+HFValid CC BY 4.0 attribution. Include both generated print files when deploying.
+
+Open the STL in Bambu Studio or another compatible slicer, select the printer,
+and scale or split it to fit. At 50% uniform scale the height is 198.5 mm. Choose
+orientation and supports, then slice and inspect the preview before printing.
+
 ## Finite-element calculation
 
 SfePy assembles and solves three-dimensional, small-strain linear elasticity
