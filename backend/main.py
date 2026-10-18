@@ -16,9 +16,24 @@ from routes_history import router as history_router
 from services.fea_solver import MAX_UPLOAD_BYTES, FEASolverError, simulate_fea
 from services.fsl_segmentation import segmentation_tool
 from services.history import save_simulation_run
+from services.settings import runtime_env
 
 # One solve at a time: a full CT can hold several GB while it is segmented.
 SOLVE_LIMITER = anyio.CapacityLimiter(1)
+
+# Browser origins allowed to call the API: the local dev server and the production site.
+CORS_ORIGINS_ENV = "CORS_ALLOW_ORIGINS"
+CORS_ORIGIN_REGEX_ENV = "CORS_ALLOW_ORIGIN_REGEX"
+DEFAULT_CORS_ORIGINS = ("http://localhost:3000", "https://rainbone.health", "https://www.rainbone.health")
+
+
+def cors_origins(env: dict[str, str]) -> dict[str, object]:
+    """allow_origins from CORS_ALLOW_ORIGINS (comma list; blank means the defaults) and
+    allow_origin_regex from CORS_ALLOW_ORIGIN_REGEX (blank means none)."""
+    origins = [o.strip().rstrip("/") for o in env.get(CORS_ORIGINS_ENV, "").split(",") if o.strip()]
+    regex = env.get(CORS_ORIGIN_REGEX_ENV, "").strip()
+    return {"allow_origins": origins or list(DEFAULT_CORS_ORIGINS), "allow_origin_regex": regex or None}
+
 
 app = FastAPI(
     title="RainbowBone FEA Engine",
@@ -28,7 +43,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    **cors_origins(runtime_env()),
     allow_credentials=True,
     allow_methods=["POST", "GET"],
     allow_headers=["*"],
