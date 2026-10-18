@@ -133,9 +133,9 @@ export default function Landing() {
           </ul>
           <p className="mt-4 text-[13px] leading-relaxed text-body">32-question red-team audit, including seven legitimate questions: 30 passed in the original run; the two failures passed a targeted production follow-up. <a href="https://github.com/galitau/Rainbone_prod_hackthevalley11/blob/main/redteam/REDTEAM.md" target="_blank" rel="noreferrer" className="rounded text-link underline underline-offset-2">Read the results and limits →</a></p>
           <ul aria-label="Technology stack" className="mt-5 flex flex-wrap gap-2">
-            {["Gemini", "Vultr Compute + Object Storage", "Tiger Data · TimescaleDB", ".health · GoDaddy Registry"].map(name => <li key={name} className="max-w-full rounded-full border border-line bg-sunken px-3 py-1.5 text-[12px] text-body">{name}</li>)}
+            {["Gemini", "Vultr Compute + Object Storage", "Tiger Data · TimescaleDB", ".health · GoDaddy Registry"].map(name => <li key={name} className="max-w-full rounded-full border border-line bg-sunken px-3 py-1.5 text-[12px] font-semibold text-ink">{name}</li>)}
           </ul>
-          <p className="mt-4 text-[12px] leading-relaxed text-muted">Built for PointClickCare’s Catch It Early challenge. Research prototype; no PointClickCare integration.</p>
+          <p className="mt-4 text-[12px] leading-relaxed text-muted">Built for <strong className="font-semibold text-ink">PointClickCare’s Catch It Early</strong> challenge. Research prototype; no PointClickCare integration.</p>
         </div>
       </section>
 
